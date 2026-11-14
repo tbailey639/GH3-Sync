@@ -780,6 +780,12 @@
           <input type="text" id="cfgGamePathInput" placeholder="e.g. G:\Home\Games\Guitar Hero III">
         </div>
 
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label>Custom Songs & ONOGAMI Projects Directory:</label>
+          <input type="text" id="cfgSongsPathInput" placeholder="e.g. D:\Games\Guitar Hero III\Custom_Songs">
+          <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Folder where ONOGAMI Song Creator saves song projects and where custom projects are scanned.</p>
+        </div>
+
         <div id="cfgCompatBadge" style="margin-bottom: 16px;"></div>
 
         <div style="background: rgba(13, 16, 24, 0.7); padding: 14px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px;">
@@ -975,12 +981,19 @@
     function renderSongList(songs) {
       const container = document.getElementById('songsContainer');
       if (!songs || songs.length === 0) {
-        container.innerHTML = '<p style="color: var(--text-muted); padding: 16px;">No custom songs found in DATA/SONGS. Import songs or create one with ONOGAMI Song Creator!</p>';
+        if (currentFilter === 'created') {
+          container.innerHTML = '<p style="color: var(--text-muted); padding: 16px;">No songs created yet. Click the <b>ONOGAMI Song Creator</b> tab above to create your first custom song!</p>';
+        } else if (currentFilter === 'synced') {
+          container.innerHTML = '<p style="color: var(--text-muted); padding: 16px;">No synced or imported songs found.</p>';
+        } else {
+          container.innerHTML = '<p style="color: var(--text-muted); padding: 16px;">No custom songs found. Create songs with the <b>ONOGAMI Song Creator</b> or import customs via <b>Import Songs</b>.</p>';
+        }
         return;
       }
 
       container.innerHTML = songs.map(s => {
         const isOnogami = s.createdWithOnogamiCreator || s.isCreatedLocally;
+        const isProject = s.isProject;
         return `
           <div class="song-item">
             <div class="song-info">
@@ -988,13 +1001,27 @@
               <p>${escapeHtml(s.artist)} • <span style="font-family: monospace;">${escapeHtml(s.songId)}</span></p>
             </div>
             <div class="song-meta">
-              ${isOnogami ? '<span class="badge purple">🎸 ONOGAMI Song Creator</span>' : '<span class="badge blue">Synced / Imported</span>'}
+              ${isOnogami ? '<span class="badge purple">🎸 ONOGAMI Creator</span>' : '<span class="badge blue">Synced / Imported</span>'}
+              ${isProject ? '<span class="badge yellow" title="Project created - ready to compile or sync">📁 Project Created</span>' : '<span class="badge green">✓ In-Game Ready</span>'}
               <span class="badge">${(s.totalSizeBytes / (1024 * 1024)).toFixed(1)} MB</span>
+              ${s.projectDirectory ? `<button class="btn btn-outline btn-sm" onclick="openSongFolder('${escapeHtml(s.projectDirectory).replace(/\\/g, '\\\\')}')">📂 Open Folder</button>` : ''}
               <a href="/api/download/${encodeURIComponent(s.songId)}" class="btn btn-outline btn-sm" download>⬇️ Download</a>
             </div>
           </div>
         `;
       }).join('');
+    }
+
+    async function openSongFolder(folderPath) {
+      try {
+        const res = await fetch('/api/open-folder?path=' + encodeURIComponent(folderPath));
+        if (!res.ok) {
+          const err = await res.json();
+          alert('Could not open folder: ' + (err.error || 'Unknown error'));
+        }
+      } catch (e) {
+        console.error('Failed to open folder:', e);
+      }
     }
 
     function filterSongs(type) {
@@ -1676,6 +1703,7 @@
     async function openGamePathSettings() {
       const modal = document.getElementById('gamePathModal');
       const input = document.getElementById('cfgGamePathInput');
+      const songsInput = document.getElementById('cfgSongsPathInput');
       const check = document.getElementById('cfgDirectInstallCheckbox');
       const badge = document.getElementById('cfgCompatBadge');
 
@@ -1683,6 +1711,7 @@
       const data = await res.json();
 
       input.value = data.gamePath || '';
+      if (songsInput) songsInput.value = data.customSongsPath || '';
       check.checked = (data.directInstall !== false);
 
       if (data.compatibility) {
@@ -1702,6 +1731,7 @@
 
     async function saveGamePathSettings() {
       const path = document.getElementById('cfgGamePathInput').value.trim();
+      const songsPath = document.getElementById('cfgSongsPathInput') ? document.getElementById('cfgSongsPathInput').value.trim() : '';
       const direct = document.getElementById('cfgDirectInstallCheckbox').checked;
 
       const pathRes = await fetch('/api/gamepath/save', {
@@ -1714,6 +1744,14 @@
         const err = await pathRes.json();
         alert('Game path error: ' + (err.error || 'Invalid directory'));
         return;
+      }
+
+      if (songsPath) {
+        await fetch('/api/settings/songs-path', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ songsPath })
+        });
       }
 
       await fetch('/api/settings/direct-install', {
