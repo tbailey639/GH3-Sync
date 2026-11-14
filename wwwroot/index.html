@@ -1004,6 +1004,7 @@
               ${isOnogami ? '<span class="badge purple">🎸 ONOGAMI Creator</span>' : '<span class="badge blue">Synced / Imported</span>'}
               ${isProject ? '<span class="badge yellow" title="Project created - ready to compile or sync">📁 Project Created</span>' : '<span class="badge green">✓ In-Game Ready</span>'}
               <span class="badge">${(s.totalSizeBytes / (1024 * 1024)).toFixed(1)} MB</span>
+              ${s.isProject && s.projectDirectory ? `<button class="btn btn-primary btn-sm" onclick="openGhproj('${escapeHtml(s.projectDirectory).replace(/\\/g, '\\\\')}')">⚡ Open in Honeycomb</button>` : ''}
               ${s.projectDirectory ? `<button class="btn btn-outline btn-sm" onclick="openSongFolder('${escapeHtml(s.projectDirectory).replace(/\\/g, '\\\\')}')">📂 Open Folder</button>` : ''}
               <a href="/api/download/${encodeURIComponent(s.songId)}" class="btn btn-outline btn-sm" download>⬇️ Download</a>
             </div>
@@ -1021,6 +1022,18 @@
         }
       } catch (e) {
         console.error('Failed to open folder:', e);
+      }
+    }
+
+    async function openGhproj(folderPath) {
+      try {
+        const res = await fetch('/api/open-ghproj?path=' + encodeURIComponent(folderPath));
+        if (!res.ok) {
+          const err = await res.json();
+          alert('Could not open Honeycomb project: ' + (err.error || 'Unknown error'));
+        }
+      } catch (e) {
+        console.error('Failed to open .ghproj:', e);
       }
     }
 
