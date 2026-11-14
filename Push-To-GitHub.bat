@@ -5,10 +5,12 @@ echo ===================================================
 echo   Pushing GH3-Sync to https://github.com/tbailey639/GH3-Sync
 echo ===================================================
 echo.
-git branch -M main
-git push -u origin main
+git add .
+git commit -m "Update GH3-Sync" 2>nul
+git pull origin main --rebase
+git push origin main
 echo.
 echo ===================================================
-echo   Finished! Press any key to close this window.
+echo   Finished! All changes are live on GitHub.
 echo ===================================================
 pause
