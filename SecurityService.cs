@@ -173,6 +173,59 @@ public class SecurityService
 
             // Extract file safely
             entry.ExtractToFile(destinationPath, overwrite: true);
+            logger.LogDebug($"Extracted verified file: {fileName} -> {destinationPath}");
+        }
+    }
+
+    public static void ExtractProjectZip(byte[] zipBytes, string targetDir, SyncLogger logger)
+    {
+        const long MaxEntrySize = 150 * 1024 * 1024;
+        const long MaxTotalSize = 400 * 1024 * 1024;
+        long totalExtracted = 0;
+
+        var fullTargetDir = Path.GetFullPath(targetDir);
+        if (!Directory.Exists(fullTargetDir)) Directory.CreateDirectory(fullTargetDir);
+
+        using var ms = new MemoryStream(zipBytes);
+        using var archive = new ZipArchive(ms, ZipArchiveMode.Read);
+
+        foreach (var entry in archive.Entries)
+        {
+            var fileName = Path.GetFileName(entry.Name);
+            if (string.IsNullOrWhiteSpace(fileName) || fileName.Contains("..") || fileName.Contains('/') || fileName.Contains('\\'))
+            {
+                logger.LogWarn($"[SECURITY BLOCK] Blocked illegal filename: {entry.FullName}");
+                throw new SecurityException($"Illegal file path in package: {entry.FullName}");
+            }
+
+            bool isGhproj = fileName.EndsWith(".ghproj", StringComparison.OrdinalIgnoreCase);
+            bool isChart = fileName.EndsWith(".chart", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".mid", StringComparison.OrdinalIgnoreCase);
+            bool isIni = fileName.Equals("song.ini", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".ini", StringComparison.OrdinalIgnoreCase);
+            bool isAudio = fileName.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase);
+            bool isMetadata = fileName.Equals("metadata.json", StringComparison.OrdinalIgnoreCase);
+
+            if (!isGhproj && !isChart && !isIni && !isAudio && !isMetadata)
+            {
+                logger.LogWarn($"[SECURITY BLOCK] Rejected unallowed project file type: {fileName}");
+                continue;
+            }
+
+            if (entry.Length > MaxEntrySize)
+                throw new SecurityException($"File exceeds safety limits: {fileName}");
+
+            totalExtracted += entry.Length;
+            if (totalExtracted > MaxTotalSize)
+                throw new SecurityException("Package exceeds total safety size limits.");
+
+            var destinationPath = Path.GetFullPath(Path.Combine(fullTargetDir, fileName));
+            if (!destinationPath.StartsWith(fullTargetDir, StringComparison.OrdinalIgnoreCase))
+            {
+                logger.LogWarn($"[SECURITY BLOCK] Path traversal blocked: {destinationPath}");
+                throw new SecurityException($"Path traversal blocked: {destinationPath}");
+            }
+
+            entry.ExtractToFile(destinationPath, overwrite: true);
+            logger.LogDebug($"Extracted project file: {fileName} -> {destinationPath}");
         }
     }
 }
