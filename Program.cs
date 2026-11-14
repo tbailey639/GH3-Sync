@@ -193,6 +193,7 @@ app.MapGet("/api/status", (Gh3Service gh3, SyncLogger logger, SecurityService se
     {
         isDetected = gh3.IsDetected,
         gamePath = gh3.GamePath,
+        customSongsPath = SongCreatorService.ResolveSongsDirectory(),
         compatibility = compat,
         directInstall = AppConfig.Current.DirectInstallToGame,
         serverUrl = $"{bestAddr}?pin={sec.PairingPin}",
@@ -260,6 +261,65 @@ app.MapPost("/api/settings/direct-install", async (HttpContext context, SyncLogg
         return Results.Ok(new { success = true, directInstall = direct });
     }
     return Results.BadRequest(new { error = "directInstall boolean required." });
+});
+
+app.MapPost("/api/settings/songs-path", async (HttpContext context, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+    if (req.TryGetProperty("songsPath", out var p))
+    {
+        var newPath = p.GetString()?.Trim() ?? "";
+        if (!string.IsNullOrEmpty(newPath))
+        {
+            if (!Directory.Exists(newPath))
+            {
+                try { Directory.CreateDirectory(newPath); }
+                catch (Exception ex) { return Results.BadRequest(new { error = $"Could not create directory: {ex.Message}" }); }
+            }
+            AppConfig.UpdateCustomSongsPath(newPath);
+            logger.LogInfo($"[SETTINGS] Custom Songs directory updated to: {newPath}");
+            return Results.Ok(new { success = true, songsPath = newPath });
+        }
+    }
+    return Results.BadRequest(new { error = "songsPath is required." });
+});
+
+app.MapGet("/api/open-folder", (string? path, SyncLogger logger) =>
+{
+    if (string.IsNullOrWhiteSpace(path))
+        return Results.BadRequest(new { error = "Path is required" });
+
+    try
+    {
+        if (Directory.Exists(path))
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"\"{path}\"",
+                UseShellExecute = true
+            });
+            logger.LogInfo($"[EXPLORER] Opened folder: {path}");
+            return Results.Ok(new { success = true });
+        }
+        else if (File.Exists(path))
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"/select,\"{path}\"",
+                UseShellExecute = true
+            });
+            return Results.Ok(new { success = true });
+        }
+        return Results.NotFound(new { error = "Directory not found: " + path });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 });
 
 app.MapPost("/api/settings/network", async (HttpContext context, NatPortMappingService nat, SyncLogger logger) =>
