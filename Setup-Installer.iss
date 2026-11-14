@@ -2,9 +2,9 @@
 ; GH3-Sync: Complete P2P Song Synchronizer, Friends Network & ONOGAMI Song Creator for BetterGH3
 
 #define MyAppName "GH3-Sync"
-#define MyAppVersion "1.2.1-beta.2"
+#define MyAppVersion "1.3.0-beta.3"
 #define MyAppPublisher "Antigravity & ONOGAMI"
-#define MyAppURL "https://github.com"
+#define MyAppURL "https://github.com/tbailey639/GH3-Sync"
 #define MyAppExeName "GH3-Sync.exe"
 
 [Setup]
@@ -19,7 +19,7 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
-OutputDir=G:\Guitar Hero Songs\GH3-Sync\dist
+OutputDir=dist
 OutputBaseFilename=GH3-Sync-Setup
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -35,10 +35,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "G:\Guitar Hero Songs\GH3-Sync\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\Guitar Hero Songs\GH3-Sync\dist\wwwroot\*"; DestDir: "{app}\wwwroot"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "G:\Guitar Hero Songs\GH3-Sync\dist\README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\Guitar Hero Songs\GH3-Sync\dist\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\wwwroot\*"; DestDir: "{app}\wwwroot"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
