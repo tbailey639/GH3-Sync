@@ -70,7 +70,21 @@ public class Gh3Service
     public string SongsPath => Path.Combine(DataPath, "SONGS");
     public string MusicPath => Path.Combine(DataPath, "MUSIC");
     public string CustomsPakPath => Path.Combine(DataPath, "customs.pak.xen");
-    public string StagingPath => Path.Combine(@"G:\Guitar Hero Songs", "Customs_Downloads");
+    public string StagingPath
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(GamePath) && Directory.Exists(GamePath))
+            {
+                var p = Path.Combine(GamePath, "Staging_Downloads");
+                if (!Directory.Exists(p)) { try { Directory.CreateDirectory(p); } catch { } }
+                return p;
+            }
+            var fallback = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GH3-Sync", "Staging_Downloads");
+            if (!Directory.Exists(fallback)) { try { Directory.CreateDirectory(fallback); } catch { } }
+            return fallback;
+        }
+    }
 
     public Gh3Service()
     {
