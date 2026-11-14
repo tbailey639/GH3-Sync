@@ -270,7 +270,7 @@
       <div class="logo">
         <div class="logo-icon">🎸</div>
         <div>
-          <h1>GH3<span>-Sync</span> <span class="badge blue" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Beta 2</span></h1>
+          <h1>GH3<span>-Sync</span> <span class="badge blue" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Beta 3</span></h1>
           <p style="font-size: 12px; color: var(--text-muted);">P2P Synchronizer, Friends Network & ONOGAMI Song Creator</p>
         </div>
       </div>
@@ -478,13 +478,22 @@
         </div>
         
         <div style="background: rgba(13, 16, 24, 0.6); padding: 16px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Your Secure Invite Address:</span>
-            <span class="badge blue" id="pinBadge">PIN: ------</span>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Your Secure Invite Address:</span>
+              <span id="natPill" class="badge" style="font-size: 11px; margin-left: 8px;">NAT/UPnP: Checking...</span>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span class="badge blue" id="pinBadge">PIN: ------</span>
+              <button class="btn btn-outline btn-sm" onclick="openNetworkSettingsModal()">🌐 Network / NAT Settings</button>
+            </div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
             <code id="myAddress" style="font-size: 15px; color: var(--accent); font-weight: 700; word-break: break-all;">Detecting...</code>
             <button class="btn btn-outline btn-sm" onclick="copyMyAddress()">📋 Copy Invite Link</button>
+          </div>
+          <div id="natHelpLine" style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
+            Checking public address and router port mapping...
           </div>
         </div>
 
@@ -721,6 +730,43 @@
       </div>
     </div>
 
+    <!-- ==================== NETWORK & NAT / UPNP SETTINGS MODAL ==================== -->
+    <div id="networkSettingsModal" class="modal-overlay">
+      <div class="card" style="max-width: 620px; width: 90%; margin: 0;">
+        <h2>🌐 Network, Public IP & Port Mapping (UPnP / NAT-PMP)</h2>
+        <p class="card-subtitle">
+          Connect to friends and opponents anywhere across the Internet outside your local Wi-Fi / LAN network.
+        </p>
+
+        <div style="background: rgba(13, 16, 24, 0.7); padding: 14px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px;">
+          <label class="switch-label">
+            <input type="checkbox" id="cfgAutoPortMapCheckbox" checked>
+            <span><strong>Enable Automatic UPnP / NAT-PMP:</strong> Automatically request your router / gateway to forward port 7373 so outside friends can connect.</span>
+          </label>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label>Custom Public IP or Dynamic DNS (DDNS) Hostname (Optional):</label>
+          <input type="text" id="cfgCustomPublicAddress" placeholder="e.g. mygh3host.ddns.net:7373 or 100.11.21.186:7373">
+          <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+            Leave blank to let GH3-Sync automatically detect your public IP reflection.
+          </p>
+        </div>
+
+        <div id="netStatusDetail" style="background: rgba(20, 24, 34, 0.8); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 13px; margin-bottom: 16px;">
+          Detecting NAT status...
+        </div>
+
+        <div style="display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+          <button class="btn btn-outline btn-sm" onclick="refreshNatMapping()">🔄 Re-detect Public IP & Port Map</button>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-outline" onclick="closeNetworkSettingsModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveNetworkSettings()">Save Network Config</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ==================== GAME PATH SETTINGS MODAL ==================== -->
     <div id="gamePathModal" class="modal-overlay">
       <div class="card" style="max-width: 600px; width: 90%; margin: 0;">
@@ -863,6 +909,29 @@
         count.innerText = allSongs.length;
         document.getElementById('myAddress').innerText = data.serverUrl;
         document.getElementById('pinBadge').innerText = 'SESSION PIN: ' + data.pairingPin;
+
+        // NAT & UPnP Status Indicators
+        const natPill = document.getElementById('natPill');
+        const natHelp = document.getElementById('natHelpLine');
+        if (data.natStatus) {
+          if (data.natStatus.isMapped) {
+            natPill.className = 'badge green';
+            natPill.innerText = `✓ Port Mapped (${data.natStatus.method})`;
+            natHelp.innerHTML = `Public IP: <code style="color: var(--green);">${data.natStatus.publicIp || 'Unknown'}</code> • External Port: <b>${data.natStatus.externalPort}</b> (Accessible outside network!)`;
+          } else if (data.customPublicAddress) {
+            natPill.className = 'badge purple';
+            natPill.innerText = `Custom DDNS / Host`;
+            natHelp.innerHTML = `Using configured custom public address: <code style="color: #a78bfa;">${data.customPublicAddress}</code>`;
+          } else if (data.natStatus.publicIp) {
+            natPill.className = 'badge blue';
+            natPill.innerText = `Public IP Detected (${data.natStatus.publicIp})`;
+            natHelp.innerHTML = `Detected Public IP: <code style="color: #60a5fa;">${data.natStatus.publicIp}</code>. Ready for external connections with router port 7373 forwarding.`;
+          } else {
+            natPill.className = 'badge yellow';
+            natPill.innerText = `LAN Only (Port 7373)`;
+            natHelp.innerHTML = `Running on local network: <code>${data.localAddress || ''}</code>. Click "Network / NAT Settings" to configure external public access.`;
+          }
+        }
 
         if (data.profile) {
           document.getElementById('profUsernameDisplay').innerText = data.profile.username;
@@ -1536,6 +1605,70 @@
         alertBox.className = 'alert error';
         alertBox.style.display = 'block';
         alertBox.innerText = 'Restore error: ' + err.message;
+      }
+    }
+
+    // ==================== NETWORK & NAT SETTINGS MODAL ====================
+    async function openNetworkSettingsModal() {
+      const modal = document.getElementById('networkSettingsModal');
+      const customInput = document.getElementById('cfgCustomPublicAddress');
+      const autoMapCheck = document.getElementById('cfgAutoPortMapCheckbox');
+      const detail = document.getElementById('netStatusDetail');
+
+      const res = await fetch('/api/status');
+      const data = await res.json();
+
+      customInput.value = data.customPublicAddress || '';
+      autoMapCheck.checked = (data.autoPortMap !== false);
+
+      const nat = data.natStatus || {};
+      detail.innerHTML = `
+        <div style="display: grid; gap: 6px;">
+          <div><b>Public IP:</b> <span style="color: var(--blue); font-family: monospace;">${nat.publicIp || 'Not detected'}</span></div>
+          <div><b>External Port:</b> <span style="font-family: monospace;">${nat.externalPort || 7373}</span></div>
+          <div><b>Port Mapped Status:</b> ${nat.isMapped 
+            ? '<span class="badge green">✓ Automatically Forwarded (' + nat.method + ')</span>' 
+            : '<span class="badge yellow">Direct / Manual Port Forwarding</span>'}</div>
+          <div><b>Active Invite URL:</b> <code style="color: var(--accent);">${escapeHtml(data.serverUrl || '')}</code></div>
+        </div>
+      `;
+
+      modal.style.display = 'flex';
+    }
+
+    function closeNetworkSettingsModal() {
+      document.getElementById('networkSettingsModal').style.display = 'none';
+    }
+
+    async function saveNetworkSettings() {
+      const customAddr = document.getElementById('cfgCustomPublicAddress').value.trim();
+      const autoPort = document.getElementById('cfgAutoPortMapCheckbox').checked;
+
+      const res = await fetch('/api/settings/network', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customPublicAddress: customAddr, autoPortMap: autoPort })
+      });
+
+      if (res.ok) {
+        closeNetworkSettingsModal();
+        loadStatus();
+        alert('Network and port mapping settings updated successfully!');
+      } else {
+        alert('Could not save network settings.');
+      }
+    }
+
+    async function refreshNatMapping() {
+      const detail = document.getElementById('netStatusDetail');
+      detail.innerHTML = '<em>Refreshing UPnP/NAT-PMP port mapping and detecting public IP...</em>';
+      try {
+        const res = await fetch('/api/nat/refresh', { method: 'POST' });
+        const data = await res.json();
+        await openNetworkSettingsModal();
+        loadStatus();
+      } catch (err) {
+        alert('Error refreshing NAT: ' + err.message);
       }
     }
 
