@@ -322,6 +322,56 @@ app.MapGet("/api/open-folder", (string? path, SyncLogger logger) =>
     }
 });
 
+app.MapGet("/api/open-ghproj", (string? path, SyncLogger logger) =>
+{
+    if (string.IsNullOrWhiteSpace(path))
+        return Results.BadRequest(new { error = "Path is required" });
+
+    try
+    {
+        string? ghprojFile = null;
+        if (File.Exists(path) && path.EndsWith(".ghproj", StringComparison.OrdinalIgnoreCase))
+        {
+            ghprojFile = path;
+        }
+        else if (Directory.Exists(path))
+        {
+            var files = Directory.GetFiles(path, "*.ghproj");
+            if (files.Length > 0) ghprojFile = files[0];
+        }
+
+        if (ghprojFile != null && File.Exists(ghprojFile))
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = ghprojFile,
+                    UseShellExecute = true
+                });
+                logger.LogInfo($"[HONEYCOMB] Launched project: {ghprojFile}");
+                return Results.Ok(new { success = true, opened = ghprojFile });
+            }
+            catch
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"/select,\"{ghprojFile}\"",
+                    UseShellExecute = true
+                });
+                return Results.Ok(new { success = true, opened = "explorer" });
+            }
+        }
+
+        return Results.NotFound(new { error = "No .ghproj file found at: " + path });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapPost("/api/settings/network", async (HttpContext context, NatPortMappingService nat, SyncLogger logger) =>
 {
     using var reader = new StreamReader(context.Request.Body);
