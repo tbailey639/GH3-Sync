@@ -4,6 +4,27 @@ All notable changes to the GH3-Sync project are documented in this file.
 
 ---
 
+## [Beta 3] - 2026-11-14
+
+### 🌟 New Features & Enhancements
+* **Public IP Reflection & External WAN Connection Support:**
+  * Added automated public IP resolution using multi-source IP echo services (`api.ipify.org`, `icanhazip.com`, `ifconfig.me`).
+  * Enables players to connect and sync songs across different Wi-Fi networks and across the Internet.
+* **Automatic Router Port Mapping (UPnP IGD & NAT-PMP):**
+  * Built-in `NatPortMappingService` automatically communicates with home routers via UPnP Internet Gateway Device (IGD) and NAT-PMP (port 5351) protocols to dynamically forward TCP port 7373 without manual router admin login.
+* **Custom Public IP / DDNS Hostname Configuration:**
+  * Added direct configuration in the dashboard under **🌐 Network / NAT Settings** for users with Dynamic DNS hostnames (e.g., No-IP, DuckDNS) or static public IPs.
+* **Interactive Network Status & NAT Monitoring:**
+  * Real-time NAT badge display (`✓ Port Mapped (UPnP IGD)`, `Public IP Detected`, or `LAN Only`) on the P2P Sync dashboard with 1-click re-detect/refresh.
+* **Heartbeat & Telemetry Upgraded:**
+  * Admin Hub signaling now transmits external public IP and port mappings, ensuring remote friends can auto-resolve addresses outside the local network.
+
+### 🐛 Bug Fixes & Stability
+* Fixed external peer connections failing due to localhost / internal subnet IP binding (`192.168.x.x` / `10.x.x.x`).
+* Fixed Unique Friend Code auto-resolution when peers are located outside the local network.
+
+---
+
 ## [Beta 2] - 2026-11-14
 
 ### 🌟 New Features & Enhancements
