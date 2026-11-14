@@ -53,6 +53,12 @@ public class SongCreatorService
             catch { }
         }
 
+        // Check if user set a custom songs directory in config
+        if (!string.IsNullOrWhiteSpace(AppConfig.Current.CustomSongsPath) && Directory.Exists(AppConfig.Current.CustomSongsPath))
+        {
+            return AppConfig.Current.CustomSongsPath;
+        }
+
         // Check if game path has a Customs or Songs directory
         if (!string.IsNullOrWhiteSpace(AppConfig.Current.GamePath) && Directory.Exists(AppConfig.Current.GamePath))
         {
@@ -259,8 +265,8 @@ public class SongCreatorService
             var ghprojJson = JsonSerializer.Serialize(projData, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(ghprojFullPath, ghprojJson);
 
-            // Register this song ID as created by ONOGAMI creator
-            AppConfig.RegisterCreatedSong(cleanSongId);
+            // Register this song ID and project directory as created by ONOGAMI creator
+            AppConfig.RegisterCreatedSong(cleanSongId, targetDir);
 
             return new CreatedSongResult
             {
