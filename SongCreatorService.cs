@@ -38,11 +38,46 @@ public class SongCreatorService
 
     public SongCreatorService(string? songsDir = null)
     {
-        _defaultSongsDir = songsDir ?? @"G:\Guitar Hero Songs";
-        if (!Directory.Exists(_defaultSongsDir))
+        _defaultSongsDir = ResolveSongsDirectory(songsDir);
+    }
+
+    public static string ResolveSongsDirectory(string? preferred = null)
+    {
+        if (!string.IsNullOrWhiteSpace(preferred))
         {
-            try { Directory.CreateDirectory(_defaultSongsDir); } catch { }
+            try
+            {
+                if (!Directory.Exists(preferred)) Directory.CreateDirectory(preferred);
+                return preferred;
+            }
+            catch { }
         }
+
+        // Check if game path has a Customs or Songs directory
+        if (!string.IsNullOrWhiteSpace(AppConfig.Current.GamePath) && Directory.Exists(AppConfig.Current.GamePath))
+        {
+            var gameCustoms = Path.Combine(AppConfig.Current.GamePath, "Custom_Songs");
+            try
+            {
+                if (!Directory.Exists(gameCustoms)) Directory.CreateDirectory(gameCustoms);
+                return gameCustoms;
+            }
+            catch { }
+        }
+
+        // Standard user documents / appdata fallback location that works on EVERY PC
+        var docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        var docsSongs = Path.Combine(docs, "Guitar Hero Songs");
+        try
+        {
+            if (!Directory.Exists(docsSongs)) Directory.CreateDirectory(docsSongs);
+            return docsSongs;
+        }
+        catch { }
+
+        var appDataSongs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GH3-Sync", "CreatedSongs");
+        if (!Directory.Exists(appDataSongs)) Directory.CreateDirectory(appDataSongs);
+        return appDataSongs;
     }
 
     public CreatedSongResult CreateSongFromOnogamiMethod(
