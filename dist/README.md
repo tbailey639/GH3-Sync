@@ -16,7 +16,7 @@
 ### 2. 🛡️ Career Save Protection & 1-Click Restore
 * **The Problem:** In vanilla GH3 and early BetterGH3, adding custom songs or partitions could wipe career stars, high scores, and unlocks.
 * **Automated Safety Backup:** GH3-Sync automatically creates a timestamped backup of `%USERPROFILE%\Documents\Aspyr\Guitar Hero III\Save` (`s000.d` and `toc.dat`) before *every* P2P sync and file import.
-* **1-Click Restore:** Visit the **Career Saves** tab anytime and click **"⏮️ Restore Latest Career Save"** to recover all career progress with customs intact!
+* **1-Click Restore:** Visit the **Career Saves** tab anytime and click **"Restore Latest Career Save"** to recover all career progress with customs intact!
 
 ### 3. 🔍 Duplicate Song Detection & ONOGAMI Fingerprinting
 * **No More Duplicate Downloads:** When syncing with a friend, GH3-Sync compares your local songs against your friend's manifest.
@@ -24,17 +24,18 @@
 * **Auto-Unchecked:** Detected duplicates are **automatically unchecked** and marked with `⚠️ Duplicate Detected (Already Owned)`, preventing accidental re-downloads while still allowing manual override if desired.
 * **Pre-verified Songs:** *Beat It*, *While My Guitar Gently Weeps*, and *ONOGAMI* are recognized as ONOGAMI-created customs.
 
-### 4. 👥 Friends & "Trusted Friend" System (Skip PIN & IP)
-* **Permanent Unique Friend Code:** Every player receives a permanent unique code (e.g. `GH3-84A2-9F10`) with a Show/Hide toggle to prevent spam.
-* **Allow Trusted Friend:** Marking a friend as **Trusted** issues an encrypted persistent Trust Token.
-* **Zero-Setup Connecting:** Trusted friends select your name from the dropdown on the P2P Sync tab and connect with 1 click—**no IP address or Session PIN required**!
-* **Instant Revocation:** Click **"Revoke Trust"** or **"Unfriend"** at any time to instantly destroy the access token.
+### 4. 👥 Friends & "Trusted Friend" System (Automatic IP Sharing)
+* **Automatic IP Sharing (Trusted Friends):** When you mark a friend as **Trusted**, their IP address is automatically discovered and resolved in real time via LAN UDP beacons (port 7374) and the Central Admin Hub. No manual IP exchange or PIN entry needed!
+* **IP Privacy (Regular Friends):** Untrusted friends' IPs remain strictly private for security; manual IP exchange and session PINs are required until trust is granted.
+* **Permanent Unique Friend Code:** Every player receives a permanent unique code (e.g. `GH3-6475-71AF`) with a Show/Hide toggle to prevent spam.
+* **Instant Revocation:** Click **"Revoke Trust"** or **"Unfriend"** at any time to immediately destroy the access token.
 
 ### 5. 🎸 ONOGAMI Song Creator
 * Built-in custom song generator using the proven ONOGAMI method:
-  * **Auto-Chart Generation:** Auto-generates a full 5-fret `.chart` file from your chosen BPM (no MIDI/chart file needed!), OR upload your own `.chart` / `.mid`.
+  * **Auto-Chart Generation:** Auto-generates full 5-fret note charts across all 4 difficulties (**Easy, Medium, Hard, Expert**) from your chosen BPM + audio file!
+  * **Custom MIDI / Chart Support:** Upload your own `.chart` or `.mid` files if charted in Moonscraper/Reaper.
   * **Audio Support:** Supports `.mp3`, `.wav`, and `.ogg`.
-  * **Honeycomb Ready:** Generates the Neversoft `song.ini` and the complete Honeycomb `.ghproj` project file.
+  * **Honeycomb Ready:** Generates Neversoft `song.ini` and the complete Honeycomb `.ghproj` project file.
   * **Created by Me Tagging:** Created songs automatically appear in your **"Created by Me"** library filter with the `🎸 ONOGAMI Song Creator` badge.
 
 ### 6. 📁 1-Click File Import (`.gh3pack`, `.gh3song`, `.sgh`, `.zip`)
@@ -54,16 +55,13 @@
 
 ## 🚀 How to Run & Distribute
 
-### Option A: Standalone Executable (.exe)
-1. Run `GH3-Sync.exe` in `dist/`.
-2. It automatically starts the server and opens your web browser to `http://localhost:7373`.
+### Option A: 1-Click Windows Installer (Recommended)
+* Download and run **`GH3-Sync-Setup.exe`** from the [Latest Release](https://github.com/tbailey639/GH3-Sync/releases/latest).
+* Automatically installs desktop & start menu shortcuts, BetterGH3 components, and an uninstaller.
 
-### Option B: 1-Click Windows Installer (Inno Setup)
-* To compile a standard Windows installer wizard (`GH3-Sync-Setup.exe`):
-  1. Open Inno Setup Compiler (`ISCC.exe` or Inno Setup IDE).
-  2. Open `Setup-Installer.iss`.
-  3. Click **Compile**.
-  * The compiled installer creates Start Menu shortcuts, Desktop icons, and an uninstaller.
+### Option B: Standalone Executable (.exe)
+* Run `GH3-Sync.exe` in `dist/`.
+* Automatically launches the server and opens your web browser to `http://localhost:7373`.
 
 ---
 
@@ -74,7 +72,7 @@
 
 ---
 
-## ?? License & Terms of Use
+## ⚖️ License & Terms of Use
 This software is licensed under the **PolyForm Noncommercial License 1.0.0**.
 * **Allowed:** Free for personal, community, and noncommercial gaming use.
 * **Prohibited:** Any commercial use, monetized distribution, or selling of this software in whole or in part without explicit written permission is strictly prohibited.
