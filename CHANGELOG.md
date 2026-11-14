@@ -22,6 +22,12 @@ All notable changes to the GH3-Sync project are documented in this file.
 ### 🐛 Bug Fixes & Stability
 * Fixed external peer connections failing due to localhost / internal subnet IP binding (`192.168.x.x` / `10.x.x.x`).
 * Fixed Unique Friend Code auto-resolution when peers are located outside the local network.
+* **Resolved ONOGAMI Project Discovery & Song List Visibility:**
+  * Fixed created ONOGAMI song projects (`.ghproj`, `song.ini`, `notes.chart`, `song.mp3`) not appearing in the dashboard under **All Songs** and **Created by Me (ONOGAMI)**.
+  * `GetInstalledCustomSongs()` now automatically scans all created song directories (`GamePath\Custom_Songs`, `Documents\Guitar Hero Songs`, `AppData\GH3-Sync\CreatedSongs`) in addition to compiled `DATA\SONGS` game PAKs.
+  * Added direct **📂 Open Folder** button on created songs to immediately open Windows Explorer to the song project folder.
+  * Added project folder packaging support to `PackageSong()` and `ValidateAndExtractZip()` so uncompiled project files can be downloaded, exported in `.gh3pack` archives, and synced across friends seamlessly.
+  * Replaced hardcoded `G:\` drive paths with dynamic multi-drive and multi-system directory resolution, fixing `"Could not find a part of the path 'G:\Guitar Hero Songs'"` errors on systems without a `G:` drive.
 
 ---
 
