@@ -1,0 +1,39 @@
+# 🎸 GH3-Sync Changelog
+
+All notable changes to the GH3-Sync project are documented in this file.
+
+---
+
+## [Beta 2] - 2026-11-14
+
+### 🌟 New Features & Enhancements
+* **Direct Song Downloads from Connected Users:**
+  * Added direct `⬇️ Download .gh3song` buttons on both **In Sync** and **Missing Locally** songs when connected to a peer.
+  * Added `⬇️ Download Selected Files` batch button to download multiple selected song archives simultaneously.
+  * New `/api/peer/download-file` endpoint that securely fetches, decrypts (AES-256-GCM), and packages `.gh3song` files on the fly.
+* **Automatic Trusted Friend IP Discovery:**
+  * Real-time local network UDP beacons (port 7374) and Central Admin Hub signaling automatically resolve live IP addresses for trusted friends with zero manual IP entry or PIN sharing.
+  * Selecting a trusted friend from the dropdown automatically populates and verifies their connection.
+* **Strict Privacy Isolation for Regular Friends:**
+  * Untrusted friends' IP addresses remain strictly protected and isolated on the server.
+* **PolyForm Noncommercial License 1.0.0:**
+  * Updated licensing to formally protect the project for free community/personal gaming use while prohibiting commercial or monetized re-distribution.
+* **Comprehensive 9-Feature Documentation Guide:**
+  * Complete interactive user guide integrated directly into the dashboard's "About & Help" tab.
+
+### 🐛 Bug Fixes & Stability
+* Resolved a JavaScript variable scope collision in `compareWithFriend()` ensuring seamless page loading and button responsiveness.
+* Fixed character encoding on GitHub Releases and project documentation.
+
+---
+
+## [Beta 1] - 2026-11-14
+
+### 🎸 Initial Public Release
+* **High-Speed P2P Synchronization:** Connect to opponents or friends and synchronize custom songs and BetterGH3 setlists in seconds.
+* **ONOGAMI Song Creator:** Multi-difficulty (Easy, Medium, Hard, Expert) auto-charting rhythm engine + MIDI/chart import with Honeycomb `.ghproj` generation.
+* **Career Save Protection & 1-Click Restore:** Automated timestamped backups of `s000.d` and `toc.dat` before every sync/import, preventing career star and score resets.
+* **Duplicate Song Prevention:** Cryptographic fingerprinting and metadata matching automatically unchecks already-owned tracks.
+* **Universal Game Directory Engine:** Automatic detection of `GH3.exe`, `bettergh3.asi`, and game partitions across any custom installation folder.
+* **In-Game Companion HUD:** Real-time on-screen status notifications in Guitar Hero III during gameplay.
+* **Integrated Diagnostic Feedback:** Built-in "⚠️ Not Working?" reporting tool for quick troubleshooting.

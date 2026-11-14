@@ -8,3 +8,4 @@ dist/*.log
 *.suo
 .vs/
 .vscode/
+dist/*.dll

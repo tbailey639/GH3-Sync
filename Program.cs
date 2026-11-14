@@ -127,7 +127,7 @@ _ = Task.Run(async () =>
                 friendCode = AppConfig.Current.FriendCode,
                 username = AppConfig.Current.Username,
                 isBetterGh3 = compat.IsBetterGh3,
-                appVersion = "1.2.0",
+                appVersion = "1.2.1-beta.2",
                 customsCount = gh3Service.GetInstalledCustomSongs().Count,
                 localPort = port,
                 localIp = GetLocalIpAddress(),
@@ -708,6 +708,48 @@ app.MapPost("/api/peer/sync-all", async (HttpContext context, IHttpClientFactory
     }
 });
 
+// DIRECT SONG DOWNLOAD FROM CONNECTED USER
+app.MapGet("/api/peer/download-file", async (string remoteUrl, string songId, IHttpClientFactory clientFactory, SyncLogger logger, SecurityService sec) =>
+{
+    var cleanUrl = remoteUrl?.Trim() ?? "";
+    var cleanSongId = songId?.Trim() ?? "";
+
+    if (string.IsNullOrEmpty(cleanUrl) || string.IsNullOrEmpty(cleanSongId))
+        return Results.BadRequest(new { error = "remoteUrl and songId are required." });
+
+    string? pin = null;
+    string? token = null;
+    var uri = new Uri(cleanUrl);
+    var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+    if (!string.IsNullOrEmpty(query["pin"])) pin = query["pin"];
+    if (!string.IsNullOrEmpty(query["token"])) token = query["token"];
+
+    var baseUrl = $"{uri.Scheme}://{uri.Authority}";
+
+    try
+    {
+        logger.LogInfo($"Downloading song package '{cleanSongId}' from connected user at: {baseUrl}");
+        var client = clientFactory.CreateClient();
+        client.Timeout = TimeSpan.FromMinutes(5);
+        if (!string.IsNullOrEmpty(pin)) client.DefaultRequestHeaders.Add("X-GH3-PIN", pin);
+        if (!string.IsNullOrEmpty(token)) client.DefaultRequestHeaders.Add("X-GH3-Trust-Token", token);
+
+        var downloadUrl = $"{baseUrl}/api/download/{Uri.EscapeDataString(cleanSongId)}" +
+            (!string.IsNullOrEmpty(token) ? $"?token={token}" : (!string.IsNullOrEmpty(pin) ? $"?pin={pin}" : ""));
+
+        var encryptedBytes = await client.GetByteArrayAsync(downloadUrl);
+        var zipBytes = sec.DecryptPayload(encryptedBytes);
+
+        logger.LogInfo($"Successfully downloaded '{cleanSongId}' ({zipBytes.Length:N0} bytes) from connected user.");
+        return Results.File(zipBytes, "application/zip", $"{cleanSongId}.gh3song");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError($"Error downloading song '{cleanSongId}' from connected user", ex);
+        return Results.BadRequest(new { error = $"Could not download song from connected user: {ex.Message}" });
+    }
+});
+
 // ==================== ONOGAMI SONG CREATOR ====================
 app.MapPost("/api/creator/create-song", async (HttpRequest request, SongCreatorService creator, SyncLogger logger) =>
 {
@@ -851,7 +893,7 @@ if (!args.Contains("--no-browser") && !args.Contains("--headless"))
 }
 
 Console.WriteLine("=================================================");
-Console.WriteLine("  🎸 GH3-Sync | Complete P2P & Song Creator Engine");
+Console.WriteLine("  🎸 GH3-Sync Beta 2 | Complete P2P & Song Creator Engine");
 Console.WriteLine($"  Local Web Dashboard: http://localhost:{port}");
 Console.WriteLine($"  LAN Address:         http://{GetLocalIpAddress()}:{port}");
 Console.WriteLine($"  Active Profile:      {friendService.Profile.Username} [{friendService.Profile.FriendCode}]");

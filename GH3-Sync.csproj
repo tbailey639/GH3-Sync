@@ -7,6 +7,10 @@
     <RootNamespace>GH3_Sync</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Version>1.2.1-beta.2</Version>
+    <AssemblyVersion>1.2.1.0</AssemblyVersion>
+    <FileVersion>1.2.1.0</FileVersion>
+    <Product>GH3-Sync Beta 2</Product>
   </PropertyGroup>
 
 </Project>

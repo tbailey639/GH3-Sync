@@ -2,7 +2,7 @@
 ; GH3-Sync: Complete P2P Song Synchronizer, Friends Network & ONOGAMI Song Creator for BetterGH3
 
 #define MyAppName "GH3-Sync"
-#define MyAppVersion "1.2.0"
+#define MyAppVersion "1.2.1-beta.2"
 #define MyAppPublisher "Antigravity & ONOGAMI"
 #define MyAppURL "https://github.com"
 #define MyAppExeName "GH3-Sync.exe"
@@ -38,6 +38,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "G:\Guitar Hero Songs\GH3-Sync\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "G:\Guitar Hero Songs\GH3-Sync\dist\wwwroot\*"; DestDir: "{app}\wwwroot"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "G:\Guitar Hero Songs\GH3-Sync\dist\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "G:\Guitar Hero Songs\GH3-Sync\dist\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

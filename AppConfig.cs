@@ -42,7 +42,7 @@ public class FeedbackItem
     public string Message { get; set; } = "";
     public string UserFriendCode { get; set; } = "";
     public string Username { get; set; } = "";
-    public string AppVersion { get; set; } = "1.2.0";
+    public string AppVersion { get; set; } = "1.2.1-beta.2";
     public bool IsBetterGh3 { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string Status { get; set; } = "Open"; // Open, Investigating, Resolved

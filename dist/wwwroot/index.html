@@ -270,7 +270,7 @@
       <div class="logo">
         <div class="logo-icon">🎸</div>
         <div>
-          <h1>GH3<span>-Sync</span></h1>
+          <h1>GH3<span>-Sync</span> <span class="badge blue" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Beta 2</span></h1>
           <p style="font-size: 12px; color: var(--text-muted);">P2P Synchronizer, Friends Network & ONOGAMI Song Creator</p>
         </div>
       </div>
@@ -503,9 +503,10 @@
         <div id="comparisonResult" style="margin-top: 20px; display: none;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
             <h3 style="font-size: 16px;">Song Diff & Selection:</h3>
-            <div style="display: flex; gap: 8px;">
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
               <button class="btn btn-outline btn-sm" onclick="toggleSelectAllSongs(true)">Select All</button>
               <button class="btn btn-outline btn-sm" onclick="toggleSelectAllSongs(false)">Deselect All</button>
+              <button class="btn btn-outline btn-sm" onclick="downloadAllSelectedFromPeer()">⬇️ Download Selected Files</button>
             </div>
           </div>
 
@@ -647,6 +648,7 @@
             <li><strong>Select & Connect:</strong> Choose a Trusted Friend from the dropdown (IP resolves automatically) or paste a peer's invite URL.</li>
             <li><strong>Manifest Inspection:</strong> GH3-Sync compares the peer's installed songs against your local library and highlights tracks you are missing.</li>
             <li><strong>Selective or Batch Sync:</strong> Check the songs you wish to install, or click <strong>"Select All"</strong>, then press <strong>"Sync Selected Songs"</strong>. Songs are downloaded and installed directly into your game folder in seconds.</li>
+            <li><strong>Direct Peer File Downloads (Beta 2):</strong> You can now click <strong>"⬇️ Download .gh3song"</strong> on any song (both already-synced tracks and missing tracks) to download the standalone song package directly to your computer.</li>
           </ul>
         </div>
 
@@ -1321,9 +1323,12 @@
             <div class="song-item">
               <div class="song-info">
                 <h3>${escapeHtml(s.title)}</h3>
-                <p>${escapeHtml(s.artist)}</p>
+                <p>${escapeHtml(s.artist)} • <span style="font-family: monospace;">${escapeHtml(s.songId)}</span></p>
               </div>
-              <span class="badge green">✓ In Sync</span>
+              <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <span class="badge green">✓ In Sync</span>
+                <button class="btn btn-outline btn-sm" onclick="downloadSongFromPeer('${escapeHtml(s.songId)}', '${escapeHtml(s.title)}')">⬇️ Download .gh3song</button>
+              </div>
             </div>
           `).join('');
         }
@@ -1340,8 +1345,9 @@
                     <p>${escapeHtml(s.artist)} • Ready to download (${(s.totalSizeBytes / (1024*1024)).toFixed(1)} MB)</p>
                   </div>
                 </div>
-                <div>
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                   ${isDup ? `<span class="badge yellow">⚠️ Duplicate (${escapeHtml(s.duplicateReason)})</span>` : '<span class="badge blue">Missing on Your PC</span>'}
+                  <button class="btn btn-outline btn-sm" onclick="downloadSongFromPeer('${escapeHtml(s.songId)}', '${escapeHtml(s.title)}')">⬇️ Download File</button>
                 </div>
               </div>
             `;
@@ -1364,6 +1370,34 @@
 
     function toggleSelectAllSongs(select) {
       document.querySelectorAll('.song-checkbox').forEach(cb => cb.checked = select);
+    }
+
+    function downloadSongFromPeer(songId, songTitle) {
+      const remoteUrl = document.getElementById('remoteUrlInput').value.trim();
+      if (!remoteUrl) {
+        alert('Please connect to a peer first.');
+        return;
+      }
+      const dlUrl = `/api/peer/download-file?remoteUrl=${encodeURIComponent(remoteUrl)}&songId=${encodeURIComponent(songId)}`;
+      const a = document.createElement('a');
+      a.href = dlUrl;
+      a.download = `${songId}.gh3song`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    function downloadAllSelectedFromPeer() {
+      const selected = Array.from(document.querySelectorAll('.song-checkbox:checked')).map(cb => cb.value);
+      if (selected.length === 0) {
+        alert('Please check at least one song to download.');
+        return;
+      }
+      selected.forEach((songId, index) => {
+        setTimeout(() => {
+          downloadSongFromPeer(songId);
+        }, index * 400);
+      });
     }
 
     async function syncSelectedSongs() {
