@@ -33,6 +33,7 @@ var securityService = new SecurityService();
 var friendService = new FriendService(baseDir);
 var creatorService = new SongCreatorService();
 var saveManager = new SaveManager(syncLogger);
+var natService = new NatPortMappingService(port, syncLogger);
 
 builder.Services.AddSingleton(gh3Service);
 builder.Services.AddSingleton(syncLogger);
@@ -40,6 +41,7 @@ builder.Services.AddSingleton(securityService);
 builder.Services.AddSingleton(friendService);
 builder.Services.AddSingleton(creatorService);
 builder.Services.AddSingleton(saveManager);
+builder.Services.AddSingleton(natService);
 builder.Services.AddHttpClient();
 
 var app = builder.Build();
@@ -59,10 +61,36 @@ var peerDiscovery = new PeerDiscoveryService(port, syncLogger);
 peerDiscovery.Start();
 syncLogger.LogInfo("Peer LAN discovery beacon started.");
 
+// Start UPnP / NAT-PMP & Public IP resolution in background
+if (AppConfig.Current.AutoPortMap)
+{
+    _ = Task.Run(async () =>
+    {
+        await natService.InitializeAsync();
+    });
+}
+
 var songs = gh3Service.GetInstalledCustomSongs();
 syncLogger.SetStatus(SyncState.Ready, "GH3-Sync Loaded", $"{songs.Count} Customs Active");
 
 string globalBroadcastNotice = "";
+
+string GetBestPublicOrLanAddress()
+{
+    if (!string.IsNullOrWhiteSpace(AppConfig.Current.CustomPublicAddress))
+    {
+        var custom = AppConfig.Current.CustomPublicAddress.Trim();
+        if (!custom.StartsWith("http://") && !custom.StartsWith("https://")) custom = "http://" + custom;
+        return custom;
+    }
+
+    if (!string.IsNullOrEmpty(natService.PublicIp))
+    {
+        return $"http://{natService.PublicIp}:{natService.ExternalPort ?? port}";
+    }
+
+    return $"http://{GetLocalIpAddress()}:{port}";
+}
 
 string GetLocalIpAddress()
 {
@@ -127,10 +155,13 @@ _ = Task.Run(async () =>
                 friendCode = AppConfig.Current.FriendCode,
                 username = AppConfig.Current.Username,
                 isBetterGh3 = compat.IsBetterGh3,
-                appVersion = "1.2.1-beta.2",
+                appVersion = "1.3.0-beta.3",
                 customsCount = gh3Service.GetInstalledCustomSongs().Count,
                 localPort = port,
                 localIp = GetLocalIpAddress(),
+                publicIp = natService.PublicIp,
+                externalPort = natService.ExternalPort ?? port,
+                publicAddress = GetBestPublicOrLanAddress(),
                 usage = AppConfig.Current.Usage,
                 lastSeen = DateTime.UtcNow
             };
@@ -152,19 +183,31 @@ _ = Task.Run(async () =>
 });
 
 // ==================== SYSTEM & GAME STATUS ====================
-app.MapGet("/api/status", (Gh3Service gh3, SyncLogger logger, SecurityService sec, FriendService friends, SaveManager saves) =>
+app.MapGet("/api/status", (Gh3Service gh3, SyncLogger logger, SecurityService sec, FriendService friends, SaveManager saves, NatPortMappingService nat) =>
 {
     var localIp = GetLocalIpAddress();
     var customs = gh3.GetInstalledCustomSongs();
     var compat = gh3.VerifyGamePath(gh3.GamePath);
+    var bestAddr = GetBestPublicOrLanAddress();
     return Results.Ok(new
     {
         isDetected = gh3.IsDetected,
         gamePath = gh3.GamePath,
         compatibility = compat,
         directInstall = AppConfig.Current.DirectInstallToGame,
-        serverUrl = $"http://{localIp}:{port}?pin={sec.PairingPin}",
-        rawAddress = $"http://{localIp}:{port}",
+        serverUrl = $"{bestAddr}?pin={sec.PairingPin}",
+        rawAddress = bestAddr,
+        localAddress = $"http://{localIp}:{port}",
+        publicAddress = nat.PublicIp != null ? $"http://{nat.PublicIp}:{nat.ExternalPort ?? port}" : null,
+        customPublicAddress = AppConfig.Current.CustomPublicAddress,
+        autoPortMap = AppConfig.Current.AutoPortMap,
+        natStatus = new
+        {
+            publicIp = nat.PublicIp,
+            externalPort = nat.ExternalPort ?? port,
+            isMapped = nat.IsMapped,
+            method = nat.MappingMethod
+        },
         pairingPin = sec.PairingPin,
         profile = friends.Profile,
         friendsCount = friends.Friends.Count,
@@ -217,6 +260,46 @@ app.MapPost("/api/settings/direct-install", async (HttpContext context, SyncLogg
         return Results.Ok(new { success = true, directInstall = direct });
     }
     return Results.BadRequest(new { error = "directInstall boolean required." });
+});
+
+app.MapPost("/api/settings/network", async (HttpContext context, NatPortMappingService nat, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+
+    var customAddr = req.TryGetProperty("customPublicAddress", out var a) ? a.GetString() ?? "" : "";
+    var autoPort = req.TryGetProperty("autoPortMap", out var m) ? m.GetBoolean() : true;
+
+    AppConfig.UpdateNetworkSettings(customAddr, autoPort);
+    logger.LogInfo($"[SETTINGS] Network updated - Custom Public/DDNS: '{customAddr}', Auto UPnP/NAT-PMP: {autoPort}");
+
+    if (autoPort && !nat.IsMapped)
+    {
+        _ = Task.Run(async () => await nat.InitializeAsync());
+    }
+
+    return Results.Ok(new
+    {
+        success = true,
+        customPublicAddress = AppConfig.Current.CustomPublicAddress,
+        autoPortMap = AppConfig.Current.AutoPortMap,
+        bestAddress = GetBestPublicOrLanAddress()
+    });
+});
+
+app.MapPost("/api/nat/refresh", async (NatPortMappingService nat) =>
+{
+    await nat.InitializeAsync();
+    return Results.Ok(new
+    {
+        success = true,
+        publicIp = nat.PublicIp,
+        externalPort = nat.ExternalPort ?? port,
+        isMapped = nat.IsMapped,
+        method = nat.MappingMethod,
+        bestAddress = GetBestPublicOrLanAddress()
+    });
 });
 
 // ==================== CAREER SAVE PROTECTION APIs ====================
@@ -893,9 +976,10 @@ if (!args.Contains("--no-browser") && !args.Contains("--headless"))
 }
 
 Console.WriteLine("=================================================");
-Console.WriteLine("  🎸 GH3-Sync Beta 2 | Complete P2P & Song Creator Engine");
+Console.WriteLine("  🎸 GH3-Sync Beta 3 | P2P Synchronizer, Friends & ONOGAMI");
 Console.WriteLine($"  Local Web Dashboard: http://localhost:{port}");
 Console.WriteLine($"  LAN Address:         http://{GetLocalIpAddress()}:{port}");
+Console.WriteLine($"  Public / NAT Address: {GetBestPublicOrLanAddress()}");
 Console.WriteLine($"  Active Profile:      {friendService.Profile.Username} [{friendService.Profile.FriendCode}]");
 Console.WriteLine($"  Session PIN:         {securityService.PairingPin}");
 Console.WriteLine("=================================================");
