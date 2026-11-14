@@ -60,6 +60,8 @@ public class AppConfigData
     public FeatureUsageStats Usage { get; set; } = new();
     public List<FriendEntry> Friends { get; set; } = new();
     public List<string> CreatedSongIds { get; set; } = new() { "beatit_6ce4b6e5", "gentlyweeps_26711a91", "onogami_fa5fdfea" };
+    public string CustomSongsPath { get; set; } = "";
+    public List<string> CreatedSongDirectories { get; set; } = new();
 }
 
 public static class AppConfig
@@ -250,13 +252,37 @@ public static class AppConfig
         }
     }
 
-    public static void RegisterCreatedSong(string songId)
+    public static void UpdateCustomSongsPath(string path)
     {
-        if (string.IsNullOrWhiteSpace(songId)) return;
-        if (!Current.CreatedSongIds.Contains(songId, StringComparer.OrdinalIgnoreCase))
+        lock (_lock)
         {
-            Current.CreatedSongIds.Add(songId);
+            Current.CustomSongsPath = path?.Trim() ?? "";
             Save();
+        }
+    }
+
+    public static void RegisterCreatedSong(string songId, string? targetDir = null)
+    {
+        lock (_lock)
+        {
+            bool changed = false;
+            if (!string.IsNullOrWhiteSpace(songId) && !Current.CreatedSongIds.Contains(songId, StringComparer.OrdinalIgnoreCase))
+            {
+                Current.CreatedSongIds.Add(songId);
+                changed = true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(targetDir) && Directory.Exists(targetDir))
+            {
+                if (Current.CreatedSongDirectories == null) Current.CreatedSongDirectories = new();
+                if (!Current.CreatedSongDirectories.Contains(targetDir, StringComparer.OrdinalIgnoreCase))
+                {
+                    Current.CreatedSongDirectories.Add(targetDir);
+                    changed = true;
+                }
+            }
+
+            if (changed) Save();
         }
     }
 
