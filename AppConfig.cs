@@ -42,7 +42,7 @@ public class FeedbackItem
     public string Message { get; set; } = "";
     public string UserFriendCode { get; set; } = "";
     public string Username { get; set; } = "";
-    public string AppVersion { get; set; } = "1.2.1-beta.2";
+    public string AppVersion { get; set; } = "1.3.0-beta.3";
     public bool IsBetterGh3 { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string Status { get; set; } = "Open"; // Open, Investigating, Resolved
@@ -55,6 +55,8 @@ public class AppConfigData
     public string GamePath { get; set; } = "";
     public bool DirectInstallToGame { get; set; } = true;
     public string AdminHubUrl { get; set; } = "http://localhost:7575";
+    public string CustomPublicAddress { get; set; } = ""; // DDNS or manually configured Public IP/Port
+    public bool AutoPortMap { get; set; } = true;         // UPnP / NAT-PMP enabled
     public FeatureUsageStats Usage { get; set; } = new();
     public List<FriendEntry> Friends { get; set; } = new();
     public List<string> CreatedSongIds { get; set; } = new() { "beatit_6ce4b6e5", "gentlyweeps_26711a91", "onogami_fa5fdfea" };
@@ -147,6 +149,16 @@ public static class AppConfig
     {
         Current.DirectInstallToGame = direct;
         Save();
+    }
+
+    public static void UpdateNetworkSettings(string customAddress, bool autoPortMap)
+    {
+        lock (_lock)
+        {
+            Current.CustomPublicAddress = customAddress?.Trim() ?? "";
+            Current.AutoPortMap = autoPortMap;
+            Save();
+        }
     }
 
     public static void UpdateFriendAddress(string friendCode, string address)
