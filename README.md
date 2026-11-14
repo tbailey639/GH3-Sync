@@ -24,8 +24,10 @@
 * **Auto-Unchecked:** Detected duplicates are **automatically unchecked** and marked with `⚠️ Duplicate Detected (Already Owned)`, preventing accidental re-downloads while still allowing manual override if desired.
 * **Pre-verified Songs:** *Beat It*, *While My Guitar Gently Weeps*, and *ONOGAMI* are recognized as ONOGAMI-created customs.
 
-### 4. 👥 Friends & "Trusted Friend" System (Automatic IP Sharing)
-* **Automatic IP Sharing (Trusted Friends):** When you mark a friend as **Trusted**, their IP address is automatically discovered and resolved in real time via LAN UDP beacons (port 7374) and the Central Admin Hub. No manual IP exchange or PIN entry needed!
+### 4. 👥 Friends, "Trusted Friend" System & Public Internet Connectivity
+* **Automatic IP Sharing (Trusted Friends):** When you mark a friend as **Trusted**, their address is automatically discovered and resolved in real time via LAN UDP beacons (port 7374), UPnP / NAT-PMP external mappings, and the Central Admin Hub. No manual IP exchange or PIN entry needed!
+* **Public IP & UPnP / NAT-PMP Port Mapping (Beta 3):** Automatically detects your router's public WAN IP and forwards port 7373 via UPnP IGD or NAT-PMP so peers can connect from anywhere on the internet without manual router setup.
+* **Custom DDNS Support:** Easily bind dynamic DNS hostnames (e.g., No-IP, DuckDNS) under **Network / NAT Settings**.
 * **IP Privacy (Regular Friends):** Untrusted friends' IPs remain strictly private for security; manual IP exchange and session PINs are required until trust is granted.
 * **Permanent Unique Friend Code:** Every player receives a permanent unique code (e.g. `GH3-6475-71AF`) with a Show/Hide toggle to prevent spam.
 * **Instant Revocation:** Click **"Revoke Trust"** or **"Unfriend"** at any time to immediately destroy the access token.
