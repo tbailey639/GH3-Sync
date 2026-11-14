@@ -71,3 +71,10 @@
 * **App Log:** `%APPDATA%\GH3-Sync\config.json` & `dist\debug.log`
 * **In-Game Log:** `gh3_sync_debug.log` in your GH3 folder.
 * **Save Backups:** `%APPDATA%\GH3-Sync\SaveBackups\`
+
+---
+
+## ?? License & Terms of Use
+This software is licensed under the **PolyForm Noncommercial License 1.0.0**.
+* **Allowed:** Free for personal, community, and noncommercial gaming use.
+* **Prohibited:** Any commercial use, monetized distribution, or selling of this software in whole or in part without explicit written permission is strictly prohibited.
