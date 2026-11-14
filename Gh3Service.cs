@@ -33,6 +33,8 @@ public class CustomSongInfo
     public string OnogamiFingerprint { get; set; } = "";
     public bool IsDuplicate { get; set; } = false;
     public string DuplicateReason { get; set; } = "";
+    public bool IsProject { get; set; } = false;
+    public string ProjectDirectory { get; set; } = "";
 }
 
 public class LibraryManifest
@@ -181,41 +183,332 @@ public class Gh3Service
         return report;
     }
 
-    public List<CustomSongInfo> GetInstalledCustomSongs()
+    public List<string> GetCreatedSongsRootDirectories()
     {
-        var songs = new List<CustomSongInfo>();
-        if (!IsDetected || !Directory.Exists(SongsPath)) return songs;
+        var dirs = new List<string>();
 
-        var songPakFiles = Directory.GetFiles(SongsPath, "*_song.pak.xen");
-        foreach (var pakFile in songPakFiles)
+        if (!string.IsNullOrWhiteSpace(AppConfig.Current.CustomSongsPath) && Directory.Exists(AppConfig.Current.CustomSongsPath))
+            dirs.Add(AppConfig.Current.CustomSongsPath);
+
+        dirs.Add(SongCreatorService.ResolveSongsDirectory());
+
+        if (!string.IsNullOrWhiteSpace(GamePath) && Directory.Exists(GamePath))
         {
-            var fileName = Path.GetFileName(pakFile);
-            var songId = fileName.Substring(0, fileName.Length - "_song.pak.xen".Length);
+            dirs.Add(Path.Combine(GamePath, "Custom_Songs"));
+            dirs.Add(Path.Combine(GamePath, "Staging_Downloads"));
+        }
 
-            if (IsVanillaSong(songId)) continue;
+        var docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        dirs.Add(Path.Combine(docs, "Guitar Hero Songs"));
 
-            var pakInfo = new FileInfo(pakFile);
-            var fsbFile = Path.Combine(MusicPath, $"{songId}.fsb.xen");
-            var fsbInfo = File.Exists(fsbFile) ? new FileInfo(fsbFile) : null;
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        dirs.Add(Path.Combine(appData, "GH3-Sync", "CreatedSongs"));
+        dirs.Add(Path.Combine(appData, "GH3-Sync", "Staging_Downloads"));
 
-            var (title, artist, isLocal) = ResolveSongMetadata(songId);
-            bool isOnogami = isLocal || AppConfig.Current.CreatedSongIds.Any(id => songId.Contains(id, StringComparison.OrdinalIgnoreCase));
+        try
+        {
+            if (Directory.Exists(@"G:\Guitar Hero Songs")) dirs.Add(@"G:\Guitar Hero Songs");
+        }
+        catch { }
 
-            songs.Add(new CustomSongInfo
+        if (AppConfig.Current.CreatedSongDirectories != null)
+        {
+            foreach (var d in AppConfig.Current.CreatedSongDirectories)
+            {
+                if (Directory.Exists(d))
+                {
+                    dirs.Add(d);
+                    var parent = Directory.GetParent(d)?.FullName;
+                    if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent))
+                        dirs.Add(parent);
+                }
+            }
+        }
+
+        return dirs.Distinct(StringComparer.OrdinalIgnoreCase).Where(Directory.Exists).ToList();
+    }
+
+    public static CustomSongInfo? ParseProjectDirectory(string dirPath)
+    {
+        try
+        {
+            if (!Directory.Exists(dirPath)) return null;
+
+            var iniFile = Path.Combine(dirPath, "song.ini");
+            var ghprojFiles = Directory.GetFiles(dirPath, "*.ghproj");
+            var chartFiles = Directory.GetFiles(dirPath, "*.chart");
+            var midFiles = Directory.GetFiles(dirPath, "*.mid");
+
+            if (!File.Exists(iniFile) && ghprojFiles.Length == 0 && chartFiles.Length == 0 && midFiles.Length == 0)
+                return null;
+
+            string title = "";
+            string artist = "";
+            string songId = "";
+            string charter = "";
+            bool isOnogami = false;
+
+            // 1. Try reading song.ini
+            if (File.Exists(iniFile))
+            {
+                var lines = File.ReadAllLines(iniFile);
+                foreach (var line in lines)
+                {
+                    var trimmed = line.Trim();
+                    if (trimmed.StartsWith("name", StringComparison.OrdinalIgnoreCase) && trimmed.Contains('='))
+                        title = trimmed.Substring(trimmed.IndexOf('=') + 1).Trim();
+                    else if (trimmed.StartsWith("title", StringComparison.OrdinalIgnoreCase) && trimmed.Contains('='))
+                        title = trimmed.Substring(trimmed.IndexOf('=') + 1).Trim();
+                    else if (trimmed.StartsWith("artist", StringComparison.OrdinalIgnoreCase) && trimmed.Contains('='))
+                        artist = trimmed.Substring(trimmed.IndexOf('=') + 1).Trim();
+                    else if (trimmed.StartsWith("charter", StringComparison.OrdinalIgnoreCase) && trimmed.Contains('='))
+                        charter = trimmed.Substring(trimmed.IndexOf('=') + 1).Trim();
+                    else if (trimmed.StartsWith("icon", StringComparison.OrdinalIgnoreCase) && trimmed.Contains('='))
+                    {
+                        var icon = trimmed.Substring(trimmed.IndexOf('=') + 1).Trim();
+                        if (icon.Equals("onogami_creator", StringComparison.OrdinalIgnoreCase)) isOnogami = true;
+                    }
+                }
+            }
+
+            // 2. Try reading .ghproj
+            if (ghprojFiles.Length > 0)
+            {
+                isOnogami = true;
+                try
+                {
+                    var json = File.ReadAllText(ghprojFiles[0]);
+                    using var doc = JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+                    if (string.IsNullOrEmpty(title) && root.TryGetProperty("title", out var tProp))
+                        title = tProp.GetString() ?? "";
+                    if (string.IsNullOrEmpty(artist) && root.TryGetProperty("artist", out var aProp))
+                        artist = aProp.GetString() ?? "";
+                    if (string.IsNullOrEmpty(songId) && root.TryGetProperty("songName", out var sProp))
+                        songId = sProp.GetString() ?? "";
+                    if (string.IsNullOrEmpty(charter) && root.TryGetProperty("chartAuthor", out var cProp))
+                        charter = cProp.GetString() ?? "";
+                }
+                catch { }
+            }
+
+            var dirName = Path.GetFileName(dirPath);
+            if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(artist))
+            {
+                if (dirName.Contains(" - "))
+                {
+                    var parts = dirName.Split(new[] { " - " }, 2, StringSplitOptions.None);
+                    if (string.IsNullOrWhiteSpace(artist)) artist = parts[0].Trim();
+                    if (string.IsNullOrWhiteSpace(title)) title = parts[1].Trim();
+                }
+                else
+                {
+                    if (string.IsNullOrWhiteSpace(title)) title = dirName;
+                    if (string.IsNullOrWhiteSpace(artist)) artist = "Custom Artist";
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(songId))
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (var c in title.ToLowerInvariant())
+                {
+                    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) sb.Append(c);
+                }
+                songId = sb.Length > 0 ? sb.ToString() : SanitizeFileName(title).ToLowerInvariant();
+            }
+
+            if (charter.Contains("ONOGAMI", StringComparison.OrdinalIgnoreCase) ||
+                AppConfig.Current.CreatedSongIds.Any(id => songId.Contains(id, StringComparison.OrdinalIgnoreCase) || id.Contains(songId, StringComparison.OrdinalIgnoreCase)))
+            {
+                isOnogami = true;
+            }
+
+            long totalBytes = 0;
+            DateTime lastWrite = Directory.GetLastWriteTimeUtc(dirPath);
+            try
+            {
+                foreach (var f in Directory.GetFiles(dirPath, "*.*", SearchOption.AllDirectories))
+                {
+                    var fi = new FileInfo(f);
+                    totalBytes += fi.Length;
+                    if (fi.LastWriteTimeUtc > lastWrite) lastWrite = fi.LastWriteTimeUtc;
+                }
+            }
+            catch { }
+
+            return new CustomSongInfo
             {
                 SongId = songId,
                 Title = title,
                 Artist = artist,
-                PakSizeBytes = pakInfo.Length,
-                FsbSizeBytes = fsbInfo?.Length ?? 0,
-                LastModified = pakInfo.LastWriteTimeUtc,
-                IsCreatedLocally = isOnogami,
+                PakSizeBytes = totalBytes,
+                FsbSizeBytes = 0,
+                LastModified = lastWrite,
+                IsCreatedLocally = true,
                 CreatedWithOnogamiCreator = isOnogami,
-                OnogamiFingerprint = ComputeFingerprint(title, artist)
-            });
+                OnogamiFingerprint = ComputeFingerprint(title, artist),
+                IsProject = true,
+                ProjectDirectory = dirPath
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public string? FindProjectDirectory(string songId)
+    {
+        var roots = GetCreatedSongsRootDirectories();
+        foreach (var root in roots)
+        {
+            if (!Directory.Exists(root)) continue;
+
+            var direct = ParseProjectDirectory(root);
+            if (direct != null && string.Equals(direct.SongId, songId, StringComparison.OrdinalIgnoreCase))
+                return root;
+
+            try
+            {
+                foreach (var sub in Directory.GetDirectories(root))
+                {
+                    var p = ParseProjectDirectory(sub);
+                    if (p != null && (string.Equals(p.SongId, songId, StringComparison.OrdinalIgnoreCase) ||
+                                     Path.GetFileName(sub).Contains(songId, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return sub;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        if (AppConfig.Current.CreatedSongDirectories != null)
+        {
+            foreach (var d in AppConfig.Current.CreatedSongDirectories)
+            {
+                if (Directory.Exists(d))
+                {
+                    var p = ParseProjectDirectory(d);
+                    if (p != null && string.Equals(p.SongId, songId, StringComparison.OrdinalIgnoreCase))
+                        return d;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public List<CustomSongInfo> GetInstalledCustomSongs()
+    {
+        var songs = new List<CustomSongInfo>();
+        var seenSongIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // 1. Scan compiled game customs in DATA/SONGS
+        if (IsDetected && Directory.Exists(SongsPath))
+        {
+            try
+            {
+                var songPakFiles = Directory.GetFiles(SongsPath, "*_song.pak.xen");
+                foreach (var pakFile in songPakFiles)
+                {
+                    var fileName = Path.GetFileName(pakFile);
+                    var songId = fileName.Substring(0, fileName.Length - "_song.pak.xen".Length);
+
+                    if (IsVanillaSong(songId)) continue;
+
+                    var pakInfo = new FileInfo(pakFile);
+                    var fsbFile = Path.Combine(MusicPath, $"{songId}.fsb.xen");
+                    var fsbInfo = File.Exists(fsbFile) ? new FileInfo(fsbFile) : null;
+
+                    var (title, artist, isLocal) = ResolveSongMetadata(songId);
+                    bool isOnogami = isLocal || AppConfig.Current.CreatedSongIds.Any(id => songId.Contains(id, StringComparison.OrdinalIgnoreCase));
+
+                    songs.Add(new CustomSongInfo
+                    {
+                        SongId = songId,
+                        Title = title,
+                        Artist = artist,
+                        PakSizeBytes = pakInfo.Length,
+                        FsbSizeBytes = fsbInfo?.Length ?? 0,
+                        LastModified = pakInfo.LastWriteTimeUtc,
+                        IsCreatedLocally = isOnogami,
+                        CreatedWithOnogamiCreator = isOnogami,
+                        OnogamiFingerprint = ComputeFingerprint(title, artist),
+                        IsProject = false
+                    });
+                    seenSongIds.Add(songId);
+                }
+            }
+            catch { }
+        }
+
+        // 2. Scan created/project songs across all songs directories
+        var rootDirs = GetCreatedSongsRootDirectories();
+        foreach (var root in rootDirs)
+        {
+            if (!Directory.Exists(root)) continue;
+
+            var directSong = ParseProjectDirectory(root);
+            if (directSong != null)
+            {
+                AddOrMergeSong(directSong, songs, seenSongIds);
+            }
+
+            try
+            {
+                foreach (var subDir in Directory.GetDirectories(root))
+                {
+                    var projectSong = ParseProjectDirectory(subDir);
+                    if (projectSong != null)
+                    {
+                        AddOrMergeSong(projectSong, songs, seenSongIds);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        if (AppConfig.Current.CreatedSongDirectories != null)
+        {
+            foreach (var regDir in AppConfig.Current.CreatedSongDirectories)
+            {
+                if (Directory.Exists(regDir))
+                {
+                    var projectSong = ParseProjectDirectory(regDir);
+                    if (projectSong != null)
+                    {
+                        AddOrMergeSong(projectSong, songs, seenSongIds);
+                    }
+                }
+            }
         }
 
         return songs;
+    }
+
+    private static void AddOrMergeSong(CustomSongInfo projectSong, List<CustomSongInfo> songs, HashSet<string> seenSongIds)
+    {
+        if (seenSongIds.Contains(projectSong.SongId))
+        {
+            var existing = songs.FirstOrDefault(s => s.SongId.Equals(projectSong.SongId, StringComparison.OrdinalIgnoreCase));
+            if (existing != null)
+            {
+                existing.IsCreatedLocally = true;
+                existing.CreatedWithOnogamiCreator = true;
+                existing.ProjectDirectory = projectSong.ProjectDirectory;
+                if (!string.IsNullOrWhiteSpace(projectSong.Title) && projectSong.Title != projectSong.SongId)
+                    existing.Title = projectSong.Title;
+                if (!string.IsNullOrWhiteSpace(projectSong.Artist) && projectSong.Artist != "Custom Artist")
+                    existing.Artist = projectSong.Artist;
+            }
+        }
+        else
+        {
+            songs.Add(projectSong);
+            seenSongIds.Add(projectSong.SongId);
+        }
     }
 
     public LibraryManifest GenerateManifest()
@@ -237,6 +530,12 @@ public class Gh3Service
             if (File.Exists(pakFile)) song.PakHash = ComputeSha256(pakFile);
             if (File.Exists(fsbFile)) song.FsbHash = ComputeSha256(fsbFile);
 
+            if (song.IsProject && !string.IsNullOrEmpty(song.ProjectDirectory))
+            {
+                var iniPath = Path.Combine(song.ProjectDirectory, "song.ini");
+                if (File.Exists(iniPath)) song.PakHash = ComputeSha256(iniPath);
+            }
+
             manifest.Songs.Add(song);
         }
 
@@ -249,37 +548,108 @@ public class Gh3Service
         var fsbFile = Path.Combine(MusicPath, $"{songId}.fsb.xen");
         var datFile = Path.Combine(MusicPath, $"{songId}.dat.xen");
 
-        if (!File.Exists(pakFile))
-            throw new FileNotFoundException($"Song PAK file not found: {pakFile}");
-
-        using var ms = new MemoryStream();
-        using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, true))
+        if (File.Exists(pakFile))
         {
-            archive.CreateEntryFromFile(pakFile, Path.GetFileName(pakFile));
-            if (File.Exists(fsbFile)) archive.CreateEntryFromFile(fsbFile, Path.GetFileName(fsbFile));
-            if (File.Exists(datFile)) archive.CreateEntryFromFile(datFile, Path.GetFileName(datFile));
-
-            var (title, artist, isLocal) = ResolveSongMetadata(songId);
-            var metaJson = JsonSerializer.Serialize(new
+            using var ms = new MemoryStream();
+            using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, true))
             {
-                songId,
-                title,
-                artist,
-                createdWithOnogamiCreator = isLocal,
-                onogamiFingerprint = ComputeFingerprint(title, artist),
-                exportedAt = DateTime.UtcNow
-            }, new JsonSerializerOptions { WriteIndented = true });
+                archive.CreateEntryFromFile(pakFile, Path.GetFileName(pakFile));
+                if (File.Exists(fsbFile)) archive.CreateEntryFromFile(fsbFile, Path.GetFileName(fsbFile));
+                if (File.Exists(datFile)) archive.CreateEntryFromFile(datFile, Path.GetFileName(datFile));
 
-            var metaEntry = archive.CreateEntry("metadata.json");
-            using var writer = new StreamWriter(metaEntry.Open());
-            writer.Write(metaJson);
+                var (title, artist, isLocal) = ResolveSongMetadata(songId);
+                var metaJson = JsonSerializer.Serialize(new
+                {
+                    songId,
+                    title,
+                    artist,
+                    isProject = false,
+                    createdWithOnogamiCreator = isLocal,
+                    onogamiFingerprint = ComputeFingerprint(title, artist),
+                    exportedAt = DateTime.UtcNow
+                }, new JsonSerializerOptions { WriteIndented = true });
+
+                var metaEntry = archive.CreateEntry("metadata.json");
+                using var writer = new StreamWriter(metaEntry.Open());
+                writer.Write(metaJson);
+            }
+
+            return ms.ToArray();
         }
 
-        return ms.ToArray();
+        var projectDir = FindProjectDirectory(songId);
+        if (projectDir != null && Directory.Exists(projectDir))
+        {
+            using var ms = new MemoryStream();
+            using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, true))
+            {
+                var proj = ParseProjectDirectory(projectDir);
+                foreach (var file in Directory.GetFiles(projectDir, "*.*", SearchOption.TopDirectoryOnly))
+                {
+                    archive.CreateEntryFromFile(file, Path.GetFileName(file));
+                }
+
+                var metaJson = JsonSerializer.Serialize(new
+                {
+                    songId,
+                    title = proj?.Title ?? songId,
+                    artist = proj?.Artist ?? "Custom Artist",
+                    isProject = true,
+                    createdWithOnogamiCreator = true,
+                    onogamiFingerprint = proj?.OnogamiFingerprint ?? ComputeFingerprint(songId, ""),
+                    exportedAt = DateTime.UtcNow
+                }, new JsonSerializerOptions { WriteIndented = true });
+
+                var metaEntry = archive.CreateEntry("metadata.json");
+                using var writer = new StreamWriter(metaEntry.Open());
+                writer.Write(metaJson);
+            }
+
+            return ms.ToArray();
+        }
+
+        throw new FileNotFoundException($"Song package not found for ID: {songId}");
     }
 
     public void InstallSongPackage(byte[] zipBytes, SyncLogger logger)
     {
+        using (var testMs = new MemoryStream(zipBytes))
+        using (var testArchive = new ZipArchive(testMs, ZipArchiveMode.Read))
+        {
+            bool isProject = testArchive.Entries.Any(e =>
+                e.Name.EndsWith(".ghproj", StringComparison.OrdinalIgnoreCase) ||
+                e.Name.Equals("song.ini", StringComparison.OrdinalIgnoreCase));
+
+            if (isProject)
+            {
+                var targetRoot = SongCreatorService.ResolveSongsDirectory();
+                string folderName = "Imported_Song_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+
+                var metaEntry = testArchive.GetEntry("metadata.json");
+                if (metaEntry != null)
+                {
+                    try
+                    {
+                        using var s = metaEntry.Open();
+                        using var doc = JsonDocument.Parse(s);
+                        var title = doc.RootElement.GetProperty("title").GetString();
+                        var artist = doc.RootElement.GetProperty("artist").GetString();
+                        if (!string.IsNullOrWhiteSpace(artist) && !string.IsNullOrWhiteSpace(title))
+                        {
+                            folderName = $"{artist} - {title}";
+                        }
+                    }
+                    catch { }
+                }
+
+                var targetDir = Path.Combine(targetRoot, SanitizeFileName(folderName));
+                SecurityService.ExtractProjectZip(zipBytes, targetDir, logger);
+                AppConfig.RegisterCreatedSong(folderName, targetDir);
+                logger.LogInfo($"[CREATOR] ONOGAMI Song Project installed to: {targetDir}");
+                return;
+            }
+        }
+
         if (AppConfig.Current.DirectInstallToGame)
         {
             if (!IsDetected) throw new InvalidOperationException("GH3 game directory is not detected.");
@@ -287,7 +657,6 @@ public class Gh3Service
         }
         else
         {
-            // Staging folder
             if (!Directory.Exists(StagingPath)) Directory.CreateDirectory(StagingPath);
             var stagingSongs = Path.Combine(StagingPath, "SONGS");
             var stagingMusic = Path.Combine(StagingPath, "MUSIC");
@@ -296,6 +665,20 @@ public class Gh3Service
             SecurityService.ValidateAndExtractZip(zipBytes, stagingSongs, stagingMusic, logger);
             logger.LogInfo($"[STAGING] Song installed to staging folder: {StagingPath}");
         }
+    }
+
+    private static string SanitizeFileName(string input)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var sb = new System.Text.StringBuilder();
+        foreach (var c in input)
+        {
+            if (Array.IndexOf(invalid, c) < 0 && c != '"' && c != '”' && c != '“')
+                sb.Append(c);
+            else
+                sb.Append('_');
+        }
+        return sb.ToString().Trim();
     }
 
     public int ImportArchiveFile(byte[] archiveBytes, string fileName, SyncLogger logger)
