@@ -1,0 +1,48 @@
+; Script generated for Inno Setup 7
+; GH3-Sync: Complete P2P Song Synchronizer, Friends Network & ONOGAMI Song Creator for BetterGH3
+
+#define MyAppName "GH3-Sync"
+#define MyAppVersion "1.2.0"
+#define MyAppPublisher "Antigravity & ONOGAMI"
+#define MyAppURL "https://github.com"
+#define MyAppExeName "GH3-Sync.exe"
+
+[Setup]
+; NOTE: The value of AppId uniquely identifies this application. Do not use the same AppId value in installers for other applications.
+AppId={{E0D77F0F-E384-4BE6-BE0B-D8193B1DA090}
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+AppPublisherURL={#MyAppURL}
+AppSupportURL={#MyAppURL}
+AppUpdatesURL={#MyAppURL}
+DefaultDirName={autopf}\{#MyAppName}
+DefaultGroupName={#MyAppName}
+AllowNoIcons=yes
+OutputDir=G:\Guitar Hero Songs\GH3-Sync\dist
+OutputBaseFilename=GH3-Sync-Setup
+Compression=lzma2/ultra64
+SolidCompression=yes
+WizardStyle=modern
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+UninstallDisplayIcon={app}\{#MyAppExeName}
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Tasks]
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
+
+[Files]
+Source: "G:\Guitar Hero Songs\GH3-Sync\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "G:\Guitar Hero Songs\GH3-Sync\dist\wwwroot\*"; DestDir: "{app}\wwwroot"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "G:\Guitar Hero Songs\GH3-Sync\dist\README.md"; DestDir: "{app}"; Flags: ignoreversion
+
+[Icons]
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+
+[Run]
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent

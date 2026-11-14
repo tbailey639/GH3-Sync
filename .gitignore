@@ -1,0 +1,10 @@
+bin/
+obj/
+dist/*.exe
+dist/*.zip
+dist/*.gh3pack
+dist/*.log
+*.user
+*.suo
+.vs/
+.vscode/

@@ -1,0 +1,1618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GH3-Sync | P2P Song Synchronizer & ONOGAMI Creator</title>
+  <style>
+    :root {
+      --bg: #0b0d13;
+      --card-bg: rgba(20, 24, 34, 0.92);
+      --border: #262e3d;
+      --accent: #f97316;
+      --accent-glow: rgba(249, 115, 22, 0.35);
+      --green: #10b981;
+      --green-glow: rgba(16, 185, 129, 0.3);
+      --blue: #3b82f6;
+      --purple: #8b5cf6;
+      --red: #ef4444;
+      --text: #f3f4f6;
+      --text-muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); min-height: 100vh; padding: 24px; }
+    .container { max-width: 1040px; margin: 0 auto; }
+    
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .logo { display: flex; align-items: center; gap: 12px; }
+    .logo-icon {
+      font-size: 32px;
+      background: linear-gradient(135deg, #f97316, #ef4444);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .logo h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+    .logo span { color: var(--accent); }
+    .header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid var(--green);
+      color: var(--green);
+    }
+    .status-pill.warn { background: rgba(245, 158, 11, 0.15); border-color: #f59e0b; color: #f59e0b; }
+    .status-pill.error { background: rgba(239, 68, 68, 0.15); border-color: #ef4444; color: #ef4444; }
+    .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+
+    #broadcastBanner {
+      display: none;
+      background: linear-gradient(90deg, rgba(245, 158, 11, 0.2), rgba(239, 68, 68, 0.2));
+      border: 1px solid #f59e0b;
+      color: #fbbf24;
+      padding: 12px 18px;
+      border-radius: 8px;
+      margin-bottom: 18px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    
+    .nav-tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+    .tab-btn {
+      padding: 10px 16px;
+      border-radius: 8px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover { color: var(--text); border-color: var(--accent); }
+    .tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 0 15px var(--accent-glow); }
+    
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px;
+      margin-bottom: 20px;
+      backdrop-filter: blur(10px);
+    }
+    .card-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .card h2 { font-size: 19px; display: flex; align-items: center; gap: 10px; }
+    .card-subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+    
+    .song-list { display: grid; gap: 12px; }
+    .song-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 18px;
+      background: rgba(13, 16, 24, 0.75);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      transition: border-color 0.2s;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .song-item:hover { border-color: var(--accent); }
+    .song-info h3 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    .song-info p { font-size: 13px; color: var(--text-muted); }
+    .song-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.08);
+      white-space: nowrap;
+    }
+    .badge.green { background: rgba(16, 185, 129, 0.2); color: var(--green); }
+    .badge.yellow { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+    .badge.purple { background: rgba(139, 92, 246, 0.2); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.4); }
+    .badge.blue { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+    .badge.red { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 14px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group label { font-size: 13px; font-weight: 600; color: #cbd5e1; }
+    input[type="text"], input[type="number"], select, textarea {
+      padding: 11px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #0d1017;
+      color: var(--text);
+      font-size: 14px;
+    }
+    input[type="file"] {
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px dashed var(--border);
+      background: #0d1017;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    
+    .btn {
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: none;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: #ea580c; box-shadow: 0 0 16px var(--accent-glow); }
+    .btn-green { background: var(--green); color: white; }
+    .btn-green:hover { background: #059669; box-shadow: 0 0 16px var(--green-glow); }
+    .btn-purple { background: var(--purple); color: white; }
+    .btn-purple:hover { background: #7c3aed; }
+    .btn-danger { background: var(--red); color: white; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-warn { background: #f59e0b; color: #000; font-weight: 800; }
+    .btn-warn:hover { background: #d97706; }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 36px 20px;
+      text-align: center;
+      background: rgba(13, 16, 24, 0.5);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .drop-zone:hover { border-color: var(--accent); background: rgba(249, 115, 22, 0.05); }
+
+    .progress-bar-container {
+      width: 100%;
+      height: 8px;
+      background: var(--border);
+      border-radius: 999px;
+      overflow: hidden;
+      margin: 16px 0;
+      display: none;
+    }
+    .progress-bar-fill { height: 100%; width: 0%; background: var(--green); transition: width 0.3s; }
+    
+    .alert {
+      padding: 14px 18px;
+      border-radius: 8px;
+      margin-top: 14px;
+      font-size: 14px;
+      display: none;
+      line-height: 1.5;
+    }
+    .alert.success { background: rgba(16, 185, 129, 0.15); border: 1px solid var(--green); color: var(--green); }
+    .alert.info { background: rgba(59, 130, 246, 0.15); border: 1px solid var(--blue); color: #60a5fa; }
+    .alert.warn { background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; color: #f59e0b; }
+    .alert.error { background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #ef4444; }
+
+    pre.log-viewer {
+      background: #080a0f;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      color: #94a3b8;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+
+    .doc-section { margin-bottom: 24px; }
+    .doc-section h3 { font-size: 17px; color: var(--accent); margin-bottom: 8px; }
+    .doc-section p, .doc-section li { font-size: 14px; color: #cbd5e1; line-height: 1.6; }
+    .doc-section ul { padding-left: 20px; margin-top: 6px; }
+
+    .switch-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      color: #cbd5e1;
+    }
+    .switch-label input[type="checkbox"], .switch-label input[type="radio"] { width: 18px; height: 18px; cursor: pointer; }
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      background: rgba(0,0,0,0.8);
+      z-index: 2000;
+      justify-content: center;
+      align-items: center;
+      backdrop-filter: blur(5px);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        <div class="logo-icon">🎸</div>
+        <div>
+          <h1>GH3<span>-Sync</span></h1>
+          <p style="font-size: 12px; color: var(--text-muted);">P2P Synchronizer, Friends Network & ONOGAMI Song Creator</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div id="statusPill" class="status-pill">
+          <div class="pulse-dot"></div>
+          <span id="statusText">Scanning GH3...</span>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="openGamePathSettings()">⚙️ Game Config</button>
+        <button class="btn btn-warn btn-sm" onclick="openFeedbackModal('Header')">⚠️ Not Working?</button>
+      </div>
+    </header>
+
+    <div id="broadcastBanner"></div>
+
+    <div class="nav-tabs">
+      <button class="tab-btn active" id="tabbtn-my-songs" onclick="switchTab('my-songs')">My Customs (<span id="songCount">0</span>)</button>
+      <button class="tab-btn" id="tabbtn-creator" onclick="switchTab('creator')">ONOGAMI Song Creator</button>
+      <button class="tab-btn" id="tabbtn-friends" onclick="switchTab('friends')">Friends & Trust (<span id="friendCountBadge">0</span>)</button>
+      <button class="tab-btn" id="tabbtn-live-sync" onclick="switchTab('live-sync')">P2P Sync</button>
+      <button class="tab-btn" id="tabbtn-import" onclick="switchTab('import')">Import Songs</button>
+      <button class="tab-btn" id="tabbtn-saves" onclick="switchTab('saves')">Career Saves (Backup/Restore)</button>
+      <button class="tab-btn" id="tabbtn-debug-logs" onclick="switchTab('debug-logs')">Security & Logs</button>
+      <button class="tab-btn" id="tabbtn-about" onclick="switchTab('about')">About & Help</button>
+    </div>
+
+    <!-- ==================== TAB 1: MY SONGS ==================== -->
+    <div id="tab-my-songs">
+      <div class="card">
+        <div class="card-header-row">
+          <div>
+            <h2>Installed Custom Songs</h2>
+            <p style="font-size: 13px; color: var(--text-muted);" id="gamePathLabel">Detecting game directory...</p>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-warn btn-sm" onclick="openFeedbackModal('My Customs')">⚠️ Not Working?</button>
+            <button class="btn btn-outline btn-sm" onclick="loadStatus()">🔄 Refresh Songs</button>
+            <a href="/api/export-pack" class="btn btn-primary btn-sm" download>📦 Export All as Pack</a>
+          </div>
+        </div>
+        
+        <div style="display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;">
+          <button class="btn btn-outline btn-sm" id="flt-all" onclick="filterSongs('all')">All Songs</button>
+          <button class="btn btn-outline btn-sm" id="flt-created" onclick="filterSongs('created')">Created by Me (ONOGAMI)</button>
+          <button class="btn btn-outline btn-sm" id="flt-synced" onclick="filterSongs('synced')">Synced / Imported</button>
+        </div>
+
+        <div class="song-list" id="songsContainer">
+          <p style="color: var(--text-muted); padding: 16px;">Scanning installed songs...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== TAB 2: SONG CREATOR ==================== -->
+    <div id="tab-creator" style="display: none;">
+      <div class="card">
+        <div class="card-header-row">
+          <h2>🎸 ONOGAMI Song Creator</h2>
+          <button class="btn btn-warn btn-sm" onclick="openFeedbackModal('Song Creator')">⚠️ Not Working?</button>
+        </div>
+        <p class="card-subtitle">
+          Create complete, ready-to-compile Guitar Hero III customs using the proven ONOGAMI method. Generates the exact <code>.ghproj</code> Honeycomb project, <code>song.ini</code>, and auto-generated 5-fret <code>.chart</code> files!
+        </p>
+        
+        <form id="songCreatorForm" onsubmit="handleCreateSong(event)">
+          <div style="background: rgba(13, 16, 24, 0.7); padding: 16px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px;">
+            <label style="font-size: 13px; font-weight: 700; color: #cbd5e1; display: block; margin-bottom: 8px;">Chart Generation Mode:</label>
+            <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+              <label class="switch-label">
+                <input type="radio" name="chartMode" value="upload" checked onchange="toggleChartMode()">
+                Upload Chart/MIDI File (.chart or .mid)
+              </label>
+              <label class="switch-label">
+                <input type="radio" name="chartMode" value="autogen" onchange="toggleChartMode()">
+                ⚡ Auto-Generate Chart (.chart) from BPM (The ONOGAMI Method)
+              </label>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Song Title *</label>
+              <input type="text" id="crTitle" placeholder="e.g. Beat It" required>
+            </div>
+            <div class="form-group">
+              <label>Artist Name *</label>
+              <input type="text" id="crArtist" placeholder="e.g. Michael Jackson" required>
+            </div>
+            <div class="form-group">
+              <label>Album Name</label>
+              <input type="text" id="crAlbum" placeholder="e.g. Thriller">
+            </div>
+            <div class="form-group">
+              <label>Year</label>
+              <input type="number" id="crYear" value="2026">
+            </div>
+            <div class="form-group">
+              <label>Genre</label>
+              <input type="text" id="crGenre" value="Rock">
+            </div>
+            <div class="form-group">
+              <label>Charter Name</label>
+              <input type="text" id="crCharter" value="ONOGAMI Creator">
+            </div>
+            <div class="form-group">
+              <label>Guitar Difficulty (1 - 5)</label>
+              <input type="number" id="crDiffGuitar" min="1" max="5" value="4">
+            </div>
+            <div class="form-group">
+              <label>Rhythm / Bass Difficulty (1 - 5)</label>
+              <input type="number" id="crDiffRhythm" min="1" max="5" value="3">
+            </div>
+            <div class="form-group" id="bpmGroup" style="display: none;">
+              <label>Song Tempo (BPM) for Auto-Chart</label>
+              <input type="number" id="crBpm" min="40" max="300" value="130">
+            </div>
+            <div class="form-group">
+              <label>Audio File (.mp3, .wav, or .ogg) *</label>
+              <input type="file" id="crAudioFile" accept=".mp3,.wav,.ogg" required>
+            </div>
+            <div class="form-group" id="chartUploadGroup">
+              <label>Chart / MIDI File (.chart or .mid) *</label>
+              <input type="file" id="crChartFile" accept=".chart,.mid">
+            </div>
+          </div>
+
+          <div style="margin-top: 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <button type="submit" id="createSongBtn" class="btn btn-green">⚡ Generate ONOGAMI Project</button>
+            <span id="crStatus" style="font-size: 13px; color: var(--text-muted);"></span>
+          </div>
+        </form>
+
+        <div id="crAlert" class="alert"></div>
+      </div>
+    </div>
+
+    <!-- ==================== TAB 3: FRIENDS & TRUST ==================== -->
+    <div id="tab-friends" style="display: none;">
+      <!-- Profile Card -->
+      <div class="card">
+        <div class="card-header-row">
+          <h2>👤 My Profile & Friend Code</h2>
+          <button class="btn btn-warn btn-sm" onclick="openFeedbackModal('Friends & Profile')">⚠️ Not Working?</button>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+          <div>
+            <div style="font-size: 20px; font-weight: 700; color: #fff;" id="profUsernameDisplay">Player</div>
+            <p style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
+              Permanent Friend Code: 
+              <span id="profFriendCode" style="color: var(--accent); font-weight: 700; font-family: monospace; font-size: 16px;">••••••••••••</span>
+            </p>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+            <button class="btn btn-outline btn-sm" id="toggleCodeBtn" onclick="toggleShowFriendCode()">👁️ Show Code</button>
+            <button class="btn btn-outline btn-sm" onclick="copyFriendCode()">📋 Copy Code</button>
+            <input type="text" id="profUsernameInput" placeholder="New Username" style="width: 140px; padding: 8px 12px; font-size: 13px;">
+            <button class="btn btn-primary btn-sm" onclick="updateUsername()">Save Name</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Add Friend Card (ONLY Friend Code required) -->
+      <div class="card">
+        <h2>➕ Add Friend by Unique Code</h2>
+        <p class="card-subtitle">
+          Enter your friend's unique Friend Code to add them safely without spamming or spoofing.
+        </p>
+        <div class="form-grid" style="grid-template-columns: 2fr 1fr 1fr;">
+          <div class="form-group">
+            <label>Friend Code *</label>
+            <input type="text" id="afCode" placeholder="GH3-XXXX-XXXX" required>
+          </div>
+          <div class="form-group">
+            <label>Nickname (Optional)</label>
+            <input type="text" id="afUsername" placeholder="e.g. Dave">
+          </div>
+          <div class="form-group">
+            <label>IP / Host Address (Optional)</label>
+            <input type="text" id="afAddress" placeholder="e.g. 192.168.1.50:7373">
+          </div>
+        </div>
+        <div style="margin-top: 14px;">
+          <button class="btn btn-primary" onclick="addFriend()">Add Friend</button>
+        </div>
+      </div>
+
+      <!-- Friends List Card -->
+      <div class="card">
+        <h2>👥 Friends & Trusted Peers</h2>
+        <p class="card-subtitle">
+          Setting a friend as <strong>"Trusted"</strong> issues an encrypted Trust Token that lets them connect and sync directly <strong>without needing IP or PIN sharing</strong>! You can revoke permission at any moment.
+        </p>
+        <div id="friendsContainer" class="song-list">
+          <p style="color: var(--text-muted); padding: 12px;">No friends added yet.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== TAB 4: P2P SYNC ==================== -->
+    <div id="tab-live-sync" style="display: none;">
+      <div class="card">
+        <div class="card-header-row">
+          <h2>⚡ Secure P2P Connection & Duplicate Protection</h2>
+          <button class="btn btn-warn btn-sm" onclick="openFeedbackModal('P2P Sync')">⚠️ Not Working?</button>
+        </div>
+        
+        <div style="background: rgba(13, 16, 24, 0.6); padding: 16px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Your Secure Invite Address:</span>
+            <span class="badge blue" id="pinBadge">PIN: ------</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <code id="myAddress" style="font-size: 15px; color: var(--accent); font-weight: 700; word-break: break-all;">Detecting...</code>
+            <button class="btn btn-outline btn-sm" onclick="copyMyAddress()">📋 Copy Invite Link</button>
+          </div>
+        </div>
+
+        <label style="font-size: 13px; font-weight: 600;">Connect to Peer (or select Trusted Friend):</label>
+        <div style="display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap;">
+          <select id="trustedFriendsSelect" onchange="applyTrustedFriendSelect()" style="width: 250px;">
+            <option value="">-- Choose Trusted Friend --</option>
+          </select>
+          <input type="text" id="remoteUrlInput" placeholder="http://192.168.1.50:7373?pin=123456" style="flex: 1; min-width: 260px;">
+          <button class="btn btn-primary" onclick="compareWithFriend()">🔍 Connect & Verify</button>
+        </div>
+        <p id="peerHint" style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">
+          ⚡ <strong>Trusted Friends:</strong> IP address & PIN are automatically shared and resolved. <strong>Regular Friends:</strong> Manual IP exchange required for security.
+        </p>
+
+        <div id="comparisonResult" style="margin-top: 20px; display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <h3 style="font-size: 16px;">Song Diff & Selection:</h3>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-outline btn-sm" onclick="toggleSelectAllSongs(true)">Select All</button>
+              <button class="btn btn-outline btn-sm" onclick="toggleSelectAllSongs(false)">Deselect All</button>
+            </div>
+          </div>
+
+          <div id="diffContainer" class="song-list"></div>
+          
+          <div class="progress-bar-container" id="syncProgressBar">
+            <div class="progress-bar-fill" id="syncProgressFill"></div>
+          </div>
+
+          <div style="margin-top: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <button id="syncSelectedBtn" class="btn btn-green" onclick="syncSelectedSongs()" style="display: none;">
+              ⚡ Download Selected Songs
+            </button>
+            <button id="syncAllBtn" class="btn btn-primary" onclick="syncAllMissing()" style="display: none;">
+              ⚡ Download All Missing Songs
+            </button>
+            <span id="syncStatusLabel" style="font-size: 14px; color: var(--text-muted);"></span>
+          </div>
+        </div>
+
+        <div id="syncAlert" class="alert"></div>
+      </div>
+    </div>
+
+    <!-- ==================== TAB 5: IMPORT SONGS ==================== -->
+    <div id="tab-import" style="display: none;">
+      <div class="card">
+        <div class="card-header-row">
+          <h2>📁 Import Shared Songs & Packs</h2>
+          <button class="btn btn-warn btn-sm" onclick="openFeedbackModal('Import Songs')">⚠️ Not Working?</button>
+        </div>
+        <p class="card-subtitle">
+          Received a <code>.gh3pack</code>, <code>.gh3song</code>, <code>.sgh</code>, or <code>.zip</code> file from a friend? Drop it here to import it directly into your game! (Career saves are automatically backed up first).
+        </p>
+
+        <div class="drop-zone" onclick="document.getElementById('importFileInput').click()">
+          <div style="font-size: 36px; margin-bottom: 10px;">📦</div>
+          <h3 style="font-size: 16px; margin-bottom: 6px;">Click or Drag & Drop Song Archives Here</h3>
+          <p style="font-size: 13px; color: var(--text-muted);">Supports .gh3pack, .gh3song, .sgh, and .zip</p>
+          <input type="file" id="importFileInput" accept=".gh3pack,.gh3song,.sgh,.zip" style="display: none;" onchange="handleImportFile(event)">
+        </div>
+
+        <div id="importAlert" class="alert"></div>
+      </div>
+    </div>
+
+    <!-- ==================== TAB 6: CAREER SAVES ==================== -->
+    <div id="tab-saves" style="display: none;">
+      <div class="card">
+        <div class="card-header-row">
+          <h2>🛡️ Career Save Game Protection & Restore</h2>
+          <button class="btn btn-warn btn-sm" onclick="openFeedbackModal('Career Saves')">⚠️ Not Working?</button>
+        </div>
+        <p class="card-subtitle">
+          When adding customs for the first time, Guitar Hero III can reset or repartition the career save. <strong>GH3-Sync</strong> keeps automated timestamped backups of your save files (<code>s000.d</code> and <code>toc.dat</code>) in <code>%APPDATA%\GH3-Sync\SaveBackups</code>, allowing you to restore your career unlocks with one click!
+        </p>
+
+        <div style="display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;">
+          <button class="btn btn-primary" onclick="backupSavesNow()">💾 Create Save Backup Now</button>
+          <button class="btn btn-green" onclick="restoreLatestSave()">⏮️ Restore Latest Career Save</button>
+          <button class="btn btn-outline" onclick="loadSaveBackups()">🔄 Refresh Save Backups</button>
+        </div>
+
+        <div id="saveAlert" class="alert"></div>
+
+        <h3 style="font-size: 16px; margin-bottom: 12px;">Saved Backups:</h3>
+        <div id="saveBackupsContainer" class="song-list">
+          <p style="color: var(--text-muted); padding: 12px;">Loading save backups...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== TAB 7: SECURITY & LOGS ==================== -->
+    <div id="tab-debug-logs" style="display: none;">
+      <div class="card">
+        <div class="card-header-row">
+          <div>
+            <h2>Security & Troubleshooting Log</h2>
+            <p style="font-size: 13px; color: var(--text-muted);">Live audit events from <code>debug.log</code> and <code>gh3_sync_debug.log</code></p>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-warn btn-sm" onclick="openFeedbackModal('Logs & Security')">⚠️ Not Working?</button>
+            <button class="btn btn-outline btn-sm" onclick="loadLogs()">🔄 Refresh Log</button>
+            <a href="/api/logs" class="btn btn-primary btn-sm" download="gh3_sync_debug.log">⬇️ Download Log</a>
+          </div>
+        </div>
+        <pre id="logContent" class="log-viewer">Loading debug log...</pre>
+      </div>
+    </div>
+
+    <!-- ==================== TAB 8: ABOUT & HELP ==================== -->
+    <div id="tab-about" style="display: none;">
+      <div class="card">
+        <div class="card-header-row">
+          <h2>📖 About GH3-Sync & Master Feature Guide</h2>
+          <button class="btn btn-warn btn-sm" onclick="openFeedbackModal('About & Help')">⚠️ Not Working?</button>
+        </div>
+
+        <div class="doc-section">
+          <h3>🎸 Why GH3-Sync was Created</h3>
+          <p>
+            In modern <strong>BetterGH3</strong>, players can matchmake online globally even if their song libraries differ. However, to actually <em>play</em> a custom song together in a lobby without crashing or desyncing, both players must have the identical audio files (<code>.fsb.xen</code>) and note highway packages (<code>_song.pak.xen</code>) installed on their hard drives.
+            <strong>GH3-Sync</strong> solves this completely by establishing high-speed, secure P2P synchronization and automated song compilation between players with zero manual copying.
+          </p>
+        </div>
+
+        <div class="doc-section">
+          <h3>⚡ 1. Automatic Trusted Friend IP Sharing & Friends Network</h3>
+          <p>
+            GH3-Sync features a dual-tier friend security model designed for maximum privacy and effortless connectivity:
+          </p>
+          <ul>
+            <li><strong>Automatic IP Sharing (Trusted Friends):</strong> When you click <strong>"Allow Trusted"</strong> on a friend, an encrypted Trust Token is generated for them. Their connection IP address is <strong>automatically discovered and shared in real time</strong> via LAN UDP discovery beacons (port 7374) and the Central Admin Hub. You never have to manually enter their IP or ask for a session PIN! In the P2P Sync tab, selecting their name from the dropdown connects you instantly.</li>
+            <li><strong>IP Privacy & Protection (Regular Friends):</strong> For standard (untrusted) friends, automatic IP resolution is strictly blocked for security and privacy. Regular friends must exchange invite links or IP addresses manually and use a session PIN. This ensures nobody can discover your computer's IP address without your explicit permission.</li>
+            <li><strong>Permanent Friend Codes:</strong> Every player receives a permanent 16-character alphanumeric Friend Code (e.g. <code>GH3-6475-71AF</code>) that never changes. Friend requests are added strictly via this code, preventing duplicate usernames, spamming, and spoofing.</li>
+            <li><strong>1-Click Revocation:</strong> You can click <strong>"Revoke Trust"</strong> or <strong>"Unfriend"</strong> at any time to immediately destroy their access token and permanently cut off automatic IP sharing.</li>
+          </ul>
+        </div>
+
+        <div class="doc-section">
+          <h3>🎶 2. ONOGAMI Song Creator (Rhythmic Auto-Charting & MIDI)</h3>
+          <p>
+            The built-in <strong>ONOGAMI Song Creator</strong> allows anyone to produce fully playable, authentic Guitar Hero III custom tracks in seconds:
+          </p>
+          <ul>
+            <li><strong>Method 1: Rhythmic Beat & BPM Engine:</strong> Simply enter the Song Title, Artist, and BPM (tempo), then upload your audio track (MP3, OGG, or WAV). The ONOGAMI engine automatically charts authentic rhythm patterns, note highways, sustained notes, and star power phrases across all 4 difficulty levels: <strong>Easy, Medium, Hard, and Expert</strong>.</li>
+            <li><strong>Method 2: Custom MIDI Chart Upload:</strong> If you already charted note highways in Moonscraper, Reaper, or EOF, simply upload your <code>.mid</code> or <code>.chart</code> file alongside the audio file.</li>
+            <li><strong>Game-Ready Output:</strong> Compiles complete <code>.chart</code>, <code>.mid</code>, <code>.fsb.xen</code> multi-channel audio, <code>.pak.xen</code> highway files, and Honeycomb <code>.ghproj</code> project files.</li>
+            <li><strong>ONOGAMI Engine Fingerprinting:</strong> Every created song is embedded with an ONOGAMI metadata signature and cryptographic audio hash, instantly visible in the <strong>"Created by Me (ONOGAMI)"</strong> collection.</li>
+          </ul>
+        </div>
+
+        <div class="doc-section">
+          <h3>🔗 3. P2P Song Synchronization & Setlist Sync</h3>
+          <p>
+            Synchronize custom songs with your online opponents and friends before launching into a match:
+          </p>
+          <ul>
+            <li><strong>Select & Connect:</strong> Choose a Trusted Friend from the dropdown (IP resolves automatically) or paste a peer's invite URL.</li>
+            <li><strong>Manifest Inspection:</strong> GH3-Sync compares the peer's installed songs against your local library and highlights tracks you are missing.</li>
+            <li><strong>Selective or Batch Sync:</strong> Check the songs you wish to install, or click <strong>"Select All"</strong>, then press <strong>"Sync Selected Songs"</strong>. Songs are downloaded and installed directly into your game folder in seconds.</li>
+          </ul>
+        </div>
+
+        <div class="doc-section">
+          <h3>🛡️ 4. Duplicate Song Prevention & Fingerprint Matching</h3>
+          <p>
+            Never worry about cluttered menus, overwriting existing songs, or downloading duplicate files:
+          </p>
+          <ul>
+            <li>When comparing songs with a peer or importing archive files, GH3-Sync analyzes song IDs, title/artist strings, and ONOGAMI engine fingerprints.</li>
+            <li>If a track is already installed in your game, GH3-Sync <strong>automatically unchecks it</strong> during sync and tags it with an <code>[Installed]</code> warning badge so duplicates are never downloaded or overwritten.</li>
+          </ul>
+        </div>
+
+        <div class="doc-section">
+          <h3>💾 5. Career Save Protection & 1-Click Restoration</h3>
+          <p>
+            In Guitar Hero III, recompiling custom songs can cause the vanilla game engine to reset career star ratings and high scores:
+          </p>
+          <ul>
+            <li><strong>Automated Snapshots:</strong> GH3-Sync automatically creates safety backups of your career save files (<code>s000.d</code> and <code>toc.dat</code>) before every sync, import, or song installation.</li>
+            <li><strong>1-Click Restoration:</strong> If your career stars or score ever reset, visit the <strong>Career Saves</strong> tab and click <strong>"Restore Latest Career Save"</strong>. Your high scores, star ratings, and unlocked items will be restored immediately while keeping all newly installed custom songs!</li>
+          </ul>
+        </div>
+
+        <div class="doc-section">
+          <h3>📁 6. Universal Game Directory & BetterGH3 Compatibility</h3>
+          <p>
+            GH3-Sync adapts to any user's PC setup:
+          </p>
+          <ul>
+            <li><strong>Custom Path Selection:</strong> Click <strong>"Game Config"</strong> in the top navigation bar to set your Guitar Hero III installation directory (e.g. <code>G:\Home\Games\Guitar Hero III</code> or standard Program Files).</li>
+            <li><strong>Compatibility Engine:</strong> Checks for the presence of <code>GH3.exe</code>, <code>bettergh3.asi</code>, <code>DATA/SONGS</code>, and <code>DATA/MUSIC</code>, providing real-time compatibility badges.</li>
+            <li><strong>Direct Game Installation:</strong> When enabled, songs are placed straight into active game folders so you can jump into gameplay immediately.</li>
+          </ul>
+        </div>
+
+        <div class="doc-section">
+          <h3>📦 7. Song Archive Importer (.gh3, .gh3song, .gh3pack) & Pack Exporter</h3>
+          <p>
+            Easily manage, share, and backup custom song archives:
+          </p>
+          <ul>
+            <li><strong>Import Songs:</strong> Drag and drop any <code>.gh3</code>, <code>.gh3song</code>, or <code>.gh3pack</code> file into the <strong>Import Songs</strong> tab to install it with one click.</li>
+            <li><strong>Export Full Pack:</strong> On the <strong>My Customs</strong> tab, click <strong>"Export All as Pack"</strong> to package your entire custom song collection into a single portable <code>.gh3pack</code> zip file to share with friends or transfer to a new PC.</li>
+          </ul>
+        </div>
+
+        <div class="doc-section">
+          <h3>🖥️ 8. Real-Time In-Game Companion HUD & Diagnostic Logging</h3>
+          <p>
+            Stay informed during multiplayer gaming and troubleshooting:
+          </p>
+          <ul>
+            <li><strong>In-Game HUD Overlay:</strong> When Guitar Hero III is active with the GH3 companion plugin, on-screen notifications display: <code>[GH3-SYNC ACTIVE]</code>, <code>[SYNCING: Song Name 45%]</code>, and <code>[✓ SUCCESS: Song Installed]</code>.</li>
+            <li><strong>Diagnostic Logger:</strong> Handshakes, network transfers, and compilation events are recorded in real time on the <strong>Security & Logs</strong> tab and persisted to <code>gh3_sync.log</code> for troubleshooting.</li>
+          </ul>
+        </div>
+
+        <div class="doc-section">
+          <h3>📊 9. Central Admin Panel & Live Feedback System</h3>
+          <p>
+            Comprehensive network health, telemetry, and developer support:
+          </p>
+          <ul>
+            <li><strong>"⚠️ Not Working?" Instant Feedback:</strong> Encountered an issue or have a suggestion? Click the <strong>Not Working?</strong> button on any page to submit feedback with automatic diagnostic tags directly to the Admin Hub.</li>
+            <li><strong>Standalone Admin Panel (GH3-Sync-Admin):</strong> Administrators can run <code>GH3-Sync-Admin.exe</code> on port 7575 to monitor live active users, track feature popularity on the usage leaderboard, review and filter feedback, and broadcast system-wide announcements to all active players.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== GAME PATH SETTINGS MODAL ==================== -->
+    <div id="gamePathModal" class="modal-overlay">
+      <div class="card" style="max-width: 600px; width: 90%; margin: 0;">
+        <h2>⚙️ Guitar Hero III Game Path & Settings</h2>
+        <p class="card-subtitle">
+          Configure where Guitar Hero III is installed on your PC. GH3-Sync verifies compatibility with BetterGH3.
+        </p>
+
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label>Game Directory (Containing GH3.exe):</label>
+          <input type="text" id="cfgGamePathInput" placeholder="e.g. G:\Home\Games\Guitar Hero III">
+        </div>
+
+        <div id="cfgCompatBadge" style="margin-bottom: 16px;"></div>
+
+        <div style="background: rgba(13, 16, 24, 0.7); padding: 14px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px;">
+          <label class="switch-label">
+            <input type="checkbox" id="cfgDirectInstallCheckbox">
+            <span><strong>Direct Install to Game:</strong> Place downloaded songs straight into <code>DATA/SONGS</code> and <code>DATA/MUSIC</code> (Recommended for online play).</span>
+          </label>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button class="btn btn-outline" onclick="closeGamePathSettings()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveGamePathSettings()">Save Settings</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== FEEDBACK MODAL ("NOT WORKING") ==================== -->
+    <div id="feedbackModal" class="modal-overlay">
+      <div class="card" style="max-width: 560px; width: 90%; margin: 0;">
+        <h2>⚠️ Report Issue / "Not Working"</h2>
+        <p class="card-subtitle">
+          Having trouble? Submit feedback directly to the Admin Hub. (No sensitive files or system paths are sent).
+        </p>
+
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label>Page / Feature:</label>
+          <input type="text" id="fbPageInput" readonly style="background: #161b26; color: var(--accent); font-weight: 700;">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label>Issue Category:</label>
+          <select id="fbCategorySelect">
+            <option value="Connection / Sync Failed">Connection / P2P Sync Failed</option>
+            <option value="Cannot Connect to Trusted Friend">Cannot Connect to Trusted Friend</option>
+            <option value="Song Creator / Honeycomb Error">Song Creator / Honeycomb Error</option>
+            <option value="Career Save Reset or Loss">Career Save Reset or Loss</option>
+            <option value="BetterGH3 Compatibility Issue">BetterGH3 Compatibility Issue</option>
+            <option value="Other / UI Glitch">Other / UI Glitch</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label>Describe what happened:</label>
+          <textarea id="fbMessageInput" rows="4" placeholder="e.g. When I clicked Connect & Verify with my trusted friend, it gave me an address error..."></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button class="btn btn-outline" onclick="closeFeedbackModal()">Cancel</button>
+          <button class="btn btn-warn" id="fbSubmitBtn" onclick="submitFeedback()">🚀 Send Feedback to Admin</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    let allSongs = [];
+    let currentFilter = 'all';
+    let currentTabName = 'My Customs';
+    let currentDiff = null;
+    let actualFriendCode = '';
+    let isFriendCodeShown = false;
+    let friendsList = [];
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('[id^="tab-"]').forEach(d => d.style.display = 'none');
+      
+      const targetDiv = document.getElementById('tab-' + tabId);
+      const targetBtn = document.getElementById('tabbtn-' + tabId);
+      
+      if (targetDiv) targetDiv.style.display = 'block';
+      if (targetBtn) targetBtn.classList.add('active');
+
+      const tabTitles = {
+        'my-songs': 'My Customs',
+        'creator': 'ONOGAMI Song Creator',
+        'friends': 'Friends & Trust',
+        'live-sync': 'P2P Sync',
+        'import': 'Import Songs',
+        'saves': 'Career Saves',
+        'debug-logs': 'Security & Logs',
+        'about': 'About & Help'
+      };
+      currentTabName = tabTitles[tabId] || tabId;
+
+      if (tabId === 'debug-logs') loadLogs();
+      if (tabId === 'friends') loadFriends();
+      if (tabId === 'saves') loadSaveBackups();
+    }
+
+    async function loadStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        
+        const pill = document.getElementById('statusPill');
+        const text = document.getElementById('statusText');
+        const pathLabel = document.getElementById('gamePathLabel');
+        const count = document.getElementById('songCount');
+
+        if (data.isDetected) {
+          if (data.compatibility && data.compatibility.isBetterGh3) {
+            pill.className = 'status-pill';
+            text.innerText = 'BetterGH3 Connected';
+          } else {
+            pill.className = 'status-pill warn';
+            text.innerText = 'Vanilla GH3 Detected';
+          }
+          pathLabel.innerText = 'Game Path: ' + data.gamePath + (data.compatibility?.isBetterGh3 ? ' (BetterGH3 Mod Active)' : '');
+        } else {
+          pill.className = 'status-pill error';
+          text.innerText = 'GH3 Not Found';
+          pathLabel.innerText = 'Could not find Guitar Hero III installation. Click Game Config to set path.';
+        }
+
+        // Global broadcast banner
+        const banner = document.getElementById('broadcastBanner');
+        if (data.globalBroadcast) {
+          banner.style.display = 'block';
+          banner.innerText = '📢 [Admin Announcement]: ' + data.globalBroadcast;
+        } else {
+          banner.style.display = 'none';
+        }
+
+        allSongs = data.songs || [];
+        count.innerText = allSongs.length;
+        document.getElementById('myAddress').innerText = data.serverUrl;
+        document.getElementById('pinBadge').innerText = 'SESSION PIN: ' + data.pairingPin;
+
+        if (data.profile) {
+          document.getElementById('profUsernameDisplay').innerText = data.profile.username;
+          actualFriendCode = data.profile.friendCode || '';
+          updateFriendCodeDisplay();
+        }
+
+        renderSongList(allSongs);
+      } catch (err) {
+        console.error('loadStatus error:', err);
+        const container = document.getElementById('songsContainer');
+        if (container) {
+          container.innerHTML = '<p style="color: #ef4444; padding: 16px;">Failed to connect to GH3-Sync engine. Is the service running?</p>';
+        }
+      }
+    }
+
+    function toggleShowFriendCode() {
+      isFriendCodeShown = !isFriendCodeShown;
+      updateFriendCodeDisplay();
+    }
+
+    function updateFriendCodeDisplay() {
+      const codeSpan = document.getElementById('profFriendCode');
+      const btn = document.getElementById('toggleCodeBtn');
+      if (isFriendCodeShown) {
+        codeSpan.innerText = actualFriendCode;
+        btn.innerText = '🔒 Hide Code';
+      } else {
+        codeSpan.innerText = actualFriendCode ? '••••-••••-••••' : 'GH3-XXXX-XXXX';
+        btn.innerText = '👁️ Show Code';
+      }
+    }
+
+    function copyFriendCode() {
+      if (!actualFriendCode) return;
+      navigator.clipboard.writeText(actualFriendCode);
+      alert('Copied Friend Code: ' + actualFriendCode);
+    }
+
+    function renderSongList(songs) {
+      const container = document.getElementById('songsContainer');
+      if (!songs || songs.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-muted); padding: 16px;">No custom songs found in DATA/SONGS. Import songs or create one with ONOGAMI Song Creator!</p>';
+        return;
+      }
+
+      container.innerHTML = songs.map(s => {
+        const isOnogami = s.createdWithOnogamiCreator || s.isCreatedLocally;
+        return `
+          <div class="song-item">
+            <div class="song-info">
+              <h3>${escapeHtml(s.title)}</h3>
+              <p>${escapeHtml(s.artist)} • <span style="font-family: monospace;">${escapeHtml(s.songId)}</span></p>
+            </div>
+            <div class="song-meta">
+              ${isOnogami ? '<span class="badge purple">🎸 ONOGAMI Song Creator</span>' : '<span class="badge blue">Synced / Imported</span>'}
+              <span class="badge">${(s.totalSizeBytes / (1024 * 1024)).toFixed(1)} MB</span>
+              <a href="/api/download/${encodeURIComponent(s.songId)}" class="btn btn-outline btn-sm" download>⬇️ Download</a>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function filterSongs(type) {
+      currentFilter = type;
+      document.querySelectorAll('[id^="flt-"]').forEach(b => b.classList.remove('active'));
+      const activeBtn = document.getElementById('flt-' + type);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      if (type === 'created') {
+        renderSongList(allSongs.filter(s => s.createdWithOnogamiCreator || s.isCreatedLocally));
+      } else if (type === 'synced') {
+        renderSongList(allSongs.filter(s => !s.createdWithOnogamiCreator && !s.isCreatedLocally));
+      } else {
+        renderSongList(allSongs);
+      }
+    }
+
+    async function loadFriends() {
+      try {
+        const res = await fetch('/api/friends');
+        friendsList = await res.json();
+        document.getElementById('friendCountBadge').innerText = friendsList.length;
+
+        const container = document.getElementById('friendsContainer');
+        const select = document.getElementById('trustedFriendsSelect');
+
+        select.innerHTML = '<option value="">-- Choose Trusted Friend --</option>';
+
+        if (!friendsList || friendsList.length === 0) {
+          container.innerHTML = '<p style="color: var(--text-muted); padding: 12px;">No friends added yet. Enter your friend\'s code above to add them!</p>';
+          return;
+        }
+
+        container.innerHTML = friendsList.map(f => `
+          <div class="song-item">
+            <div class="song-info">
+              <h3>${escapeHtml(f.username)}</h3>
+              <p>Code: <code style="color: var(--accent); font-weight: 700;">${escapeHtml(f.friendCode)}</code></p>
+              <p style="margin-top: 4px; font-size: 12px; color: var(--text-muted);">
+                ${f.isTrusted 
+                  ? `Connection IP: <span id="friend-ip-${escapeHtml(f.friendCode)}" style="color: var(--green); font-weight: 600;">${f.lastAddress ? '⚡ ' + escapeHtml(f.lastAddress) + ' (Auto-Shared)' : '⚡ Auto-discovering on LAN / Hub...'}</span>`
+                  : `Connection IP: <span id="friend-ip-${escapeHtml(f.friendCode)}" style="color: ${f.lastAddress ? 'var(--text)' : 'var(--text-muted)'}; font-weight: 500;">${f.lastAddress ? escapeHtml(f.lastAddress) : '🔒 None (Manual exchange required)'}</span>`}
+              </p>
+              <p style="margin-top: 2px; font-size: 11px; color: var(--text-muted);">
+                ${f.isTrusted 
+                  ? '⚡ IP and PIN are automatically shared between trusted peers.' 
+                  : '🔒 IP is kept private for security. Exchange IP manually or click "Allow Trusted" to enable auto-sharing.'}
+              </p>
+            </div>
+            <div class="song-meta">
+              ${f.isTrusted 
+                ? '<span class="badge green">✓ Trusted Friend</span><span class="badge" style="background: rgba(34, 197, 94, 0.2); color: var(--green);">⚡ Auto-IP Active</span>' 
+                : '<span class="badge">Standard Friend</span><span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #ef4444;">🔒 IP Protected</span>'}
+              ${f.isTrusted 
+                ? '' 
+                : `<button class="btn btn-outline btn-sm" onclick="promptEditFriendAddress('${escapeHtml(f.friendCode)}', '${escapeHtml(f.username)}', '${escapeHtml(f.lastAddress || '')}')">✏️ Set IP</button>`}
+              <button class="btn ${f.isTrusted ? 'btn-outline' : 'btn-purple'} btn-sm" onclick="toggleTrust('${escapeHtml(f.friendCode)}', ${!f.isTrusted})">
+                ${f.isTrusted ? 'Revoke Trust' : 'Allow Trusted'}
+              </button>
+              <button class="btn btn-danger btn-sm" onclick="removeFriend('${escapeHtml(f.friendCode)}')">✕ Unfriend</button>
+            </div>
+          </div>
+        `).join('');
+
+        // Populate dropdown with rich dataset
+        friendsList.filter(f => f.isTrusted).forEach(f => {
+          const opt = document.createElement('option');
+          opt.value = f.friendCode;
+          opt.dataset.friendCode = f.friendCode;
+          opt.dataset.username = f.username;
+          opt.dataset.address = f.lastAddress || '';
+          opt.dataset.token = f.trustToken || '';
+          opt.text = `${f.username} (Trusted)${f.lastAddress ? ' [⚡ ' + f.lastAddress + ']' : ' [⚡ Auto-Resolving]'}`;
+          select.appendChild(opt);
+        });
+
+        // Trigger automatic IP discovery for all trusted friends in the background
+        friendsList.filter(f => f.isTrusted).forEach(f => {
+          fetch('/api/friends/auto-resolve?friendCode=' + encodeURIComponent(f.friendCode))
+            .then(r => r.json())
+            .then(res => {
+              if (res && res.success && res.address) {
+                f.lastAddress = res.address;
+                const ipEl = document.getElementById('friend-ip-' + f.friendCode);
+                if (ipEl) {
+                  ipEl.innerHTML = `<span style="color: var(--green); font-weight: 600;">⚡ ${escapeHtml(res.address)} (Auto-Shared)</span>`;
+                }
+                const opt = select.querySelector(`option[value="${f.friendCode}"]`);
+                if (opt) {
+                  opt.dataset.address = res.address;
+                  opt.text = `${f.username} (Trusted) [⚡ ${res.address}]`;
+                }
+              }
+            })
+            .catch(() => {});
+        });
+      } catch (err) {
+        console.error('loadFriends error:', err);
+      }
+    }
+
+    async function promptEditFriendAddress(friendCode, username, currentAddress) {
+      const entered = prompt(`Set IP / Address for ${username} (e.g. 192.168.1.50:7373 or their invite link):`, currentAddress || '');
+      if (entered !== null) {
+        let clean = entered.trim();
+        if (clean && !clean.startsWith('http://') && !clean.startsWith('https://')) {
+          clean = 'http://' + clean;
+        }
+        await fetch('/api/friends/update-address', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ friendCode, address: clean })
+        });
+        loadFriends();
+      }
+    }
+
+    async function applyTrustedFriendSelect() {
+      const select = document.getElementById('trustedFriendsSelect');
+      const opt = select.options[select.selectedIndex];
+      if (!opt || !opt.value) return;
+
+      const code = opt.dataset.friendCode;
+      const username = opt.dataset.username;
+      let address = opt.dataset.address;
+      const token = opt.dataset.token;
+      const remoteUrlInput = document.getElementById('remoteUrlInput');
+      const peerHint = document.getElementById('peerHint');
+
+      if (address) {
+        let clean = address.trim();
+        if (!clean.startsWith('http://') && !clean.startsWith('https://')) clean = 'http://' + clean;
+        remoteUrlInput.value = `${clean}${clean.includes('?') ? '&' : '?'}token=${token}`;
+        peerHint.innerHTML = `<span style="color: var(--green); font-weight: 600;">⚡ Trusted Friend <b>${escapeHtml(username)}</b> auto-connected (${clean})! Ready to sync.</span>`;
+      }
+
+      // Automatically query auto-resolve in background to fetch freshest live IP
+      peerHint.innerHTML = `<span style="color: var(--accent);">⚡ Auto-resolving live IP for <b>${escapeHtml(username)}</b>...</span>`;
+      try {
+        const res = await (await fetch('/api/friends/auto-resolve?friendCode=' + encodeURIComponent(code))).json();
+        if (res && res.success && res.address) {
+          let clean = res.address.trim();
+          if (!clean.startsWith('http://') && !clean.startsWith('https://')) clean = 'http://' + clean;
+          opt.dataset.address = clean;
+          opt.text = `${username} (Trusted) [⚡ ${clean}]`;
+          remoteUrlInput.value = `${clean}${clean.includes('?') ? '&' : '?'}token=${token}`;
+          peerHint.innerHTML = `<span style="color: var(--green); font-weight: 600;">⚡ Live IP for <b>${escapeHtml(username)}</b> automatically shared: <code>${clean}</code> — Ready to sync!</span>`;
+        } else if (!remoteUrlInput.value) {
+          peerHint.innerHTML = `<span style="color: #f59e0b;">⏳ Trusted Friend <b>${escapeHtml(username)}</b> is currently offline. IP will auto-sync once they open GH3-Sync.</span>`;
+          remoteUrlInput.placeholder = `Enter IP for ${username} if known, or wait for them to open GH3-Sync`;
+        }
+      } catch (err) {
+        if (!remoteUrlInput.value) {
+          peerHint.innerHTML = `<span style="color: #f59e0b;">⏳ Could not auto-resolve live IP for ${escapeHtml(username)}. Ensure friend is online.</span>`;
+        }
+      }
+    }
+
+    async function updateUsername() {
+      const u = document.getElementById('profUsernameInput').value.trim();
+      if (!u) {
+        alert('Please enter a valid username.');
+        return;
+      }
+      await fetch('/api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: u })
+      });
+      document.getElementById('profUsernameInput').value = '';
+      loadStatus();
+      alert('Username updated to: ' + u);
+    }
+
+    async function addFriend() {
+      const friendCode = document.getElementById('afCode').value.trim();
+      const username = document.getElementById('afUsername').value.trim();
+      const address = document.getElementById('afAddress').value.trim();
+
+      if (!friendCode) {
+        alert('Please provide your friend\'s Friend Code (GH3-XXXX-XXXX).');
+        return;
+      }
+
+      let cleanAddr = address;
+      if (cleanAddr && !cleanAddr.startsWith('http://') && !cleanAddr.startsWith('https://')) {
+        cleanAddr = 'http://' + cleanAddr;
+      }
+
+      const res = await fetch('/api/friends/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ friendCode, username, address: cleanAddr })
+      });
+
+      if (res.ok) {
+        document.getElementById('afCode').value = '';
+        document.getElementById('afUsername').value = '';
+        document.getElementById('afAddress').value = '';
+        loadFriends();
+        alert('Friend added successfully!');
+      } else {
+        const err = await res.json();
+        alert('Could not add friend: ' + (err.error || 'Unknown error'));
+      }
+    }
+
+    async function toggleTrust(friendCode, allowTrust) {
+      await fetch('/api/friends/toggle-trust', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ friendCode, allowTrust })
+      });
+      loadFriends();
+    }
+
+    async function removeFriend(friendCode) {
+      if (!confirm('Remove this friend?')) return;
+      await fetch('/api/friends/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ friendCode })
+      });
+      loadFriends();
+    }
+
+    function toggleChartMode() {
+      const mode = document.querySelector('input[name="chartMode"]:checked').value;
+      const bpmGroup = document.getElementById('bpmGroup');
+      const chartGroup = document.getElementById('chartUploadGroup');
+      const chartInput = document.getElementById('crChartFile');
+
+      if (mode === 'autogen') {
+        bpmGroup.style.display = 'flex';
+        chartGroup.style.display = 'none';
+        chartInput.required = false;
+      } else {
+        bpmGroup.style.display = 'none';
+        chartGroup.style.display = 'flex';
+        chartInput.required = true;
+      }
+    }
+
+    async function handleCreateSong(e) {
+      e.preventDefault();
+      const btn = document.getElementById('createSongBtn');
+      const alertBox = document.getElementById('crAlert');
+      const statusLabel = document.getElementById('crStatus');
+      const mode = document.querySelector('input[name="chartMode"]:checked').value;
+
+      btn.disabled = true;
+      statusLabel.innerText = 'Creating ONOGAMI project files...';
+      alertBox.style.display = 'none';
+
+      const formData = new FormData();
+      formData.append('title', document.getElementById('crTitle').value.trim());
+      formData.append('artist', document.getElementById('crArtist').value.trim());
+      formData.append('album', document.getElementById('crAlbum').value.trim());
+      formData.append('year', document.getElementById('crYear').value);
+      formData.append('genre', document.getElementById('crGenre').value.trim());
+      formData.append('charter', document.getElementById('crCharter').value.trim());
+      formData.append('diffGuitar', document.getElementById('crDiffGuitar').value);
+      formData.append('diffRhythm', document.getElementById('crDiffRhythm').value);
+      formData.append('autoGenerateChart', mode === 'autogen' ? 'true' : 'false');
+      formData.append('bpm', document.getElementById('crBpm').value);
+
+      const audio = document.getElementById('crAudioFile').files[0];
+      formData.append('audioFile', audio);
+
+      if (mode === 'upload') {
+        const chart = document.getElementById('crChartFile').files[0];
+        if (chart) formData.append('chartFile', chart);
+      }
+
+      try {
+        const res = await fetch('/api/creator/create-song', {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await res.json();
+        if (result.success) {
+          alertBox.className = 'alert success';
+          alertBox.style.display = 'block';
+          alertBox.innerText = `🎉 Song Project Created with ONOGAMI Method!\nSaved at: ${result.projectDirectory}\nHoneycomb File: ${result.ghprojPath}\nThis song now appears under "Created by Me" and is ready to compile or sync!`;
+          document.getElementById('songCreatorForm').reset();
+          toggleChartMode();
+          loadStatus();
+        } else {
+          alertBox.className = 'alert error';
+          alertBox.style.display = 'block';
+          alertBox.innerText = 'Error: ' + result.error;
+        }
+      } catch (err) {
+        alertBox.className = 'alert error';
+        alertBox.style.display = 'block';
+        alertBox.innerText = 'Error creating song: ' + err.message;
+      } finally {
+        btn.disabled = false;
+        statusLabel.innerText = '';
+      }
+    }
+
+    async function handleImportFile(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const alertBox = document.getElementById('importAlert');
+      alertBox.className = 'alert info';
+      alertBox.style.display = 'block';
+      alertBox.innerText = `Importing ${file.name} (Career save backed up automatically)...`;
+
+      const formData = new FormData();
+      formData.append('archiveFile', file);
+
+      try {
+        const res = await fetch('/api/import-archive', {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await res.json();
+        if (result.success) {
+          alertBox.className = 'alert success';
+          alertBox.innerText = `🎉 Successfully imported ${result.importedCount} songs into Guitar Hero III! They are ready to play.`;
+          loadStatus();
+          loadSaveBackups();
+        } else {
+          alertBox.className = 'alert error';
+          alertBox.innerText = 'Import failed: ' + result.error;
+        }
+      } catch (err) {
+        alertBox.className = 'alert error';
+        alertBox.innerText = 'Import error: ' + err.message;
+      }
+    }
+
+    async function compareWithFriend() {
+      let remoteUrl = document.getElementById('remoteUrlInput').value.trim();
+      const select = document.getElementById('trustedFriendsSelect');
+      const opt = select.options[select.selectedIndex];
+
+      if (!remoteUrl && opt && opt.value) {
+        await applyTrustedFriendSelect();
+        remoteUrl = document.getElementById('remoteUrlInput').value.trim();
+      }
+
+      if (!remoteUrl) {
+        const name = (opt && opt.dataset.username) ? opt.dataset.username : 'peer';
+        alert(`Could not automatically connect to ${name}.\n\nPlease ensure GH3-Sync is running on their PC, or enter their IP address manually.`);
+        document.getElementById('remoteUrlInput').focus();
+        return;
+      }
+
+      // If user typed an address while a trusted friend was selected, save it automatically
+      if (opt && opt.value && (!opt.dataset.address || opt.dataset.address !== remoteUrl)) {
+        try {
+          const u = new URL(remoteUrl);
+          const baseOnly = `${u.origin || remoteUrl.split('?')[0]}`;
+          fetch('/api/friends/update-address', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ friendCode: opt.value, address: baseOnly })
+          });
+        } catch { }
+      }
+
+      const resBox = document.getElementById('comparisonResult');
+      const diffContainer = document.getElementById('diffContainer');
+      const syncAllBtn = document.getElementById('syncAllBtn');
+      const syncSelBtn = document.getElementById('syncSelectedBtn');
+      const alertBox = document.getElementById('syncAlert');
+
+      resBox.style.display = 'block';
+      diffContainer.innerHTML = '<p style="padding: 12px; color: var(--text-muted);">Authenticating and comparing song manifests...</p>';
+
+      try {
+        const res = await fetch('/api/peer/compare', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ remoteUrl })
+        });
+
+        const diff = await res.json();
+        currentDiff = diff;
+
+        if (diff.error) {
+          diffContainer.innerHTML = `<p style="color: #ef4444; padding: 12px;">Security/Connection Error: ${escapeHtml(diff.error)}</p>`;
+          return;
+        }
+
+        let html = '';
+        if (diff.inSync && diff.inSync.length > 0) {
+          html += diff.inSync.map(s => `
+            <div class="song-item">
+              <div class="song-info">
+                <h3>${escapeHtml(s.title)}</h3>
+                <p>${escapeHtml(s.artist)}</p>
+              </div>
+              <span class="badge green">✓ In Sync</span>
+            </div>
+          `).join('');
+        }
+
+        if (diff.missingLocally && diff.missingLocally.length > 0) {
+          html += diff.missingLocally.map(s => {
+            const isDup = s.isDuplicate;
+            return `
+              <div class="song-item" style="border-color: ${isDup ? 'rgba(245, 158, 11, 0.4)' : '#3b82f6'};">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <input type="checkbox" class="song-checkbox" value="${escapeHtml(s.songId)}" ${isDup ? '' : 'checked'} style="width: 18px; height: 18px; cursor: pointer;">
+                  <div class="song-info">
+                    <h3>${escapeHtml(s.title)}</h3>
+                    <p>${escapeHtml(s.artist)} • Ready to download (${(s.totalSizeBytes / (1024*1024)).toFixed(1)} MB)</p>
+                  </div>
+                </div>
+                <div>
+                  ${isDup ? `<span class="badge yellow">⚠️ Duplicate (${escapeHtml(s.duplicateReason)})</span>` : '<span class="badge blue">Missing on Your PC</span>'}
+                </div>
+              </div>
+            `;
+          }).join('');
+          syncAllBtn.style.display = 'inline-flex';
+          syncSelBtn.style.display = 'inline-flex';
+        } else {
+          syncAllBtn.style.display = 'none';
+          syncSelBtn.style.display = 'none';
+          alertBox.className = 'alert success';
+          alertBox.style.display = 'block';
+          alertBox.innerText = '🎉 Perfect match! Both players have all songs in sync. You are ready to rock online!';
+        }
+
+        diffContainer.innerHTML = html;
+      } catch (err) {
+        diffContainer.innerHTML = `<p style="color: #ef4444; padding: 12px;">Could not connect to ${escapeHtml(remoteUrl)}. Make sure your friend has GH3-Sync running and the PIN or Trust Token is valid.</p>`;
+      }
+    }
+
+    function toggleSelectAllSongs(select) {
+      document.querySelectorAll('.song-checkbox').forEach(cb => cb.checked = select);
+    }
+
+    async function syncSelectedSongs() {
+      const selected = Array.from(document.querySelectorAll('.song-checkbox:checked')).map(cb => cb.value);
+      if (selected.length === 0) {
+        alert('Please check at least one song to download.');
+        return;
+      }
+      executeSync(selected);
+    }
+
+    async function syncAllMissing() {
+      executeSync(null);
+    }
+
+    async function executeSync(selectedSongIds) {
+      const remoteUrl = document.getElementById('remoteUrlInput').value.trim();
+      const pBar = document.getElementById('syncProgressBar');
+      const pFill = document.getElementById('syncProgressFill');
+      const label = document.getElementById('syncStatusLabel');
+      const alertBox = document.getElementById('syncAlert');
+
+      pBar.style.display = 'block';
+      pFill.style.width = '20%';
+      label.innerText = 'Backing up save & downloading packages (Watch In-Game HUD)...';
+
+      try {
+        const res = await fetch('/api/peer/sync-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ remoteUrl, selectedSongIds })
+        });
+
+        pFill.style.width = '70%';
+        label.innerText = 'Verifying and deploying setlist...';
+
+        const result = await res.json();
+        pFill.style.width = '100%';
+
+        if (result.success) {
+          label.innerText = 'Complete!';
+          alertBox.className = 'alert success';
+          alertBox.style.display = 'block';
+          alertBox.innerText = `🎉 Successfully synced ${result.installedCount} songs securely! In-game HUD shows [SUCCESS]. You and your friend are ready to rock!`;
+          loadStatus();
+          loadSaveBackups();
+          compareWithFriend();
+        } else {
+          alertBox.className = 'alert error';
+          alertBox.style.display = 'block';
+          alertBox.innerText = 'Error: ' + result.error;
+        }
+      } catch (err) {
+        alertBox.className = 'alert error';
+        alertBox.style.display = 'block';
+        alertBox.innerText = 'Security/Network error while syncing: ' + err.message;
+      }
+    }
+
+    function copyMyAddress() {
+      const text = document.getElementById('myAddress').innerText;
+      navigator.clipboard.writeText(text);
+      alert('Copied secure connection invite link: ' + text);
+    }
+
+    async function loadLogs() {
+      const logViewer = document.getElementById('logContent');
+      try {
+        const res = await fetch('/api/logs');
+        const text = await res.text();
+        logViewer.innerText = text;
+        logViewer.scrollTop = logViewer.scrollHeight;
+      } catch (err) {
+        logViewer.innerText = 'Could not load log: ' + err.message;
+      }
+    }
+
+    // ==================== CAREER SAVES APIs ====================
+    async function loadSaveBackups() {
+      const container = document.getElementById('saveBackupsContainer');
+      try {
+        const res = await fetch('/api/saves/status');
+        const data = await res.json();
+
+        if (!data.backups || data.backups.length === 0) {
+          container.innerHTML = '<p style="color: var(--text-muted); padding: 12px;">No backups created yet. Click "Create Save Backup Now" above to create your first safety backup!</p>';
+          return;
+        }
+
+        container.innerHTML = data.backups.map(b => `
+          <div class="song-item">
+            <div class="song-info">
+              <h3>${escapeHtml(b.backupId)}</h3>
+              <p>Backed up at ${escapeHtml(b.timestamp)} • ${b.fileCount} save files</p>
+            </div>
+            <span class="badge green">Protected Backup</span>
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = `<p style="color: #ef4444; padding: 12px;">Failed to load save backups: ${err.message}</p>`;
+      }
+    }
+
+    async function backupSavesNow() {
+      const alertBox = document.getElementById('saveAlert');
+      try {
+        const res = await fetch('/api/saves/backup', { method: 'POST' });
+        const data = await res.json();
+        alertBox.className = 'alert success';
+        alertBox.style.display = 'block';
+        alertBox.innerText = `🛡️ Safety backup created successfully: ${data.backupId} (${data.fileCount} files protected)!`;
+        loadSaveBackups();
+      } catch (err) {
+        alertBox.className = 'alert error';
+        alertBox.style.display = 'block';
+        alertBox.innerText = 'Backup failed: ' + err.message;
+      }
+    }
+
+    async function restoreLatestSave() {
+      if (!confirm('Restore your career save files from the latest backup?')) return;
+      const alertBox = document.getElementById('saveAlert');
+      try {
+        const res = await fetch('/api/saves/restore', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          alertBox.className = 'alert success';
+          alertBox.style.display = 'block';
+          alertBox.innerText = '🎉 Career save files successfully restored to Aspyr/Guitar Hero III/Save!';
+        } else {
+          alertBox.className = 'alert error';
+          alertBox.style.display = 'block';
+          alertBox.innerText = 'Could not restore backup (no previous backup found or file in use).';
+        }
+      } catch (err) {
+        alertBox.className = 'alert error';
+        alertBox.style.display = 'block';
+        alertBox.innerText = 'Restore error: ' + err.message;
+      }
+    }
+
+    // ==================== GAME PATH SETTINGS MODAL ====================
+    async function openGamePathSettings() {
+      const modal = document.getElementById('gamePathModal');
+      const input = document.getElementById('cfgGamePathInput');
+      const check = document.getElementById('cfgDirectInstallCheckbox');
+      const badge = document.getElementById('cfgCompatBadge');
+
+      const res = await fetch('/api/status');
+      const data = await res.json();
+
+      input.value = data.gamePath || '';
+      check.checked = (data.directInstall !== false);
+
+      if (data.compatibility) {
+        badge.innerHTML = data.compatibility.isBetterGh3 
+          ? '<span class="badge green" style="font-size: 13px; padding: 6px 12px;">✓ BetterGH3 Mod Detected - 100% Compatible</span>'
+          : (data.compatibility.hasGh3Exe 
+            ? '<span class="badge yellow" style="font-size: 13px; padding: 6px 12px;">⚠️ Vanilla GH3 Detected (BetterGH3 recommended)</span>'
+            : '<span class="badge red" style="font-size: 13px; padding: 6px 12px;">❌ GH3.exe not found in this folder</span>');
+      }
+
+      modal.style.display = 'flex';
+    }
+
+    function closeGamePathSettings() {
+      document.getElementById('gamePathModal').style.display = 'none';
+    }
+
+    async function saveGamePathSettings() {
+      const path = document.getElementById('cfgGamePathInput').value.trim();
+      const direct = document.getElementById('cfgDirectInstallCheckbox').checked;
+
+      const pathRes = await fetch('/api/gamepath/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gamePath: path })
+      });
+
+      if (!pathRes.ok) {
+        const err = await pathRes.json();
+        alert('Game path error: ' + (err.error || 'Invalid directory'));
+        return;
+      }
+
+      await fetch('/api/settings/direct-install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ directInstall: direct })
+      });
+
+      closeGamePathSettings();
+      loadStatus();
+      alert('Game directory and settings saved successfully!');
+    }
+
+    // ==================== FEEDBACK / "NOT WORKING" MODAL ====================
+    function openFeedbackModal(pageName) {
+      document.getElementById('fbPageInput').value = pageName || currentTabName;
+      document.getElementById('fbMessageInput').value = '';
+      document.getElementById('feedbackModal').style.display = 'flex';
+    }
+
+    function closeFeedbackModal() {
+      document.getElementById('feedbackModal').style.display = 'none';
+    }
+
+    async function submitFeedback() {
+      const page = document.getElementById('fbPageInput').value;
+      const category = document.getElementById('fbCategorySelect').value;
+      const message = document.getElementById('fbMessageInput').value.trim();
+      const btn = document.getElementById('fbSubmitBtn');
+
+      if (!message) {
+        alert('Please write a brief description of what is not working.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerText = 'Submitting...';
+
+      try {
+        const res = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ page, category, message })
+        });
+
+        if (res.ok) {
+          alert('Thank you! Your feedback has been sent to the Admin Panel for review.');
+          closeFeedbackModal();
+        } else {
+          alert('Could not submit feedback at this time.');
+        }
+      } catch (err) {
+        alert('Error submitting feedback: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = '🚀 Send Feedback to Admin';
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    loadStatus();
+    loadFriends();
+  </script>
+</body>
+</html>
