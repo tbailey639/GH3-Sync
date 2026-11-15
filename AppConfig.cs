@@ -42,7 +42,7 @@ public class FeedbackItem
     public string Message { get; set; } = "";
     public string UserFriendCode { get; set; } = "";
     public string Username { get; set; } = "";
-    public string AppVersion { get; set; } = "1.3.0-beta.3";
+    public string AppVersion { get; set; } = "1.4.0-beta.4";
     public bool IsBetterGh3 { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string Status { get; set; } = "Open"; // Open, Investigating, Resolved
@@ -62,6 +62,8 @@ public class AppConfigData
     public List<string> CreatedSongIds { get; set; } = new() { "beatit_6ce4b6e5", "gentlyweeps_26711a91", "onogami_fa5fdfea" };
     public string CustomSongsPath { get; set; } = "";
     public List<string> CreatedSongDirectories { get; set; } = new();
+    public string HoneycombPath { get; set; } = "";
+    public bool AutoCompileCreatedSongs { get; set; } = true;
 }
 
 public static class AppConfig
@@ -151,6 +153,24 @@ public static class AppConfig
     {
         Current.DirectInstallToGame = direct;
         Save();
+    }
+
+    public static void UpdateHoneycombPath(string path)
+    {
+        lock (_lock)
+        {
+            Current.HoneycombPath = path?.Trim() ?? "";
+            Save();
+        }
+    }
+
+    public static void SetAutoCompileCreatedSongs(bool autoCompile)
+    {
+        lock (_lock)
+        {
+            Current.AutoCompileCreatedSongs = autoCompile;
+            Save();
+        }
     }
 
     public static void UpdateNetworkSettings(string customAddress, bool autoPortMap)
