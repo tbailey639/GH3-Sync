@@ -336,6 +336,23 @@
         </p>
         
         <form id="songCreatorForm" onsubmit="handleCreateSong(event)">
+          <!-- Automated Honeycomb Pipeline Indicator -->
+          <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <div style="font-weight: 700; color: #10b981; font-size: 14px; display: flex; align-items: center; gap: 6px;">
+                <span>⚡ Automated Honeycomb Compilation</span>
+                <span class="badge green" id="compilerBadge" style="font-size: 11px;">Checking...</span>
+              </div>
+              <div id="compilerStatusMsg" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                Directly compile .pak.xen chart & .fsb soundbank into Guitar Hero III upon creation.
+              </div>
+            </div>
+            <label class="switch-label" style="font-size: 13px; font-weight: 600; cursor: pointer;">
+              <input type="checkbox" id="crAutoCompile" checked style="width: 18px; height: 18px; accent-color: var(--accent);">
+              Auto-Compile into Game
+            </label>
+          </div>
+
           <div style="background: rgba(13, 16, 24, 0.7); padding: 16px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px;">
             <label style="font-size: 13px; font-weight: 700; color: #cbd5e1; display: block; margin-bottom: 8px;">Chart Generation Mode:</label>
             <div style="display: flex; gap: 24px; flex-wrap: wrap;">
@@ -398,7 +415,7 @@
           </div>
 
           <div style="margin-top: 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-            <button type="submit" id="createSongBtn" class="btn btn-green">⚡ Generate ONOGAMI Project</button>
+            <button type="submit" id="createSongBtn" class="btn btn-green">⚡ Create & Compile Song</button>
             <span id="crStatus" style="font-size: 13px; color: var(--text-muted);"></span>
           </div>
         </form>
@@ -788,10 +805,25 @@
 
         <div id="cfgCompatBadge" style="margin-bottom: 16px;"></div>
 
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label>Honeycomb-GUI Directory (Compiler Engine):</label>
+          <input type="text" id="cfgHoneycombPathInput" placeholder="Auto-detected (e.g. C:\Users\<User>\Documents\Honeycomb-GUI)">
+          <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Location where Honeycomb-GUI and FFmpeg are installed for automated song compilation.</p>
+        </div>
+
+        <div id="cfgHoneycombBadge" style="margin-bottom: 16px;"></div>
+
         <div style="background: rgba(13, 16, 24, 0.7); padding: 14px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px;">
           <label class="switch-label">
             <input type="checkbox" id="cfgDirectInstallCheckbox">
             <span><strong>Direct Install to Game:</strong> Place downloaded songs straight into <code>DATA/SONGS</code> and <code>DATA/MUSIC</code> (Recommended for online play).</span>
+          </label>
+        </div>
+
+        <div style="background: rgba(13, 16, 24, 0.7); padding: 14px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px;">
+          <label class="switch-label">
+            <input type="checkbox" id="cfgAutoCompileCheckbox">
+            <span><strong>Automated Honeycomb Pipeline:</strong> Automatically compile newly created songs directly into Guitar Hero III (PAK chart & FSB audio soundbanks).</span>
           </label>
         </div>
 
@@ -939,6 +971,26 @@
           }
         }
 
+        if (data.honeycomb) {
+          const cBadge = document.getElementById('compilerBadge');
+          const cMsg = document.getElementById('compilerStatusMsg');
+          if (cBadge && cMsg) {
+            if (data.honeycomb.available && data.honeycomb.hasFfmpeg) {
+              cBadge.className = 'badge green';
+              cBadge.innerText = 'Ready (Direct Compile)';
+              cMsg.innerText = `Honeycomb ready • ${data.honeycomb.honeycombDirectory}`;
+            } else if (data.honeycomb.available) {
+              cBadge.className = 'badge yellow';
+              cBadge.innerText = 'FFmpeg Needed';
+              cMsg.innerText = `Honeycomb detected, but FFmpeg is missing in folder. Audio compilation may fail.`;
+            } else {
+              cBadge.className = 'badge red';
+              cBadge.innerText = 'Compiler Missing';
+              cMsg.innerText = data.honeycomb.statusMessage || `Honeycomb not found. Click Game Config to configure.`;
+            }
+          }
+        }
+
         if (data.profile) {
           document.getElementById('profUsernameDisplay').innerText = data.profile.username;
           actualFriendCode = data.profile.friendCode || '';
@@ -1004,7 +1056,8 @@
               ${isOnogami ? '<span class="badge purple">🎸 ONOGAMI Creator</span>' : '<span class="badge blue">Synced / Imported</span>'}
               ${isProject ? '<span class="badge yellow" title="Project created - ready to compile or sync">📁 Project Created</span>' : '<span class="badge green">✓ In-Game Ready</span>'}
               <span class="badge">${(s.totalSizeBytes / (1024 * 1024)).toFixed(1)} MB</span>
-              ${s.isProject && s.projectDirectory ? `<button class="btn btn-primary btn-sm" onclick="openGhproj('${escapeHtml(s.projectDirectory).replace(/\\/g, '\\\\')}')">⚡ Open in Honeycomb</button>` : ''}
+              ${s.isProject || !s.isCompiled ? `<button class="btn btn-green btn-sm" onclick="compileSong('${escapeHtml(s.songId)}', '${escapeHtml(s.ghprojPath || '').replace(/\\/g, '\\\\')}')">⚡ Compile Song</button>` : ''}
+              ${s.isProject && s.projectDirectory ? `<button class="btn btn-primary btn-sm" onclick="openGhproj('${escapeHtml(s.projectDirectory).replace(/\\/g, '\\\\')}')">Honeycomb GUI</button>` : ''}
               ${s.projectDirectory ? `<button class="btn btn-outline btn-sm" onclick="openSongFolder('${escapeHtml(s.projectDirectory).replace(/\\/g, '\\\\')}')">📂 Open Folder</button>` : ''}
               <a href="/api/download/${encodeURIComponent(s.songId)}" class="btn btn-outline btn-sm" download>⬇️ Download</a>
             </div>
@@ -1284,9 +1337,10 @@
       const alertBox = document.getElementById('crAlert');
       const statusLabel = document.getElementById('crStatus');
       const mode = document.querySelector('input[name="chartMode"]:checked').value;
+      const autoComp = document.getElementById('crAutoCompile') ? document.getElementById('crAutoCompile').checked : true;
 
       btn.disabled = true;
-      statusLabel.innerText = 'Creating ONOGAMI project files...';
+      statusLabel.innerText = autoComp ? '⚡ Creating project & running automated Honeycomb compilation...' : 'Creating ONOGAMI project files...';
       alertBox.style.display = 'none';
 
       const formData = new FormData();
@@ -1299,6 +1353,7 @@
       formData.append('diffGuitar', document.getElementById('crDiffGuitar').value);
       formData.append('diffRhythm', document.getElementById('crDiffRhythm').value);
       formData.append('autoGenerateChart', mode === 'autogen' ? 'true' : 'false');
+      formData.append('autoCompile', autoComp ? 'true' : 'false');
       formData.append('bpm', document.getElementById('crBpm').value);
 
       const audio = document.getElementById('crAudioFile').files[0];
@@ -1319,7 +1374,11 @@
         if (result.success) {
           alertBox.className = 'alert success';
           alertBox.style.display = 'block';
-          alertBox.innerText = `🎉 Song Project Created with ONOGAMI Method!\nSaved at: ${result.projectDirectory}\nHoneycomb File: ${result.ghprojPath}\nThis song now appears under "Created by Me" and is ready to compile or sync!`;
+          if (result.compiledSuccessfully) {
+            alertBox.innerText = `🎉 Song Created & Compiled Directly into Guitar Hero III!\nTitle: ${result.title} by ${result.artist}\nProject Directory: ${result.projectDirectory}\nPAK Deployed: ${result.pakFilePath}\nFSB Soundbank: ${result.fsbFilePath}\n✓ Career progression backed up. Ready to play!`;
+          } else {
+            alertBox.innerText = `🎉 Song Project Created with ONOGAMI Method!\nSaved at: ${result.projectDirectory}\nHoneycomb File: ${result.ghprojPath}\nStatus: ${result.message}`;
+          }
           document.getElementById('songCreatorForm').reset();
           toggleChartMode();
           loadStatus();
@@ -1335,6 +1394,38 @@
       } finally {
         btn.disabled = false;
         statusLabel.innerText = '';
+      }
+    }
+
+    async function compileSong(songId, ghprojPath) {
+      if (!confirm(`Compile song '${songId}' directly into Guitar Hero III using Honeycomb?`)) return;
+
+      const btn = event?.target;
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = '⚡ Compiling...';
+      }
+
+      try {
+        const res = await fetch('/api/compiler/compile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ songId, ghprojPath })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert(`✓ Song '${songId}' compiled and deployed into Guitar Hero III successfully!`);
+          loadStatus();
+        } else {
+          alert(`Compilation failed: ${data.error || (data.logs ? data.logs.join('\n') : 'Unknown error')}`);
+        }
+      } catch (err) {
+        alert('Compiler request error: ' + err.message);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = '⚡ Compile Song';
+        }
       }
     }
 
@@ -1717,15 +1808,20 @@
       const modal = document.getElementById('gamePathModal');
       const input = document.getElementById('cfgGamePathInput');
       const songsInput = document.getElementById('cfgSongsPathInput');
+      const hInput = document.getElementById('cfgHoneycombPathInput');
       const check = document.getElementById('cfgDirectInstallCheckbox');
+      const autoCompCheck = document.getElementById('cfgAutoCompileCheckbox');
       const badge = document.getElementById('cfgCompatBadge');
+      const hBadge = document.getElementById('cfgHoneycombBadge');
 
       const res = await fetch('/api/status');
       const data = await res.json();
 
       input.value = data.gamePath || '';
       if (songsInput) songsInput.value = data.customSongsPath || '';
+      if (hInput) hInput.value = (data.honeycomb && data.honeycomb.honeycombDirectory) || '';
       check.checked = (data.directInstall !== false);
+      if (autoCompCheck) autoCompCheck.checked = (data.autoCompile !== false);
 
       if (data.compatibility) {
         badge.innerHTML = data.compatibility.isBetterGh3 
@@ -1733,6 +1829,14 @@
           : (data.compatibility.hasGh3Exe 
             ? '<span class="badge yellow" style="font-size: 13px; padding: 6px 12px;">⚠️ Vanilla GH3 Detected (BetterGH3 recommended)</span>'
             : '<span class="badge red" style="font-size: 13px; padding: 6px 12px;">❌ GH3.exe not found in this folder</span>');
+      }
+
+      if (data.honeycomb && hBadge) {
+        hBadge.innerHTML = data.honeycomb.available && data.honeycomb.hasFfmpeg
+          ? '<span class="badge green" style="font-size: 13px; padding: 6px 12px;">✓ Honeycomb & FFmpeg Ready for Auto-Compile</span>'
+          : (data.honeycomb.available
+            ? '<span class="badge yellow" style="font-size: 13px; padding: 6px 12px;">⚠️ Honeycomb Found, but FFmpeg is missing in folder</span>'
+            : '<span class="badge red" style="font-size: 13px; padding: 6px 12px;">❌ Honeycomb-GUI not detected</span>');
       }
 
       modal.style.display = 'flex';
@@ -1766,6 +1870,22 @@
           body: JSON.stringify({ songsPath })
         });
       }
+
+      const hPath = document.getElementById('cfgHoneycombPathInput') ? document.getElementById('cfgHoneycombPathInput').value.trim() : '';
+      if (hPath) {
+        await fetch('/api/settings/honeycomb-path', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: hPath })
+        });
+      }
+
+      const autoComp = document.getElementById('cfgAutoCompileCheckbox') ? document.getElementById('cfgAutoCompileCheckbox').checked : true;
+      await fetch('/api/settings/auto-compile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ autoCompile: autoComp })
+      });
 
       await fetch('/api/settings/direct-install', {
         method: 'POST',
