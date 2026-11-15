@@ -2,7 +2,7 @@
 ; GH3-Sync: Complete P2P Song Synchronizer, Friends Network & ONOGAMI Song Creator for BetterGH3
 
 #define MyAppName "GH3-Sync"
-#define MyAppVersion "1.3.0-beta.3"
+#define MyAppVersion "1.4.0-beta.4"
 #define MyAppPublisher "Antigravity & ONOGAMI"
 #define MyAppURL "https://github.com/tbailey639/GH3-Sync"
 #define MyAppExeName "GH3-Sync.exe"
