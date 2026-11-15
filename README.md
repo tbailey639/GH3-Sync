@@ -32,12 +32,15 @@
 * **Permanent Unique Friend Code:** Every player receives a permanent unique code (e.g. `GH3-6475-71AF`) with a Show/Hide toggle to prevent spam.
 * **Instant Revocation:** Click **"Revoke Trust"** or **"Unfriend"** at any time to immediately destroy the access token.
 
-### 5. 🎸 ONOGAMI Song Creator
-* Built-in custom song generator using the proven ONOGAMI method:
+### 5. 🎸 ONOGAMI Song Creator & Automated Honeycomb Pipeline
+* Built-in custom song generator and compiler using the proven ONOGAMI method:
+  * **Automated Honeycomb Compilation (Beta 4):** Automatically compiles `.pak.xen` chart packages and `.fsb.xen` / `.dat.xen` FMOD multi-track soundbanks headlessly into Guitar Hero III with 1 click.
+  * **1-Click Compilation in Library:** Click "⚡ Compile Song" on any custom song card in your Library to compile or recompile it instantly.
+  * **Automated Chart-to-MIDI Conversion:** Uploaded or auto-generated `.chart` files are automatically converted to standard `notes.mid` using `GH_Toolkit_Core.MIDI.Chart`.
   * **Auto-Chart Generation:** Auto-generates full 5-fret note charts across all 4 difficulties (**Easy, Medium, Hard, Expert**) from your chosen BPM + audio file!
   * **Custom MIDI / Chart Support:** Upload your own `.chart` or `.mid` files if charted in Moonscraper/Reaper.
-  * **Audio Support:** Supports `.mp3`, `.wav`, and `.ogg`.
-  * **Honeycomb Ready:** Generates Neversoft `song.ini` and the complete Honeycomb `.ghproj` project file.
+  * **Audio Support:** Supports `.mp3`, `.wav`, and `.ogg` (single-track or multi-track isolated stems).
+  * **Universal Portability:** Works on any PC and drive letter with smart auto-detection of Honeycomb-GUI, FFmpeg, and game paths.
   * **Created by Me Tagging:** Created songs automatically appear in your **"Created by Me"** library filter with the `🎸 ONOGAMI Song Creator` badge.
 
 ### 6. 📁 1-Click File Import (`.gh3pack`, `.gh3song`, `.sgh`, `.zip`)
