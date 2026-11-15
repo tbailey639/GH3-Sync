@@ -4,6 +4,30 @@ All notable changes to the GH3-Sync project are documented in this file.
 
 ---
 
+## [Beta 4] - 2026-11-15
+
+### 🌟 New Features & Enhancements
+* **Automated Honeycomb Compiler Pipeline in ONOGAMI Creator:**
+  * Fully integrated the Honeycomb-GUI and GH-Toolkit compilation engines directly into GH3-Sync.
+  * Creating a custom song in the ONOGAMI Song Creator can now compile directly into Guitar Hero III (`DATA\SONGS\*_song.pak.xen` and `DATA\MUSIC\*.fsb.xen`) headlessly with 1 click.
+  * Added "Auto-Compile into Game" toggle in the creator form.
+* **1-Click "⚡ Compile Song" on Any Custom Song:**
+  * Added direct compilation button to all custom song cards in the Library, allowing users to compile uncompiled or imported project songs at any time.
+* **Automated Chart-to-MIDI Conversion:**
+  * Automatic on-the-fly conversion of `.chart` files (both uploaded and ONOGAMI BPM-generated charts) into standard Guitar Hero III MIDI (`notes.mid`) via `GH_Toolkit_Core.MIDI.Chart`, eliminating EOF or manual tool requirements.
+* **Dynamic Portable Path Discovery (Universal Multi-PC Architecture):**
+  * Eliminated all hardcoded drive letters and directory paths.
+  * Dynamically scans all system drives (C:, D:, E:, G:, etc.), User Documents, Desktop, AppData, and game Tools folders to automatically discover Honeycomb-GUI, FFmpeg, and Guitar Hero III.
+  * Added configurable Honeycomb Path input and compiler health indicator in the Game Config / Settings dialog.
+* **Automated FFmpeg Resolution:**
+  * Dynamically checks Honeycomb root, system `PATH`, and package manager paths (WinGet, Chocolatey), automatically ensuring `ffmpeg.exe` is available for audio soundbank encoding.
+* **Career Save Safeguards:**
+  * Automatically backs up career progression and save files before and after song compilation.
+* **Multi-Track Audio Stem Normalization:**
+  * Corrected `.ghproj` audio routing to prevent `amix: inputs=0` FFmpeg mixer failures on single-track songs while supporting isolated stems (guitar, rhythm, backing, vocals, drums) when present.
+
+---
+
 ## [Beta 3] - 2026-11-14
 
 ### 🌟 New Features & Enhancements
