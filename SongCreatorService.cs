@@ -18,6 +18,7 @@ public class SongCreationRequest
     public int PreviewStartMs { get; set; } = 5000;
     public int Bpm { get; set; } = 130;
     public bool AutoGenerateChart { get; set; } = false;
+    public bool AutoCompile { get; set; } = true;
 }
 
 public class CreatedSongResult
@@ -30,14 +31,20 @@ public class CreatedSongResult
     public string GhprojPath { get; set; } = "";
     public string Message { get; set; } = "";
     public bool CreatedWithOnogamiCreator { get; set; } = true;
+    public bool CompiledSuccessfully { get; set; }
+    public string CompilationMessage { get; set; } = "";
+    public string PakFilePath { get; set; } = "";
+    public string FsbFilePath { get; set; } = "";
 }
 
 public class SongCreatorService
 {
     private readonly string _defaultSongsDir;
+    private readonly HoneycombCompilerService? _compiler;
 
-    public SongCreatorService(string? songsDir = null)
+    public SongCreatorService(HoneycombCompilerService? compiler = null, string? songsDir = null)
     {
+        _compiler = compiler;
         _defaultSongsDir = ResolveSongsDirectory(songsDir);
     }
 
@@ -93,6 +100,16 @@ public class SongCreatorService
         byte[]? chartBytes = null,
         string? chartFileName = null)
     {
+        return CreateSongFromOnogamiMethodAsync(meta, audioBytes, audioFileName, chartBytes, chartFileName).GetAwaiter().GetResult();
+    }
+
+    public async Task<CreatedSongResult> CreateSongFromOnogamiMethodAsync(
+        SongCreationRequest meta,
+        byte[] audioBytes,
+        string audioFileName,
+        byte[]? chartBytes = null,
+        string? chartFileName = null)
+    {
         if (string.IsNullOrWhiteSpace(meta.Title))
             return new CreatedSongResult { Success = false, Message = "Song title is required." };
         if (string.IsNullOrWhiteSpace(meta.Artist))
@@ -120,6 +137,7 @@ public class SongCreatorService
 
             // 3. Handle Chart (Use provided OR Auto-Generate like ONOGAMI)
             string chartFullPath;
+            string midiFullPath = Path.Combine(targetDir, "notes.mid");
             if (chartBytes != null && chartBytes.Length > 0 && !string.IsNullOrEmpty(chartFileName))
             {
                 var chartTargetName = chartFileName.EndsWith(".chart", StringComparison.OrdinalIgnoreCase) ? "notes.chart" : "notes.mid";
@@ -133,6 +151,26 @@ public class SongCreatorService
                 var generatedChart = GenerateOnogamiStyleChart(meta);
                 File.WriteAllText(chartFullPath, generatedChart);
             }
+
+            // Automatically convert .chart to notes.mid using Honeycomb Core
+            if (chartFullPath.EndsWith(".chart", StringComparison.OrdinalIgnoreCase))
+            {
+                var hDir = HoneycombCompilerService.FindHoneycombDirectory();
+                if (!string.IsNullOrEmpty(hDir))
+                {
+                    try
+                    {
+                        HoneycombCompilerService.ConvertChartToMid(chartFullPath, hDir);
+                    }
+                    catch { }
+                }
+            }
+            else
+            {
+                midiFullPath = chartFullPath;
+            }
+
+            var chosenMidiPath = File.Exists(midiFullPath) ? midiFullPath : chartFullPath;
 
             // 4. Generate song.ini
             var iniPath = Path.Combine(targetDir, "song.ini");
@@ -170,25 +208,25 @@ public class SongCreatorService
                 snarePath = "",
                 cymbalsPath = "",
                 tomsPath = "",
-                guitarPath = "",
+                guitarPath = audioFullPath,
                 bassPath = "",
                 vocalsPath = "",
-                backingPaths = "",
+                backingPaths = audioFullPath,
                 crowdPath = "",
-                previewAudioPath = "",
-                guitarPathGh3 = "",
+                previewAudioPath = audioFullPath,
+                guitarPathGh3 = audioFullPath,
                 rhythmPathGh3 = "",
                 backingPathsGh3 = audioFullPath,
-                coopGuitarPath = "",
+                coopGuitarPath = audioFullPath,
                 coopRhythmPath = "",
-                coopBackingPaths = "",
+                coopBackingPaths = audioFullPath,
                 crowdPathGh3 = "",
-                previewAudioPathGh3 = "",
-                midiPathGh3 = chartFullPath,
+                previewAudioPathGh3 = audioFullPath,
+                midiPathGh3 = chosenMidiPath,
                 perfPathGh3 = "",
                 skaPathGh3 = "",
                 songScriptPathGh3 = "",
-                midiPath = "",
+                midiPath = chosenMidiPath,
                 perfPath = "",
                 skaPath = "",
                 lipsyncPath = "",
@@ -268,7 +306,7 @@ public class SongCreatorService
             // Register this song ID and project directory as created by ONOGAMI creator
             AppConfig.RegisterCreatedSong(cleanSongId, targetDir);
 
-            return new CreatedSongResult
+            var result = new CreatedSongResult
             {
                 Success = true,
                 SongId = cleanSongId,
@@ -279,6 +317,27 @@ public class SongCreatorService
                 CreatedWithOnogamiCreator = true,
                 Message = $"Successfully created '{meta.Title}' with ONOGAMI Song Creator!"
             };
+
+            // Automated Honeycomb Compilation
+            if (meta.AutoCompile && _compiler != null)
+            {
+                var compileResult = await _compiler.CompileSongProjectAsync(ghprojFullPath);
+                result.CompiledSuccessfully = compileResult.Success;
+                result.CompilationMessage = compileResult.Message;
+                result.PakFilePath = compileResult.PakFilePath;
+                result.FsbFilePath = compileResult.FsbFilePath;
+
+                if (compileResult.Success)
+                {
+                    result.Message = $"Successfully created and compiled '{meta.Title}' directly into Guitar Hero III!";
+                }
+                else
+                {
+                    result.Message = $"Song created at '{targetDir}'. Honeycomb compilation note: {compileResult.Message}";
+                }
+            }
+
+            return result;
         }
         catch (Exception ex)
         {
