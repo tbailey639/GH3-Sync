@@ -35,6 +35,8 @@ public class CustomSongInfo
     public string DuplicateReason { get; set; } = "";
     public bool IsProject { get; set; } = false;
     public string ProjectDirectory { get; set; } = "";
+    public bool IsCompiled { get; set; } = true;
+    public string GhprojPath { get; set; } = "";
 }
 
 public class LibraryManifest
@@ -123,6 +125,33 @@ public class Gh3Service
                 return c;
             }
         }
+
+        try
+        {
+            var drives = DriveInfo.GetDrives().Where(d => d.IsReady && (d.DriveType == DriveType.Fixed || d.DriveType == DriveType.Removable));
+            foreach (var d in drives)
+            {
+                string[] driveChecks = new[]
+                {
+                    Path.Combine(d.RootDirectory.FullName, "Games", "Guitar Hero III"),
+                    Path.Combine(d.RootDirectory.FullName, "Games", "Guitar Hero 3"),
+                    Path.Combine(d.RootDirectory.FullName, "Guitar Hero III"),
+                    Path.Combine(d.RootDirectory.FullName, "Guitar Hero 3"),
+                    Path.Combine(d.RootDirectory.FullName, "Program Files (x86)", "Aspyr", "Guitar Hero III"),
+                    Path.Combine(d.RootDirectory.FullName, "Program Files", "Aspyr", "Guitar Hero III"),
+                    Path.Combine(d.RootDirectory.FullName, "Home", "Games", "Guitar Hero III")
+                };
+
+                foreach (var check in driveChecks)
+                {
+                    if (Directory.Exists(check) && File.Exists(Path.Combine(check, "GH3.exe")))
+                    {
+                        return check;
+                    }
+                }
+            }
+        }
+        catch { }
 
         try
         {
@@ -337,6 +366,9 @@ public class Gh3Service
             }
             catch { }
 
+            var ghprojPath = ghprojFiles.FirstOrDefault() ?? "";
+            bool hasStandalonePak = Directory.GetFiles(dirPath, "*_song.pak.xen").Length > 0;
+
             return new CustomSongInfo
             {
                 SongId = songId,
@@ -349,7 +381,9 @@ public class Gh3Service
                 CreatedWithOnogamiCreator = isOnogami,
                 OnogamiFingerprint = ComputeFingerprint(title, artist),
                 IsProject = true,
-                ProjectDirectory = dirPath
+                ProjectDirectory = dirPath,
+                IsCompiled = hasStandalonePak,
+                GhprojPath = ghprojPath
             };
         }
         catch
@@ -498,6 +532,7 @@ public class Gh3Service
                 existing.IsCreatedLocally = true;
                 existing.CreatedWithOnogamiCreator = true;
                 existing.ProjectDirectory = projectSong.ProjectDirectory;
+                if (!string.IsNullOrEmpty(projectSong.GhprojPath)) existing.GhprojPath = projectSong.GhprojPath;
                 if (!string.IsNullOrWhiteSpace(projectSong.Title) && projectSong.Title != projectSong.SongId)
                     existing.Title = projectSong.Title;
                 if (!string.IsNullOrWhiteSpace(projectSong.Artist) && projectSong.Artist != "Custom Artist")
