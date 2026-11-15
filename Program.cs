@@ -31,14 +31,16 @@ var gh3Service = new Gh3Service();
 var syncLogger = new SyncLogger(gh3Service.GamePath);
 var securityService = new SecurityService();
 var friendService = new FriendService(baseDir);
-var creatorService = new SongCreatorService();
 var saveManager = new SaveManager(syncLogger);
+var compilerService = new HoneycombCompilerService(gh3Service, syncLogger, saveManager);
+var creatorService = new SongCreatorService(compilerService);
 var natService = new NatPortMappingService(port, syncLogger);
 
 builder.Services.AddSingleton(gh3Service);
 builder.Services.AddSingleton(syncLogger);
 builder.Services.AddSingleton(securityService);
 builder.Services.AddSingleton(friendService);
+builder.Services.AddSingleton(compilerService);
 builder.Services.AddSingleton(creatorService);
 builder.Services.AddSingleton(saveManager);
 builder.Services.AddSingleton(natService);
@@ -183,12 +185,13 @@ _ = Task.Run(async () =>
 });
 
 // ==================== SYSTEM & GAME STATUS ====================
-app.MapGet("/api/status", (Gh3Service gh3, SyncLogger logger, SecurityService sec, FriendService friends, SaveManager saves, NatPortMappingService nat) =>
+app.MapGet("/api/status", (Gh3Service gh3, SyncLogger logger, SecurityService sec, FriendService friends, SaveManager saves, NatPortMappingService nat, HoneycombCompilerService compiler) =>
 {
     var localIp = GetLocalIpAddress();
     var customs = gh3.GetInstalledCustomSongs();
     var compat = gh3.VerifyGamePath(gh3.GamePath);
     var bestAddr = GetBestPublicOrLanAddress();
+    var compilerStatus = compiler.GetStatusReport();
     return Results.Ok(new
     {
         isDetected = gh3.IsDetected,
@@ -196,6 +199,8 @@ app.MapGet("/api/status", (Gh3Service gh3, SyncLogger logger, SecurityService se
         customSongsPath = SongCreatorService.ResolveSongsDirectory(),
         compatibility = compat,
         directInstall = AppConfig.Current.DirectInstallToGame,
+        honeycomb = compilerStatus,
+        autoCompile = AppConfig.Current.AutoCompileCreatedSongs,
         serverUrl = $"{bestAddr}?pin={sec.PairingPin}",
         rawAddress = bestAddr,
         localAddress = $"http://{localIp}:{port}",
@@ -284,6 +289,37 @@ app.MapPost("/api/settings/songs-path", async (HttpContext context, SyncLogger l
         }
     }
     return Results.BadRequest(new { error = "songsPath is required." });
+});
+
+app.MapPost("/api/settings/honeycomb-path", async (HttpContext context, HoneycombCompilerService compiler, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+    if (req.TryGetProperty("honeycombPath", out var p) || req.TryGetProperty("path", out p))
+    {
+        var newPath = p.GetString()?.Trim() ?? "";
+        AppConfig.UpdateHoneycombPath(newPath);
+        var report = compiler.GetStatusReport();
+        logger.LogInfo($"[SETTINGS] Honeycomb path updated to: '{newPath}' (Compiler Status: {report.StatusMessage})");
+        return Results.Ok(new { success = true, report, honeycombPath = AppConfig.Current.HoneycombPath });
+    }
+    return Results.BadRequest(new { error = "honeycombPath is required." });
+});
+
+app.MapPost("/api/settings/auto-compile", async (HttpContext context, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+    if (req.TryGetProperty("autoCompile", out var ac))
+    {
+        var val = ac.GetBoolean();
+        AppConfig.SetAutoCompileCreatedSongs(val);
+        logger.LogInfo($"[SETTINGS] Auto-compile created songs set to: {val}");
+        return Results.Ok(new { success = true, autoCompile = val });
+    }
+    return Results.BadRequest(new { error = "autoCompile boolean required." });
 });
 
 app.MapGet("/api/open-folder", (string? path, SyncLogger logger) =>
@@ -951,6 +987,7 @@ app.MapPost("/api/creator/create-song", async (HttpRequest request, SongCreatorS
 
     var form = await request.ReadFormAsync();
     var autoGen = form["autoGenerateChart"].ToString() == "true";
+    var autoCompile = form["autoCompile"].ToString() == "true" || (form.ContainsKey("autoCompile") ? false : AppConfig.Current.AutoCompileCreatedSongs);
     var meta = new SongCreationRequest
     {
         Title = form["title"].ToString(),
@@ -963,7 +1000,8 @@ app.MapPost("/api/creator/create-song", async (HttpRequest request, SongCreatorS
         DiffRhythm = int.TryParse(form["diffRhythm"], out var dr) ? dr : 3,
         PreviewStartMs = int.TryParse(form["previewStartMs"], out var ps) ? ps : 5000,
         Bpm = int.TryParse(form["bpm"], out var bpmVal) ? bpmVal : 130,
-        AutoGenerateChart = autoGen
+        AutoGenerateChart = autoGen,
+        AutoCompile = autoCompile
     };
 
     var audioFile = form.Files.GetFile("audioFile");
@@ -988,8 +1026,8 @@ app.MapPost("/api/creator/create-song", async (HttpRequest request, SongCreatorS
         chartFileName = chartFile.FileName;
     }
 
-    logger.LogInfo($"[CREATOR] Creating custom song '{meta.Title}' by '{meta.Artist}' using ONOGAMI Method (AutoGenChart: {autoGen})...");
-    var result = creator.CreateSongFromOnogamiMethod(
+    logger.LogInfo($"[CREATOR] Creating custom song '{meta.Title}' by '{meta.Artist}' using ONOGAMI Method (AutoGenChart: {autoGen}, AutoCompile: {autoCompile})...");
+    var result = await creator.CreateSongFromOnogamiMethodAsync(
         meta,
         audioMs.ToArray(),
         audioFile.FileName,
@@ -1003,6 +1041,56 @@ app.MapPost("/api/creator/create-song", async (HttpRequest request, SongCreatorS
         return Results.Ok(result);
     }
     return Results.BadRequest(new { error = result.Message });
+});
+
+// ==================== HONEYCOMB COMPILER ====================
+app.MapGet("/api/compiler/status", (HoneycombCompilerService compiler) =>
+{
+    return Results.Ok(compiler.GetStatusReport());
+});
+
+app.MapPost("/api/compiler/compile", async (HttpRequest request, HoneycombCompilerService compiler, Gh3Service gh3, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(request.Body);
+    var bodyStr = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(bodyStr);
+
+    string ghprojPath = "";
+    if (req.TryGetProperty("ghprojPath", out var p)) ghprojPath = p.GetString() ?? "";
+    if (string.IsNullOrEmpty(ghprojPath) && req.TryGetProperty("songId", out var sId))
+    {
+        var songs = gh3.GetInstalledCustomSongs();
+        var match = songs.FirstOrDefault(s => s.SongId.Equals(sId.GetString(), StringComparison.OrdinalIgnoreCase));
+        if (match != null && !string.IsNullOrEmpty(match.GhprojPath))
+        {
+            ghprojPath = match.GhprojPath;
+        }
+        else if (match != null && !string.IsNullOrEmpty(match.ProjectDirectory))
+        {
+            var proj = Directory.GetFiles(match.ProjectDirectory, "*.ghproj").FirstOrDefault();
+            if (!string.IsNullOrEmpty(proj)) ghprojPath = proj;
+        }
+        else
+        {
+            var projDir = gh3.FindProjectDirectory(sId.GetString() ?? "");
+            if (!string.IsNullOrEmpty(projDir))
+            {
+                var proj = Directory.GetFiles(projDir, "*.ghproj").FirstOrDefault();
+                if (!string.IsNullOrEmpty(proj)) ghprojPath = proj;
+            }
+        }
+    }
+
+    if (string.IsNullOrEmpty(ghprojPath) || !File.Exists(ghprojPath))
+        return Results.BadRequest(new { error = "Valid .ghproj file path or registered project songId required." });
+
+    logger.LogInfo($"[COMPILER] Starting Honeycomb compilation for: {Path.GetFileName(ghprojPath)}");
+    var result = await compiler.CompileSongProjectAsync(ghprojPath);
+    if (result.Success)
+    {
+        return Results.Ok(result);
+    }
+    return Results.BadRequest(new { error = result.Message, logs = result.Logs });
 });
 
 // ==================== DIRECT FILE IMPORT ====================
