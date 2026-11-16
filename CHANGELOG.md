@@ -26,6 +26,13 @@ All notable changes to the GH3-Sync project are documented in this file.
 * **Multi-Track Audio Stem Normalization:**
   * Corrected `.ghproj` audio routing to prevent `amix: inputs=0` FFmpeg mixer failures on single-track songs while supporting isolated stems (guitar, rhythm, backing, vocals, drums) when present.
 
+### 🐛 Bug Fixes & Stability
+* **Headless Audio Soundbank Compilation**: Fixed WinForms STA thread synchronization deadlock by implementing direct async audio compilation (`CompileAudioStemsAsync`) via `FSB.ConvertToMp3` and `FSB.CombineFSB3File`, reliably generating `.fsb.xen` and `.dat.xen` soundbanks into `DATA/MUSIC/` without hanging.
+* **Song Action Buttons with Special Characters**: Fixed `⚡ Open in Honeycomb`, `📁 Open Folder`, and `⚡ Compile Song` action buttons failing to respond on songs with apostrophes or special characters (such as *Bill Withers - Ain't No Sunshine*) by moving from inline JavaScript string templates to array index-based handlers (`openGhprojByIdx`, `openSongFolderByIdx`, `compileSongByIdx`).
+* **Direct Honeycomb Executable Launch**: Fixed Windows file association failure when clicking `⚡ Open in Honeycomb` by directly locating and executing `Honeycomb-GUI.exe "{ghprojPath}"`.
+* **In-Game Ready Status Badge**: Ensured newly created songs with auto-compile enabled immediately update their checksum ID and display `✓ In-Game Ready` in the library.
+* **Target Runtime Modernization**: Updated project target framework to `.NET 10.0-windows`.
+
 ---
 
 ## [Beta 3] - 2026-11-14

@@ -289,8 +289,8 @@ public class SongCreatorService
                 isCover = false,
                 isP2Rhythm = true,
                 isCoopAudio = false,
-                useRenderedPreview = false,
-                useRenderedPreviewGh3 = false,
+                useRenderedPreview = true,
+                useRenderedPreviewGh3 = true,
                 setEnd = false,
                 useBeatTrack = false,
                 guitarMic = false,
@@ -329,7 +329,11 @@ public class SongCreatorService
 
                 if (compileResult.Success)
                 {
-                    result.Message = $"Successfully created and compiled '{meta.Title}' directly into Guitar Hero III!";
+                    if (!string.IsNullOrEmpty(compileResult.SongId))
+                    {
+                        result.SongId = compileResult.SongId;
+                    }
+                    result.Message = $"Successfully created and compiled '{meta.Title}' directly into Guitar Hero III (Ready to Play)!";
                 }
                 else
                 {

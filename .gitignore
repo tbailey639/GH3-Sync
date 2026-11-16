@@ -9,3 +9,5 @@ dist/*.log
 .vs/
 .vscode/
 dist/*.dll
+*.br
+*.gz

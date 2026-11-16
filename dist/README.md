@@ -24,18 +24,23 @@
 * **Auto-Unchecked:** Detected duplicates are **automatically unchecked** and marked with `⚠️ Duplicate Detected (Already Owned)`, preventing accidental re-downloads while still allowing manual override if desired.
 * **Pre-verified Songs:** *Beat It*, *While My Guitar Gently Weeps*, and *ONOGAMI* are recognized as ONOGAMI-created customs.
 
-### 4. 👥 Friends & "Trusted Friend" System (Automatic IP Sharing)
-* **Automatic IP Sharing (Trusted Friends):** When you mark a friend as **Trusted**, their IP address is automatically discovered and resolved in real time via LAN UDP beacons (port 7374) and the Central Admin Hub. No manual IP exchange or PIN entry needed!
+### 4. 👥 Friends, "Trusted Friend" System & Public Internet Connectivity
+* **Automatic IP Sharing (Trusted Friends):** When you mark a friend as **Trusted**, their address is automatically discovered and resolved in real time via LAN UDP beacons (port 7374), UPnP / NAT-PMP external mappings, and the Central Admin Hub. No manual IP exchange or PIN entry needed!
+* **Public IP & UPnP / NAT-PMP Port Mapping (Beta 3):** Automatically detects your router's public WAN IP and forwards port 7373 via UPnP IGD or NAT-PMP so peers can connect from anywhere on the internet without manual router setup.
+* **Custom DDNS Support:** Easily bind dynamic DNS hostnames (e.g., No-IP, DuckDNS) under **Network / NAT Settings**.
 * **IP Privacy (Regular Friends):** Untrusted friends' IPs remain strictly private for security; manual IP exchange and session PINs are required until trust is granted.
 * **Permanent Unique Friend Code:** Every player receives a permanent unique code (e.g. `GH3-6475-71AF`) with a Show/Hide toggle to prevent spam.
 * **Instant Revocation:** Click **"Revoke Trust"** or **"Unfriend"** at any time to immediately destroy the access token.
 
-### 5. 🎸 ONOGAMI Song Creator
-* Built-in custom song generator using the proven ONOGAMI method:
+### 5. 🎸 ONOGAMI Song Creator & Automated Honeycomb Pipeline
+* Built-in custom song generator and compiler using the proven ONOGAMI method:
+  * **Automated Honeycomb Compilation (Beta 4):** Automatically compiles `.pak.xen` chart packages and `.fsb.xen` / `.dat.xen` FMOD multi-track soundbanks headlessly into Guitar Hero III with 1 click.
+  * **1-Click Compilation in Library:** Click "⚡ Compile Song" on any custom song card in your Library to compile or recompile it instantly.
+  * **Automated Chart-to-MIDI Conversion:** Uploaded or auto-generated `.chart` files are automatically converted to standard `notes.mid` using `GH_Toolkit_Core.MIDI.Chart`.
   * **Auto-Chart Generation:** Auto-generates full 5-fret note charts across all 4 difficulties (**Easy, Medium, Hard, Expert**) from your chosen BPM + audio file!
   * **Custom MIDI / Chart Support:** Upload your own `.chart` or `.mid` files if charted in Moonscraper/Reaper.
-  * **Audio Support:** Supports `.mp3`, `.wav`, and `.ogg`.
-  * **Honeycomb Ready:** Generates Neversoft `song.ini` and the complete Honeycomb `.ghproj` project file.
+  * **Audio Support:** Supports `.mp3`, `.wav`, and `.ogg` (single-track or multi-track isolated stems).
+  * **Universal Portability:** Works on any PC and drive letter with smart auto-detection of Honeycomb-GUI, FFmpeg, and game paths.
   * **Created by Me Tagging:** Created songs automatically appear in your **"Created by Me"** library filter with the `🎸 ONOGAMI Song Creator` badge.
 
 ### 6. 📁 1-Click File Import (`.gh3pack`, `.gh3song`, `.sgh`, `.zip`)

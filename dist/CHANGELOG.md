@@ -4,6 +4,64 @@ All notable changes to the GH3-Sync project are documented in this file.
 
 ---
 
+## [Beta 4] - 2026-11-15
+
+### 🌟 New Features & Enhancements
+* **Automated Honeycomb Compiler Pipeline in ONOGAMI Creator:**
+  * Fully integrated the Honeycomb-GUI and GH-Toolkit compilation engines directly into GH3-Sync.
+  * Creating a custom song in the ONOGAMI Song Creator can now compile directly into Guitar Hero III (`DATA\SONGS\*_song.pak.xen` and `DATA\MUSIC\*.fsb.xen`) headlessly with 1 click.
+  * Added "Auto-Compile into Game" toggle in the creator form.
+* **1-Click "⚡ Compile Song" on Any Custom Song:**
+  * Added direct compilation button to all custom song cards in the Library, allowing users to compile uncompiled or imported project songs at any time.
+* **Automated Chart-to-MIDI Conversion:**
+  * Automatic on-the-fly conversion of `.chart` files (both uploaded and ONOGAMI BPM-generated charts) into standard Guitar Hero III MIDI (`notes.mid`) via `GH_Toolkit_Core.MIDI.Chart`, eliminating EOF or manual tool requirements.
+* **Dynamic Portable Path Discovery (Universal Multi-PC Architecture):**
+  * Eliminated all hardcoded drive letters and directory paths.
+  * Dynamically scans all system drives (C:, D:, E:, G:, etc.), User Documents, Desktop, AppData, and game Tools folders to automatically discover Honeycomb-GUI, FFmpeg, and Guitar Hero III.
+  * Added configurable Honeycomb Path input and compiler health indicator in the Game Config / Settings dialog.
+* **Automated FFmpeg Resolution:**
+  * Dynamically checks Honeycomb root, system `PATH`, and package manager paths (WinGet, Chocolatey), automatically ensuring `ffmpeg.exe` is available for audio soundbank encoding.
+* **Career Save Safeguards:**
+  * Automatically backs up career progression and save files before and after song compilation.
+* **Multi-Track Audio Stem Normalization:**
+  * Corrected `.ghproj` audio routing to prevent `amix: inputs=0` FFmpeg mixer failures on single-track songs while supporting isolated stems (guitar, rhythm, backing, vocals, drums) when present.
+
+### 🐛 Bug Fixes & Stability
+* **Headless Audio Soundbank Compilation**: Fixed WinForms STA thread synchronization deadlock by implementing direct async audio compilation (`CompileAudioStemsAsync`) via `FSB.ConvertToMp3` and `FSB.CombineFSB3File`, reliably generating `.fsb.xen` and `.dat.xen` soundbanks into `DATA/MUSIC/` without hanging.
+* **Song Action Buttons with Special Characters**: Fixed `⚡ Open in Honeycomb`, `📁 Open Folder`, and `⚡ Compile Song` action buttons failing to respond on songs with apostrophes or special characters (such as *Bill Withers - Ain't No Sunshine*) by moving from inline JavaScript string templates to array index-based handlers (`openGhprojByIdx`, `openSongFolderByIdx`, `compileSongByIdx`).
+* **Direct Honeycomb Executable Launch**: Fixed Windows file association failure when clicking `⚡ Open in Honeycomb` by directly locating and executing `Honeycomb-GUI.exe "{ghprojPath}"`.
+* **In-Game Ready Status Badge**: Ensured newly created songs with auto-compile enabled immediately update their checksum ID and display `✓ In-Game Ready` in the library.
+* **Target Runtime Modernization**: Updated project target framework to `.NET 10.0-windows`.
+
+---
+
+## [Beta 3] - 2026-11-14
+
+### 🌟 New Features & Enhancements
+* **Public IP Reflection & External WAN Connection Support:**
+  * Added automated public IP resolution using multi-source IP echo services (`api.ipify.org`, `icanhazip.com`, `ifconfig.me`).
+  * Enables players to connect and sync songs across different Wi-Fi networks and across the Internet.
+* **Automatic Router Port Mapping (UPnP IGD & NAT-PMP):**
+  * Built-in `NatPortMappingService` automatically communicates with home routers via UPnP Internet Gateway Device (IGD) and NAT-PMP (port 5351) protocols to dynamically forward TCP port 7373 without manual router admin login.
+* **Custom Public IP / DDNS Hostname Configuration:**
+  * Added direct configuration in the dashboard under **🌐 Network / NAT Settings** for users with Dynamic DNS hostnames (e.g., No-IP, DuckDNS) or static public IPs.
+* **Interactive Network Status & NAT Monitoring:**
+  * Real-time NAT badge display (`✓ Port Mapped (UPnP IGD)`, `Public IP Detected`, or `LAN Only`) on the P2P Sync dashboard with 1-click re-detect/refresh.
+* **Heartbeat & Telemetry Upgraded:**
+  * Admin Hub signaling now transmits external public IP and port mappings, ensuring remote friends can auto-resolve addresses outside the local network.
+
+### 🐛 Bug Fixes & Stability
+* Fixed external peer connections failing due to localhost / internal subnet IP binding (`192.168.x.x` / `10.x.x.x`).
+* Fixed Unique Friend Code auto-resolution when peers are located outside the local network.
+* **Resolved ONOGAMI Project Discovery & Song List Visibility:**
+  * Fixed created ONOGAMI song projects (`.ghproj`, `song.ini`, `notes.chart`, `song.mp3`) not appearing in the dashboard under **All Songs** and **Created by Me (ONOGAMI)**.
+  * `GetInstalledCustomSongs()` now automatically scans all created song directories (`GamePath\Custom_Songs`, `Documents\Guitar Hero Songs`, `AppData\GH3-Sync\CreatedSongs`) in addition to compiled `DATA\SONGS` game PAKs.
+  * Added direct **📂 Open Folder** button on created songs to immediately open Windows Explorer to the song project folder.
+  * Added project folder packaging support to `PackageSong()` and `ValidateAndExtractZip()` so uncompiled project files can be downloaded, exported in `.gh3pack` archives, and synced across friends seamlessly.
+  * Replaced hardcoded `G:\` drive paths with dynamic multi-drive and multi-system directory resolution, fixing `"Could not find a part of the path 'G:\Guitar Hero Songs'"` errors on systems without a `G:` drive.
+
+---
+
 ## [Beta 2] - 2026-11-14
 
 ### 🌟 New Features & Enhancements

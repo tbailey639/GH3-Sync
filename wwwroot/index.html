@@ -270,7 +270,7 @@
       <div class="logo">
         <div class="logo-icon">🎸</div>
         <div>
-          <h1>GH3<span>-Sync</span> <span class="badge blue" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Beta 3</span></h1>
+          <h1>GH3<span>-Sync</span> <span class="badge blue" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Beta 4</span></h1>
           <p style="font-size: 12px; color: var(--text-muted);">P2P Synchronizer, Friends Network & ONOGAMI Song Creator</p>
         </div>
       </div>
@@ -347,9 +347,9 @@
                 Directly compile .pak.xen chart & .fsb soundbank into Guitar Hero III upon creation.
               </div>
             </div>
-            <label class="switch-label" style="font-size: 13px; font-weight: 600; cursor: pointer;">
-              <input type="checkbox" id="crAutoCompile" checked style="width: 18px; height: 18px; accent-color: var(--accent);">
-              Auto-Compile into Game
+            <label class="switch-label" style="font-size: 13px; font-weight: 700; cursor: pointer; color: #10b981; display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" id="crAutoCompile" checked style="width: 20px; height: 20px; accent-color: #10b981; cursor: pointer;">
+              <span>Auto-Compile & Install into Game (Ready to Play immediately)</span>
             </label>
           </div>
 
@@ -1031,6 +1031,7 @@
     }
 
     function renderSongList(songs) {
+      window.renderedSongs = songs || [];
       const container = document.getElementById('songsContainer');
       if (!songs || songs.length === 0) {
         if (currentFilter === 'created') {
@@ -1043,9 +1044,10 @@
         return;
       }
 
-      container.innerHTML = songs.map(s => {
+      container.innerHTML = songs.map((s, idx) => {
         const isOnogami = s.createdWithOnogamiCreator || s.isCreatedLocally;
         const isProject = s.isProject;
+        const hasProjectDir = !!s.projectDirectory;
         return `
           <div class="song-item">
             <div class="song-info">
@@ -1056,14 +1058,36 @@
               ${isOnogami ? '<span class="badge purple">🎸 ONOGAMI Creator</span>' : '<span class="badge blue">Synced / Imported</span>'}
               ${isProject ? '<span class="badge yellow" title="Project created - ready to compile or sync">📁 Project Created</span>' : '<span class="badge green">✓ In-Game Ready</span>'}
               <span class="badge">${(s.totalSizeBytes / (1024 * 1024)).toFixed(1)} MB</span>
-              ${s.isProject || !s.isCompiled ? `<button class="btn btn-green btn-sm" onclick="compileSong('${escapeHtml(s.songId)}', '${escapeHtml(s.ghprojPath || '').replace(/\\/g, '\\\\')}')">⚡ Compile Song</button>` : ''}
-              ${s.isProject && s.projectDirectory ? `<button class="btn btn-primary btn-sm" onclick="openGhproj('${escapeHtml(s.projectDirectory).replace(/\\/g, '\\\\')}')">Honeycomb GUI</button>` : ''}
-              ${s.projectDirectory ? `<button class="btn btn-outline btn-sm" onclick="openSongFolder('${escapeHtml(s.projectDirectory).replace(/\\/g, '\\\\')}')">📂 Open Folder</button>` : ''}
+              ${s.isProject || !s.isCompiled ? `<button class="btn btn-green btn-sm" onclick="compileSongByIdx(${idx})">⚡ Compile Song</button>` : ''}
+              ${hasProjectDir ? `<button class="btn btn-primary btn-sm" onclick="openGhprojByIdx(${idx})">⚡ Open in Honeycomb</button>` : ''}
+              ${hasProjectDir ? `<button class="btn btn-outline btn-sm" onclick="openSongFolderByIdx(${idx})">📁 Open Folder</button>` : ''}
               <a href="/api/download/${encodeURIComponent(s.songId)}" class="btn btn-outline btn-sm" download>⬇️ Download</a>
             </div>
           </div>
         `;
       }).join('');
+    }
+
+    function openSongFolderByIdx(idx) {
+      const song = window.renderedSongs && window.renderedSongs[idx];
+      if (song && song.projectDirectory) {
+        openSongFolder(song.projectDirectory);
+      }
+    }
+
+    function openGhprojByIdx(idx) {
+      const song = window.renderedSongs && window.renderedSongs[idx];
+      if (song) {
+        const target = song.ghprojPath || song.projectDirectory;
+        if (target) openGhproj(target);
+      }
+    }
+
+    function compileSongByIdx(idx) {
+      const song = window.renderedSongs && window.renderedSongs[idx];
+      if (song) {
+        compileSong(song.songId, song.ghprojPath || song.projectDirectory);
+      }
     }
 
     async function openSongFolder(folderPath) {
@@ -1380,6 +1404,8 @@
             alertBox.innerText = `🎉 Song Project Created with ONOGAMI Method!\nSaved at: ${result.projectDirectory}\nHoneycomb File: ${result.ghprojPath}\nStatus: ${result.message}`;
           }
           document.getElementById('songCreatorForm').reset();
+          const acElem = document.getElementById('crAutoCompile');
+          if (acElem) acElem.checked = true;
           toggleChartMode();
           loadStatus();
         } else {

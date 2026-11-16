@@ -41,6 +41,27 @@ public class HoneycombCompilerService
     private readonly SyncLogger? _logger;
     private readonly SaveManager? _saveManager;
     private static readonly object _compileLock = new();
+    private static bool _assemblyResolveHooked = false;
+
+    private static void EnsureAssemblyResolve(string honeycombDir)
+    {
+        if (_assemblyResolveHooked) return;
+        _assemblyResolveHooked = true;
+        AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
+        {
+            try
+            {
+                var assemblyName = new AssemblyName(args.Name).Name + ".dll";
+                var assemblyPath = Path.Combine(honeycombDir, assemblyName);
+                if (File.Exists(assemblyPath))
+                {
+                    return Assembly.LoadFrom(assemblyPath);
+                }
+            }
+            catch { }
+            return null;
+        };
+    }
 
     public HoneycombCompilerService(Gh3Service gh3, SyncLogger? logger = null, SaveManager? saveManager = null)
     {
@@ -335,8 +356,22 @@ public class HoneycombCompilerService
         var result = new HoneycombCompilationResult
         {
             ProjectPath = ghprojPath,
-            SongId = Path.GetFileNameWithoutExtension(ghprojPath)
+            SongId = Path.GetFileNameWithoutExtension(ghprojPath),
+            Title = Path.GetFileNameWithoutExtension(ghprojPath)
         };
+
+        try
+        {
+            if (File.Exists(ghprojPath))
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(ghprojPath));
+                if (doc.RootElement.TryGetProperty("title", out var tProp) && !string.IsNullOrWhiteSpace(tProp.GetString()))
+                {
+                    result.Title = tProp.GetString()!;
+                }
+            }
+        }
+        catch { }
 
         void Log(string msg)
         {
@@ -389,7 +424,59 @@ public class HoneycombCompilerService
             Log($"Note: Career save pre-backup encountered: {ex.Message}");
         }
 
-        // Prepare and fix .ghproj paths (ensure all audio & MIDI paths are absolute and exist)
+        // 1. Ensure assembly resolve handler is active for Honeycomb
+        EnsureAssemblyResolve(honeycombDir);
+
+        // 2. Prepend Honeycomb to PATH so ffmpeg and helper tools are found
+        var curPath = Environment.GetEnvironmentVariable("PATH") ?? "";
+        if (!curPath.Contains(honeycombDir, StringComparison.OrdinalIgnoreCase))
+        {
+            Environment.SetEnvironmentVariable("PATH", honeycombDir + ";" + curPath);
+        }
+
+        // 3. Set Current Working Directory to Honeycomb folder BEFORE loading toolkit types
+        Directory.SetCurrentDirectory(honeycombDir);
+
+        // 4. Initialize GlobalVariables and FSB paths in GH-Toolkit-Core
+        var ghCorePath = Path.Combine(honeycombDir, "GH-Toolkit-Core.dll");
+        var ghCore = Assembly.LoadFrom(ghCorePath);
+        var gvType = ghCore.GetType("GH_Toolkit_Core.Methods.GlobalVariables");
+        gvType?.GetProperty("ExeRootFolder")?.SetValue(null, honeycombDir);
+        var blankWav = Path.Combine(honeycombDir, "Audio", "Blank Audio", "blankWav.wav");
+        if (File.Exists(blankWav)) gvType?.GetProperty("BlankWav")?.SetValue(null, blankWav);
+
+        var fsbType = ghCore.GetType("GH_Toolkit_Core.Audio.FSB");
+        var audioPadField = fsbType?.GetField("audioPad48k128kbps", BindingFlags.NonPublic | BindingFlags.Static);
+        var blankMp3 = Path.Combine(honeycombDir, "Audio", "Blank Audio", "48k128kbps.mp3");
+        if (File.Exists(blankMp3)) audioPadField?.SetValue(null, blankMp3);
+
+        var rootFolderField = fsbType?.GetField("rootFolder", BindingFlags.NonPublic | BindingFlags.Static);
+        rootFolderField?.SetValue(null, honeycombDir);
+
+        // 5. Set FFMpegCore binary folder
+        var ffCorePath = Path.Combine(honeycombDir, "FFMpegCore.dll");
+        if (File.Exists(ffCorePath))
+        {
+            var ffCore = Assembly.LoadFrom(ffCorePath);
+            var gff = ffCore.GetType("FFMpegCore.GlobalFFOptions");
+            var opt = gff?.GetProperty("Current")?.GetValue(null);
+            gff?.GetProperty("BinaryFolder")?.SetValue(opt, honeycombDir);
+        }
+
+        // 6. Clean up any leftover intermediate conversion files in projectDir
+        try
+        {
+            foreach (var pattern in new[] { "*_guitar.mp3", "*_rhythm.mp3", "*_song.mp3", "*_preview.mp3", "*_coop_*.mp3", "*_crowd.mp3", "_guitar.mp3", "_rhythm.mp3", "_song.mp3" })
+            {
+                foreach (var f in Directory.GetFiles(projectDir, pattern))
+                {
+                    try { File.Delete(f); } catch { }
+                }
+            }
+        }
+        catch { }
+
+        // 7. Prepare and fix .ghproj paths (ensure all audio & MIDI paths are absolute and exist)
         try
         {
             FixProjectPaths(ghprojPath, projectDir, honeycombDir, Log);
@@ -402,7 +489,8 @@ public class HoneycombCompilerService
             return result;
         }
 
-        // Run Honeycomb compilation inside STA thread
+        // 8. Run Honeycomb PAK compilation inside STA thread
+        string effectiveChecksum = "";
         Exception? threadException = null;
         var tcs = new TaskCompletionSource<bool>();
 
@@ -412,30 +500,6 @@ public class HoneycombCompilerService
             {
                 try
                 {
-                    // 1. Prepend Honeycomb to PATH
-                    var curPath = Environment.GetEnvironmentVariable("PATH") ?? "";
-                    if (!curPath.Contains(honeycombDir, StringComparison.OrdinalIgnoreCase))
-                    {
-                        Environment.SetEnvironmentVariable("PATH", honeycombDir + ";" + curPath);
-                    }
-
-                    // 2. Set FFMpegCore binary folder
-                    var ffCorePath = Path.Combine(honeycombDir, "FFMpegCore.dll");
-                    if (File.Exists(ffCorePath))
-                    {
-                        var ffCore = Assembly.LoadFrom(ffCorePath);
-                        var gff = ffCore.GetType("FFMpegCore.GlobalFFOptions");
-                        var opt = gff?.GetProperty("Current")?.GetValue(null);
-                        gff?.GetProperty("BinaryFolder")?.SetValue(opt, honeycombDir);
-                    }
-
-                    // 3. Set GlobalVariables ExeRootFolder
-                    var ghCorePath = Path.Combine(honeycombDir, "GH-Toolkit-Core.dll");
-                    var ghCore = Assembly.LoadFrom(ghCorePath);
-                    var gvType = ghCore.GetType("GH_Toolkit_Core.Methods.GlobalVariables");
-                    gvType?.GetProperty("ExeRootFolder")?.SetValue(null, honeycombDir);
-
-                    // 4. Configure UserPreferences
                     var honeycombDll = Path.Combine(honeycombDir, "Honeycomb-GUI.dll");
                     var honeycomb = Assembly.LoadFrom(honeycombDll);
                     var csType = honeycomb.GetType("GH_Toolkit_GUI.CompileSong");
@@ -451,27 +515,32 @@ public class HoneycombCompilerService
                         upType.GetProperty("Gh3Plus")?.SetValue(prefs, true);
                         upType.GetProperty("ShowPostCompile")?.SetValue(prefs, false);
                         upType.GetProperty("CompileToFolder")?.SetValue(prefs, false);
+                        upType.GetProperty("ChecksumWarning")?.SetValue(prefs, 1);
                         upType.GetMethod("Save")?.Invoke(prefs, null);
                     }
 
-                    // Set working directory to project folder
-                    Directory.SetCurrentDirectory(projectDir);
-
-                    // 5. Instantiate CompileSong form headlessly
+                    // Instantiate CompileSong form headlessly
                     var form = Activator.CreateInstance(csType, new object[] { "" });
                     if (form == null) throw new InvalidOperationException("Failed to instantiate Honeycomb CompileSong form.");
                     var flags = BindingFlags.NonPublic | BindingFlags.Instance;
                     csType.GetMethod("MainForm_Load", flags)?.Invoke(form, new object[] { form, EventArgs.Empty });
 
-                    // 6. Load Project
+                    // Load Project
                     Log("Loading song project into Honeycomb compiler engine...");
                     csType.GetMethod("LoadProject", flags)?.Invoke(form, new object[] { ghprojPath });
 
-                    // 7. PreChecks
+                    // Ensure form inputs are properly initialized
+                    var compileInputProp = csType.GetField("compile_input", flags)?.GetValue(form) as System.Windows.Forms.TextBox;
+                    if (compileInputProp != null) compileInputProp.Text = projectDir;
+
+                    var renderCheck = csType.GetField("gh3_rendered_preview_check", flags)?.GetValue(form) as System.Windows.Forms.CheckBox;
+                    if (renderCheck != null) renderCheck.Checked = true;
+
+                    // PreChecks
                     Log("Executing compiler pre-flight validation checks...");
                     csType.GetMethod("PreChecks", flags)?.Invoke(form, Array.Empty<object>());
 
-                    // 8. Compile PAK (chart, scripts, cameras, lightshow, QB)
+                    // Compile PAK (chart, scripts, cameras, lightshow, QB)
                     Log("Compiling chart PAK, cameras, lightshow, and QB bytecode...");
                     var mCompilePakGh3 = csType.GetMethod("CompilePakGh3", flags);
                     var pakOk = mCompilePakGh3?.Invoke(form, null);
@@ -481,15 +550,18 @@ public class HoneycombCompilerService
                     }
                     Log("Chart PAK compilation completed successfully!");
 
-                    // 9. Compile Audio (multi-track / stems into FMOD soundbanks .fsb.xen / .dat.xen)
-                    Log("Compiling audio stems into FMOD soundbank (.fsb.xen / .dat.xen)...");
-                    var mCompileGh3Audio = csType.GetMethod("CompileGh3Audio", flags);
-                    if (mCompileGh3Audio != null)
+                    // Retrieve the actual effective song checksum assigned by Honeycomb
+                    var effField = csType.GetField("_effectiveSongName", flags)?.GetValue(form) as string;
+                    if (!string.IsNullOrWhiteSpace(effField))
                     {
-                        var audioTask = (Task)mCompileGh3Audio.Invoke(form, null)!;
-                        audioTask.GetAwaiter().GetResult();
+                        effectiveChecksum = effField;
                     }
-                    Log("Audio soundbank compilation completed successfully!");
+                    else
+                    {
+                        var mChk = csType.GetMethod("GetSongChecksum", flags);
+                        var chkResult = mChk?.Invoke(form, null) as string;
+                        if (!string.IsNullOrWhiteSpace(chkResult)) effectiveChecksum = chkResult;
+                    }
 
                     tcs.SetResult(true);
                 }
@@ -504,8 +576,8 @@ public class HoneycombCompilerService
         compileThread.SetApartmentState(ApartmentState.STA);
         compileThread.Start();
 
-        var success = await tcs.Task;
-        if (!success || threadException != null)
+        var pakSuccess = await tcs.Task;
+        if (!pakSuccess || threadException != null)
         {
             result.Success = false;
             var inner = threadException?.InnerException?.Message ?? threadException?.Message ?? "Unknown compiler error";
@@ -514,10 +586,33 @@ public class HoneycombCompilerService
             return result;
         }
 
-        // Post-compilation verification & standalone package copy
+        if (string.IsNullOrWhiteSpace(effectiveChecksum))
+        {
+            effectiveChecksum = Path.GetFileNameWithoutExtension(ghprojPath);
+        }
+
+        Log($"Chart compiled under song checksum: '{effectiveChecksum}'");
+        result.SongId = effectiveChecksum;
+
+        // 9. Compile Audio into FMOD Soundbank (.fsb.xen and .dat.xen)
         try
         {
-            PostProcessCompilationOutput(ghprojPath, projectDir, gamePath, result, Log);
+            Log("Compiling audio stems into FMOD soundbank (.fsb.xen / .dat.xen)...");
+            await CompileAudioStemsAsync(projectDir, effectiveChecksum, gamePath, honeycombDir, Log);
+            Log("Audio soundbank compilation completed successfully!");
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.Message = $"Audio soundbank compilation failed: {ex.Message}";
+            Log(result.Message);
+            return result;
+        }
+
+        // 10. Post-compilation verification & standalone package copy
+        try
+        {
+            PostProcessCompilationOutput(ghprojPath, projectDir, gamePath, effectiveChecksum, result, Log);
             result.Success = true;
             result.Message = $"Song '{result.Title}' compiled and deployed into Guitar Hero III successfully!";
             Log(result.Message);
@@ -534,6 +629,129 @@ public class HoneycombCompilerService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Compiles audio stems into .fsb.xen and .dat.xen soundbanks and deploys them to DATA/MUSIC.
+    /// Fast, non-blocking, and handles single-track or multi-stem configurations.
+    /// </summary>
+    private static async Task CompileAudioStemsAsync(
+        string projectDir,
+        string songChecksum,
+        string gamePath,
+        string honeycombDir,
+        Action<string> log)
+    {
+        var ghCorePath = Path.Combine(honeycombDir, "GH-Toolkit-Core.dll");
+        var ghCore = Assembly.LoadFrom(ghCorePath);
+        var fsbType = ghCore.GetType("GH_Toolkit_Core.Audio.FSB")
+            ?? throw new InvalidOperationException("Could not load GH_Toolkit_Core.Audio.FSB");
+
+        var fsbObj = Activator.CreateInstance(fsbType)
+            ?? throw new InvalidOperationException("Could not instantiate GH_Toolkit_Core.Audio.FSB");
+
+        var mConvert = fsbType.GetMethod("ConvertToMp3")
+            ?? throw new InvalidOperationException("Could not find ConvertToMp3 method");
+        var mMix = fsbType.GetMethod("MixFiles")
+            ?? throw new InvalidOperationException("Could not find MixFiles method");
+        var mCombine = fsbType.GetMethod("CombineFSB3File")
+            ?? throw new InvalidOperationException("Could not find CombineFSB3File method");
+
+        // Discover audio files in song project
+        string primaryAudio = "";
+        string[] audioExtensions = new[] { ".mp3", ".ogg", ".wav" };
+        foreach (var ext in audioExtensions)
+        {
+            var p = Path.Combine(projectDir, "song" + ext);
+            if (File.Exists(p)) { primaryAudio = p; break; }
+        }
+        if (string.IsNullOrEmpty(primaryAudio))
+        {
+            var anyAudio = Directory.GetFiles(projectDir, "*.*")
+                .FirstOrDefault(f => audioExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
+            if (!string.IsNullOrEmpty(anyAudio)) primaryAudio = anyAudio;
+        }
+
+        if (string.IsNullOrEmpty(primaryAudio) || !File.Exists(primaryAudio))
+        {
+            throw new FileNotFoundException("No valid audio file found in song folder to compile soundbank.");
+        }
+
+        // Stems
+        var guitarStem = Path.Combine(projectDir, "guitar.mp3");
+        if (!File.Exists(guitarStem)) guitarStem = Path.Combine(projectDir, "guitar.ogg");
+        var rhythmStem = Path.Combine(projectDir, "rhythm.mp3");
+        if (!File.Exists(rhythmStem)) rhythmStem = Path.Combine(projectDir, "rhythm.ogg");
+        var backingStem = Path.Combine(projectDir, "backing.mp3");
+        if (!File.Exists(backingStem)) backingStem = Path.Combine(projectDir, "backing.ogg");
+        var previewStem = Path.Combine(projectDir, "preview.mp3");
+
+        string guitarInput = File.Exists(guitarStem) ? guitarStem : primaryAudio;
+        string rhythmInput = File.Exists(rhythmStem) ? rhythmStem : "";
+        string backingInput = File.Exists(backingStem) ? backingStem : primaryAudio;
+        string previewInput = File.Exists(previewStem) ? previewStem : primaryAudio;
+
+        var textGuitar = Path.Combine(projectDir, $"{songChecksum}_guitar.mp3");
+        var textRhythm = Path.Combine(projectDir, $"{songChecksum}_rhythm.mp3");
+        var textSong = Path.Combine(projectDir, $"{songChecksum}_song.mp3");
+        var textPreview = Path.Combine(projectDir, $"{songChecksum}_preview.mp3");
+
+        var tempFiles = new List<string> { textGuitar, textRhythm, textSong, textPreview };
+
+        try
+        {
+            // 1. Guitar track
+            log("Converting guitar track to CBR MP3...");
+            await (Task)mConvert.Invoke(fsbObj, new object[] { guitarInput, textGuitar })!;
+
+            // 2. Rhythm track (uses blank audio pad automatically if rhythmInput is empty)
+            log("Preparing rhythm/bass track...");
+            await (Task)mConvert.Invoke(fsbObj, new object[] { rhythmInput, textRhythm })!;
+
+            // 3. Backing track
+            log("Mixing backing track...");
+            await (Task)mMix.Invoke(fsbObj, new object[] { new string[] { backingInput }, textSong, "", "", ".mp3", 48000 })!;
+
+            // 4. Preview track
+            log("Generating preview audio...");
+            await (Task)mConvert.Invoke(fsbObj, new object[] { previewInput, textPreview })!;
+
+            // 5. Combine into encrypted FSB3 and DAT soundbanks
+            log("Packing and encrypting FSB3 and DAT soundbanks...");
+            var filesToProcess = new[] { textGuitar, textRhythm, textSong, textPreview };
+            var fsbOutput = Path.Combine(projectDir, songChecksum);
+            mCombine.Invoke(fsbObj, new object[] { filesToProcess, fsbOutput });
+
+            var outFsb = fsbOutput + ".fsb";
+            var outDat = fsbOutput + ".dat";
+
+            if (!File.Exists(outFsb) || !File.Exists(outDat))
+            {
+                throw new FileNotFoundException("Soundbank output files were not generated by FSB compiler.");
+            }
+
+            // 6. Deploy to game DATA/MUSIC directory
+            var musicDir = Path.Combine(gamePath, "DATA", "MUSIC");
+            if (!Directory.Exists(musicDir)) Directory.CreateDirectory(musicDir);
+
+            var gameFsb = Path.Combine(musicDir, $"{songChecksum}.fsb.xen");
+            var gameDat = Path.Combine(musicDir, $"{songChecksum}.dat.xen");
+
+            File.Copy(outFsb, gameFsb, true);
+            File.Copy(outDat, gameDat, true);
+            log($"Soundbanks deployed to game MUSIC folder: {Path.GetFileName(gameFsb)} ({new FileInfo(gameFsb).Length:N0} bytes)");
+        }
+        finally
+        {
+            // Clean up temporary stem files
+            foreach (var f in tempFiles)
+            {
+                if (File.Exists(f))
+                {
+                    try { File.Delete(f); } catch { }
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -643,6 +861,8 @@ public class HoneycombCompilerService
             dict["isCoopAudio"] = false;
         }
 
+        dict["useRenderedPreviewGh3"] = true;
+        dict["useRenderedPreview"] = true;
         dict["compilePath"] = projectDir;
         dict["projectPath"] = ghprojPath;
         dict["ghprojFromLoad"] = ghprojPath;
@@ -659,23 +879,34 @@ public class HoneycombCompilerService
         string ghprojPath,
         string projectDir,
         string gamePath,
+        string effectiveChecksum,
         HoneycombCompilationResult result,
         Action<string> log)
     {
         var songsDir = Path.Combine(gamePath, "DATA", "SONGS");
         var musicDir = Path.Combine(gamePath, "DATA", "MUSIC");
 
-        // Find newly compiled files
-        var paks = Directory.GetFiles(songsDir, "*.pak.xen")
-            .Where(f => !Path.GetFileName(f).Equals("customs.pak.xen", StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(f => File.GetLastWriteTime(f))
-            .ToList();
-
-        if (paks.Any())
+        string? matchedPak = null;
+        if (!string.IsNullOrWhiteSpace(effectiveChecksum))
         {
-            var newestPak = paks.First();
-            result.PakFilePath = newestPak;
-            var songBaseName = Path.GetFileNameWithoutExtension(newestPak).Replace("_song.pak", "");
+            var targetPak = Path.Combine(songsDir, $"{effectiveChecksum}_song.pak.xen");
+            if (File.Exists(targetPak)) matchedPak = targetPak;
+        }
+
+        if (matchedPak == null)
+        {
+            var paks = Directory.GetFiles(songsDir, "*.pak.xen")
+                .Where(f => !Path.GetFileName(f).Equals("customs.pak.xen", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(f => File.GetLastWriteTime(f))
+                .ToList();
+            if (paks.Any()) matchedPak = paks.First();
+        }
+
+        if (matchedPak != null && File.Exists(matchedPak))
+        {
+            result.PakFilePath = matchedPak;
+            var songBaseName = Path.GetFileNameWithoutExtension(matchedPak).Replace("_song.pak", "");
+            result.SongId = songBaseName;
 
             // Look for matching FSB and DAT
             var fsbName = $"{songBaseName}.fsb.xen";
@@ -687,15 +918,15 @@ public class HoneycombCompilerService
             if (File.Exists(datPath)) result.DatFilePath = datPath;
 
             log($"Game deployment verified:");
-            log($" - PAK: {Path.GetFileName(newestPak)} ({new FileInfo(newestPak).Length:N0} bytes)");
+            log($" - PAK: {Path.GetFileName(matchedPak)} ({new FileInfo(matchedPak).Length:N0} bytes)");
             if (File.Exists(fsbPath)) log($" - FSB: {fsbName} ({new FileInfo(fsbPath).Length:N0} bytes)");
             if (File.Exists(datPath)) log($" - DAT: {datName}");
 
             // Copy standalone compiled files to project directory
             try
             {
-                var standalonePak = Path.Combine(projectDir, Path.GetFileName(newestPak));
-                File.Copy(newestPak, standalonePak, true);
+                var standalonePak = Path.Combine(projectDir, Path.GetFileName(matchedPak));
+                File.Copy(matchedPak, standalonePak, true);
 
                 if (File.Exists(fsbPath))
                 {
@@ -709,6 +940,8 @@ public class HoneycombCompilerService
                     File.Copy(datPath, standaloneDat, true);
                 }
 
+                // Register song as created locally
+                AppConfig.RegisterCreatedSong(songBaseName, projectDir);
                 log($"Standalone compilation package archived in song directory for P2P sync.");
             }
             catch (Exception ex)

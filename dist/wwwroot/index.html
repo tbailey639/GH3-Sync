@@ -270,7 +270,7 @@
       <div class="logo">
         <div class="logo-icon">🎸</div>
         <div>
-          <h1>GH3<span>-Sync</span> <span class="badge blue" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Beta 2</span></h1>
+          <h1>GH3<span>-Sync</span> <span class="badge blue" style="font-size: 11px; vertical-align: middle; margin-left: 6px;">Beta 4</span></h1>
           <p style="font-size: 12px; color: var(--text-muted);">P2P Synchronizer, Friends Network & ONOGAMI Song Creator</p>
         </div>
       </div>
@@ -336,6 +336,23 @@
         </p>
         
         <form id="songCreatorForm" onsubmit="handleCreateSong(event)">
+          <!-- Automated Honeycomb Pipeline Indicator -->
+          <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <div style="font-weight: 700; color: #10b981; font-size: 14px; display: flex; align-items: center; gap: 6px;">
+                <span>⚡ Automated Honeycomb Compilation</span>
+                <span class="badge green" id="compilerBadge" style="font-size: 11px;">Checking...</span>
+              </div>
+              <div id="compilerStatusMsg" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                Directly compile .pak.xen chart & .fsb soundbank into Guitar Hero III upon creation.
+              </div>
+            </div>
+            <label class="switch-label" style="font-size: 13px; font-weight: 700; cursor: pointer; color: #10b981; display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" id="crAutoCompile" checked style="width: 20px; height: 20px; accent-color: #10b981; cursor: pointer;">
+              <span>Auto-Compile & Install into Game (Ready to Play immediately)</span>
+            </label>
+          </div>
+
           <div style="background: rgba(13, 16, 24, 0.7); padding: 16px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px;">
             <label style="font-size: 13px; font-weight: 700; color: #cbd5e1; display: block; margin-bottom: 8px;">Chart Generation Mode:</label>
             <div style="display: flex; gap: 24px; flex-wrap: wrap;">
@@ -398,7 +415,7 @@
           </div>
 
           <div style="margin-top: 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-            <button type="submit" id="createSongBtn" class="btn btn-green">⚡ Generate ONOGAMI Project</button>
+            <button type="submit" id="createSongBtn" class="btn btn-green">⚡ Create & Compile Song</button>
             <span id="crStatus" style="font-size: 13px; color: var(--text-muted);"></span>
           </div>
         </form>
@@ -478,13 +495,22 @@
         </div>
         
         <div style="background: rgba(13, 16, 24, 0.6); padding: 16px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Your Secure Invite Address:</span>
-            <span class="badge blue" id="pinBadge">PIN: ------</span>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Your Secure Invite Address:</span>
+              <span id="natPill" class="badge" style="font-size: 11px; margin-left: 8px;">NAT/UPnP: Checking...</span>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span class="badge blue" id="pinBadge">PIN: ------</span>
+              <button class="btn btn-outline btn-sm" onclick="openNetworkSettingsModal()">🌐 Network / NAT Settings</button>
+            </div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
             <code id="myAddress" style="font-size: 15px; color: var(--accent); font-weight: 700; word-break: break-all;">Detecting...</code>
             <button class="btn btn-outline btn-sm" onclick="copyMyAddress()">📋 Copy Invite Link</button>
+          </div>
+          <div id="natHelpLine" style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
+            Checking public address and router port mapping...
           </div>
         </div>
 
@@ -721,6 +747,43 @@
       </div>
     </div>
 
+    <!-- ==================== NETWORK & NAT / UPNP SETTINGS MODAL ==================== -->
+    <div id="networkSettingsModal" class="modal-overlay">
+      <div class="card" style="max-width: 620px; width: 90%; margin: 0;">
+        <h2>🌐 Network, Public IP & Port Mapping (UPnP / NAT-PMP)</h2>
+        <p class="card-subtitle">
+          Connect to friends and opponents anywhere across the Internet outside your local Wi-Fi / LAN network.
+        </p>
+
+        <div style="background: rgba(13, 16, 24, 0.7); padding: 14px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px;">
+          <label class="switch-label">
+            <input type="checkbox" id="cfgAutoPortMapCheckbox" checked>
+            <span><strong>Enable Automatic UPnP / NAT-PMP:</strong> Automatically request your router / gateway to forward port 7373 so outside friends can connect.</span>
+          </label>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label>Custom Public IP or Dynamic DNS (DDNS) Hostname (Optional):</label>
+          <input type="text" id="cfgCustomPublicAddress" placeholder="e.g. mygh3host.ddns.net:7373 or 100.11.21.186:7373">
+          <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+            Leave blank to let GH3-Sync automatically detect your public IP reflection.
+          </p>
+        </div>
+
+        <div id="netStatusDetail" style="background: rgba(20, 24, 34, 0.8); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 13px; margin-bottom: 16px;">
+          Detecting NAT status...
+        </div>
+
+        <div style="display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+          <button class="btn btn-outline btn-sm" onclick="refreshNatMapping()">🔄 Re-detect Public IP & Port Map</button>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-outline" onclick="closeNetworkSettingsModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveNetworkSettings()">Save Network Config</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ==================== GAME PATH SETTINGS MODAL ==================== -->
     <div id="gamePathModal" class="modal-overlay">
       <div class="card" style="max-width: 600px; width: 90%; margin: 0;">
@@ -734,12 +797,33 @@
           <input type="text" id="cfgGamePathInput" placeholder="e.g. G:\Home\Games\Guitar Hero III">
         </div>
 
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label>Custom Songs & ONOGAMI Projects Directory:</label>
+          <input type="text" id="cfgSongsPathInput" placeholder="e.g. D:\Games\Guitar Hero III\Custom_Songs">
+          <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Folder where ONOGAMI Song Creator saves song projects and where custom projects are scanned.</p>
+        </div>
+
         <div id="cfgCompatBadge" style="margin-bottom: 16px;"></div>
+
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label>Honeycomb-GUI Directory (Compiler Engine):</label>
+          <input type="text" id="cfgHoneycombPathInput" placeholder="Auto-detected (e.g. C:\Users\<User>\Documents\Honeycomb-GUI)">
+          <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Location where Honeycomb-GUI and FFmpeg are installed for automated song compilation.</p>
+        </div>
+
+        <div id="cfgHoneycombBadge" style="margin-bottom: 16px;"></div>
 
         <div style="background: rgba(13, 16, 24, 0.7); padding: 14px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px;">
           <label class="switch-label">
             <input type="checkbox" id="cfgDirectInstallCheckbox">
             <span><strong>Direct Install to Game:</strong> Place downloaded songs straight into <code>DATA/SONGS</code> and <code>DATA/MUSIC</code> (Recommended for online play).</span>
+          </label>
+        </div>
+
+        <div style="background: rgba(13, 16, 24, 0.7); padding: 14px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px;">
+          <label class="switch-label">
+            <input type="checkbox" id="cfgAutoCompileCheckbox">
+            <span><strong>Automated Honeycomb Pipeline:</strong> Automatically compile newly created songs directly into Guitar Hero III (PAK chart & FSB audio soundbanks).</span>
           </label>
         </div>
 
@@ -864,6 +948,49 @@
         document.getElementById('myAddress').innerText = data.serverUrl;
         document.getElementById('pinBadge').innerText = 'SESSION PIN: ' + data.pairingPin;
 
+        // NAT & UPnP Status Indicators
+        const natPill = document.getElementById('natPill');
+        const natHelp = document.getElementById('natHelpLine');
+        if (data.natStatus) {
+          if (data.natStatus.isMapped) {
+            natPill.className = 'badge green';
+            natPill.innerText = `✓ Port Mapped (${data.natStatus.method})`;
+            natHelp.innerHTML = `Public IP: <code style="color: var(--green);">${data.natStatus.publicIp || 'Unknown'}</code> • External Port: <b>${data.natStatus.externalPort}</b> (Accessible outside network!)`;
+          } else if (data.customPublicAddress) {
+            natPill.className = 'badge purple';
+            natPill.innerText = `Custom DDNS / Host`;
+            natHelp.innerHTML = `Using configured custom public address: <code style="color: #a78bfa;">${data.customPublicAddress}</code>`;
+          } else if (data.natStatus.publicIp) {
+            natPill.className = 'badge blue';
+            natPill.innerText = `Public IP Detected (${data.natStatus.publicIp})`;
+            natHelp.innerHTML = `Detected Public IP: <code style="color: #60a5fa;">${data.natStatus.publicIp}</code>. Ready for external connections with router port 7373 forwarding.`;
+          } else {
+            natPill.className = 'badge yellow';
+            natPill.innerText = `LAN Only (Port 7373)`;
+            natHelp.innerHTML = `Running on local network: <code>${data.localAddress || ''}</code>. Click "Network / NAT Settings" to configure external public access.`;
+          }
+        }
+
+        if (data.honeycomb) {
+          const cBadge = document.getElementById('compilerBadge');
+          const cMsg = document.getElementById('compilerStatusMsg');
+          if (cBadge && cMsg) {
+            if (data.honeycomb.available && data.honeycomb.hasFfmpeg) {
+              cBadge.className = 'badge green';
+              cBadge.innerText = 'Ready (Direct Compile)';
+              cMsg.innerText = `Honeycomb ready • ${data.honeycomb.honeycombDirectory}`;
+            } else if (data.honeycomb.available) {
+              cBadge.className = 'badge yellow';
+              cBadge.innerText = 'FFmpeg Needed';
+              cMsg.innerText = `Honeycomb detected, but FFmpeg is missing in folder. Audio compilation may fail.`;
+            } else {
+              cBadge.className = 'badge red';
+              cBadge.innerText = 'Compiler Missing';
+              cMsg.innerText = data.honeycomb.statusMessage || `Honeycomb not found. Click Game Config to configure.`;
+            }
+          }
+        }
+
         if (data.profile) {
           document.getElementById('profUsernameDisplay').innerText = data.profile.username;
           actualFriendCode = data.profile.friendCode || '';
@@ -904,14 +1031,23 @@
     }
 
     function renderSongList(songs) {
+      window.renderedSongs = songs || [];
       const container = document.getElementById('songsContainer');
       if (!songs || songs.length === 0) {
-        container.innerHTML = '<p style="color: var(--text-muted); padding: 16px;">No custom songs found in DATA/SONGS. Import songs or create one with ONOGAMI Song Creator!</p>';
+        if (currentFilter === 'created') {
+          container.innerHTML = '<p style="color: var(--text-muted); padding: 16px;">No songs created yet. Click the <b>ONOGAMI Song Creator</b> tab above to create your first custom song!</p>';
+        } else if (currentFilter === 'synced') {
+          container.innerHTML = '<p style="color: var(--text-muted); padding: 16px;">No synced or imported songs found.</p>';
+        } else {
+          container.innerHTML = '<p style="color: var(--text-muted); padding: 16px;">No custom songs found. Create songs with the <b>ONOGAMI Song Creator</b> or import customs via <b>Import Songs</b>.</p>';
+        }
         return;
       }
 
-      container.innerHTML = songs.map(s => {
+      container.innerHTML = songs.map((s, idx) => {
         const isOnogami = s.createdWithOnogamiCreator || s.isCreatedLocally;
+        const isProject = s.isProject;
+        const hasProjectDir = !!s.projectDirectory;
         return `
           <div class="song-item">
             <div class="song-info">
@@ -919,13 +1055,63 @@
               <p>${escapeHtml(s.artist)} • <span style="font-family: monospace;">${escapeHtml(s.songId)}</span></p>
             </div>
             <div class="song-meta">
-              ${isOnogami ? '<span class="badge purple">🎸 ONOGAMI Song Creator</span>' : '<span class="badge blue">Synced / Imported</span>'}
+              ${isOnogami ? '<span class="badge purple">🎸 ONOGAMI Creator</span>' : '<span class="badge blue">Synced / Imported</span>'}
+              ${isProject ? '<span class="badge yellow" title="Project created - ready to compile or sync">📁 Project Created</span>' : '<span class="badge green">✓ In-Game Ready</span>'}
               <span class="badge">${(s.totalSizeBytes / (1024 * 1024)).toFixed(1)} MB</span>
+              ${s.isProject || !s.isCompiled ? `<button class="btn btn-green btn-sm" onclick="compileSongByIdx(${idx})">⚡ Compile Song</button>` : ''}
+              ${hasProjectDir ? `<button class="btn btn-primary btn-sm" onclick="openGhprojByIdx(${idx})">⚡ Open in Honeycomb</button>` : ''}
+              ${hasProjectDir ? `<button class="btn btn-outline btn-sm" onclick="openSongFolderByIdx(${idx})">📁 Open Folder</button>` : ''}
               <a href="/api/download/${encodeURIComponent(s.songId)}" class="btn btn-outline btn-sm" download>⬇️ Download</a>
             </div>
           </div>
         `;
       }).join('');
+    }
+
+    function openSongFolderByIdx(idx) {
+      const song = window.renderedSongs && window.renderedSongs[idx];
+      if (song && song.projectDirectory) {
+        openSongFolder(song.projectDirectory);
+      }
+    }
+
+    function openGhprojByIdx(idx) {
+      const song = window.renderedSongs && window.renderedSongs[idx];
+      if (song) {
+        const target = song.ghprojPath || song.projectDirectory;
+        if (target) openGhproj(target);
+      }
+    }
+
+    function compileSongByIdx(idx) {
+      const song = window.renderedSongs && window.renderedSongs[idx];
+      if (song) {
+        compileSong(song.songId, song.ghprojPath || song.projectDirectory);
+      }
+    }
+
+    async function openSongFolder(folderPath) {
+      try {
+        const res = await fetch('/api/open-folder?path=' + encodeURIComponent(folderPath));
+        if (!res.ok) {
+          const err = await res.json();
+          alert('Could not open folder: ' + (err.error || 'Unknown error'));
+        }
+      } catch (e) {
+        console.error('Failed to open folder:', e);
+      }
+    }
+
+    async function openGhproj(folderPath) {
+      try {
+        const res = await fetch('/api/open-ghproj?path=' + encodeURIComponent(folderPath));
+        if (!res.ok) {
+          const err = await res.json();
+          alert('Could not open Honeycomb project: ' + (err.error || 'Unknown error'));
+        }
+      } catch (e) {
+        console.error('Failed to open .ghproj:', e);
+      }
     }
 
     function filterSongs(type) {
@@ -1175,9 +1361,10 @@
       const alertBox = document.getElementById('crAlert');
       const statusLabel = document.getElementById('crStatus');
       const mode = document.querySelector('input[name="chartMode"]:checked').value;
+      const autoComp = document.getElementById('crAutoCompile') ? document.getElementById('crAutoCompile').checked : true;
 
       btn.disabled = true;
-      statusLabel.innerText = 'Creating ONOGAMI project files...';
+      statusLabel.innerText = autoComp ? '⚡ Creating project & running automated Honeycomb compilation...' : 'Creating ONOGAMI project files...';
       alertBox.style.display = 'none';
 
       const formData = new FormData();
@@ -1190,6 +1377,7 @@
       formData.append('diffGuitar', document.getElementById('crDiffGuitar').value);
       formData.append('diffRhythm', document.getElementById('crDiffRhythm').value);
       formData.append('autoGenerateChart', mode === 'autogen' ? 'true' : 'false');
+      formData.append('autoCompile', autoComp ? 'true' : 'false');
       formData.append('bpm', document.getElementById('crBpm').value);
 
       const audio = document.getElementById('crAudioFile').files[0];
@@ -1210,8 +1398,14 @@
         if (result.success) {
           alertBox.className = 'alert success';
           alertBox.style.display = 'block';
-          alertBox.innerText = `🎉 Song Project Created with ONOGAMI Method!\nSaved at: ${result.projectDirectory}\nHoneycomb File: ${result.ghprojPath}\nThis song now appears under "Created by Me" and is ready to compile or sync!`;
+          if (result.compiledSuccessfully) {
+            alertBox.innerText = `🎉 Song Created & Compiled Directly into Guitar Hero III!\nTitle: ${result.title} by ${result.artist}\nProject Directory: ${result.projectDirectory}\nPAK Deployed: ${result.pakFilePath}\nFSB Soundbank: ${result.fsbFilePath}\n✓ Career progression backed up. Ready to play!`;
+          } else {
+            alertBox.innerText = `🎉 Song Project Created with ONOGAMI Method!\nSaved at: ${result.projectDirectory}\nHoneycomb File: ${result.ghprojPath}\nStatus: ${result.message}`;
+          }
           document.getElementById('songCreatorForm').reset();
+          const acElem = document.getElementById('crAutoCompile');
+          if (acElem) acElem.checked = true;
           toggleChartMode();
           loadStatus();
         } else {
@@ -1226,6 +1420,38 @@
       } finally {
         btn.disabled = false;
         statusLabel.innerText = '';
+      }
+    }
+
+    async function compileSong(songId, ghprojPath) {
+      if (!confirm(`Compile song '${songId}' directly into Guitar Hero III using Honeycomb?`)) return;
+
+      const btn = event?.target;
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = '⚡ Compiling...';
+      }
+
+      try {
+        const res = await fetch('/api/compiler/compile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ songId, ghprojPath })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert(`✓ Song '${songId}' compiled and deployed into Guitar Hero III successfully!`);
+          loadStatus();
+        } else {
+          alert(`Compilation failed: ${data.error || (data.logs ? data.logs.join('\n') : 'Unknown error')}`);
+        }
+      } catch (err) {
+        alert('Compiler request error: ' + err.message);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = '⚡ Compile Song';
+        }
       }
     }
 
@@ -1539,18 +1765,89 @@
       }
     }
 
+    // ==================== NETWORK & NAT SETTINGS MODAL ====================
+    async function openNetworkSettingsModal() {
+      const modal = document.getElementById('networkSettingsModal');
+      const customInput = document.getElementById('cfgCustomPublicAddress');
+      const autoMapCheck = document.getElementById('cfgAutoPortMapCheckbox');
+      const detail = document.getElementById('netStatusDetail');
+
+      const res = await fetch('/api/status');
+      const data = await res.json();
+
+      customInput.value = data.customPublicAddress || '';
+      autoMapCheck.checked = (data.autoPortMap !== false);
+
+      const nat = data.natStatus || {};
+      detail.innerHTML = `
+        <div style="display: grid; gap: 6px;">
+          <div><b>Public IP:</b> <span style="color: var(--blue); font-family: monospace;">${nat.publicIp || 'Not detected'}</span></div>
+          <div><b>External Port:</b> <span style="font-family: monospace;">${nat.externalPort || 7373}</span></div>
+          <div><b>Port Mapped Status:</b> ${nat.isMapped 
+            ? '<span class="badge green">✓ Automatically Forwarded (' + nat.method + ')</span>' 
+            : '<span class="badge yellow">Direct / Manual Port Forwarding</span>'}</div>
+          <div><b>Active Invite URL:</b> <code style="color: var(--accent);">${escapeHtml(data.serverUrl || '')}</code></div>
+        </div>
+      `;
+
+      modal.style.display = 'flex';
+    }
+
+    function closeNetworkSettingsModal() {
+      document.getElementById('networkSettingsModal').style.display = 'none';
+    }
+
+    async function saveNetworkSettings() {
+      const customAddr = document.getElementById('cfgCustomPublicAddress').value.trim();
+      const autoPort = document.getElementById('cfgAutoPortMapCheckbox').checked;
+
+      const res = await fetch('/api/settings/network', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customPublicAddress: customAddr, autoPortMap: autoPort })
+      });
+
+      if (res.ok) {
+        closeNetworkSettingsModal();
+        loadStatus();
+        alert('Network and port mapping settings updated successfully!');
+      } else {
+        alert('Could not save network settings.');
+      }
+    }
+
+    async function refreshNatMapping() {
+      const detail = document.getElementById('netStatusDetail');
+      detail.innerHTML = '<em>Refreshing UPnP/NAT-PMP port mapping and detecting public IP...</em>';
+      try {
+        const res = await fetch('/api/nat/refresh', { method: 'POST' });
+        const data = await res.json();
+        await openNetworkSettingsModal();
+        loadStatus();
+      } catch (err) {
+        alert('Error refreshing NAT: ' + err.message);
+      }
+    }
+
     // ==================== GAME PATH SETTINGS MODAL ====================
     async function openGamePathSettings() {
       const modal = document.getElementById('gamePathModal');
       const input = document.getElementById('cfgGamePathInput');
+      const songsInput = document.getElementById('cfgSongsPathInput');
+      const hInput = document.getElementById('cfgHoneycombPathInput');
       const check = document.getElementById('cfgDirectInstallCheckbox');
+      const autoCompCheck = document.getElementById('cfgAutoCompileCheckbox');
       const badge = document.getElementById('cfgCompatBadge');
+      const hBadge = document.getElementById('cfgHoneycombBadge');
 
       const res = await fetch('/api/status');
       const data = await res.json();
 
       input.value = data.gamePath || '';
+      if (songsInput) songsInput.value = data.customSongsPath || '';
+      if (hInput) hInput.value = (data.honeycomb && data.honeycomb.honeycombDirectory) || '';
       check.checked = (data.directInstall !== false);
+      if (autoCompCheck) autoCompCheck.checked = (data.autoCompile !== false);
 
       if (data.compatibility) {
         badge.innerHTML = data.compatibility.isBetterGh3 
@@ -1558,6 +1855,14 @@
           : (data.compatibility.hasGh3Exe 
             ? '<span class="badge yellow" style="font-size: 13px; padding: 6px 12px;">⚠️ Vanilla GH3 Detected (BetterGH3 recommended)</span>'
             : '<span class="badge red" style="font-size: 13px; padding: 6px 12px;">❌ GH3.exe not found in this folder</span>');
+      }
+
+      if (data.honeycomb && hBadge) {
+        hBadge.innerHTML = data.honeycomb.available && data.honeycomb.hasFfmpeg
+          ? '<span class="badge green" style="font-size: 13px; padding: 6px 12px;">✓ Honeycomb & FFmpeg Ready for Auto-Compile</span>'
+          : (data.honeycomb.available
+            ? '<span class="badge yellow" style="font-size: 13px; padding: 6px 12px;">⚠️ Honeycomb Found, but FFmpeg is missing in folder</span>'
+            : '<span class="badge red" style="font-size: 13px; padding: 6px 12px;">❌ Honeycomb-GUI not detected</span>');
       }
 
       modal.style.display = 'flex';
@@ -1569,6 +1874,7 @@
 
     async function saveGamePathSettings() {
       const path = document.getElementById('cfgGamePathInput').value.trim();
+      const songsPath = document.getElementById('cfgSongsPathInput') ? document.getElementById('cfgSongsPathInput').value.trim() : '';
       const direct = document.getElementById('cfgDirectInstallCheckbox').checked;
 
       const pathRes = await fetch('/api/gamepath/save', {
@@ -1582,6 +1888,30 @@
         alert('Game path error: ' + (err.error || 'Invalid directory'));
         return;
       }
+
+      if (songsPath) {
+        await fetch('/api/settings/songs-path', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ songsPath })
+        });
+      }
+
+      const hPath = document.getElementById('cfgHoneycombPathInput') ? document.getElementById('cfgHoneycombPathInput').value.trim() : '';
+      if (hPath) {
+        await fetch('/api/settings/honeycomb-path', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: hPath })
+        });
+      }
+
+      const autoComp = document.getElementById('cfgAutoCompileCheckbox') ? document.getElementById('cfgAutoCompileCheckbox').checked : true;
+      await fetch('/api/settings/auto-compile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ autoCompile: autoComp })
+      });
 
       await fetch('/api/settings/direct-install', {
         method: 'POST',

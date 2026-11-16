@@ -50,6 +50,7 @@ public class FeedbackItem
 
 public class AppConfigData
 {
+    public string AppVersion { get; set; } = "1.4.0-beta.4";
     public string Username { get; set; } = "Player_" + Random.Shared.Next(1000, 9999);
     public string FriendCode { get; set; } = "";
     public string GamePath { get; set; } = "";

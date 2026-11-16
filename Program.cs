@@ -157,7 +157,7 @@ _ = Task.Run(async () =>
                 friendCode = AppConfig.Current.FriendCode,
                 username = AppConfig.Current.Username,
                 isBetterGh3 = compat.IsBetterGh3,
-                appVersion = "1.3.0-beta.3",
+                appVersion = AppConfig.Current.AppVersion,
                 customsCount = gh3Service.GetInstalledCustomSongs().Count,
                 localPort = port,
                 localIp = GetLocalIpAddress(),
@@ -378,6 +378,29 @@ app.MapGet("/api/open-ghproj", (string? path, SyncLogger logger) =>
 
         if (ghprojFile != null && File.Exists(ghprojFile))
         {
+            var honeycombDir = HoneycombCompilerService.FindHoneycombDirectory();
+            var honeycombExe = !string.IsNullOrEmpty(honeycombDir) ? Path.Combine(honeycombDir, "Honeycomb-GUI.exe") : null;
+
+            if (honeycombExe != null && File.Exists(honeycombExe))
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = honeycombExe,
+                        Arguments = $"\"{ghprojFile}\"",
+                        WorkingDirectory = honeycombDir,
+                        UseShellExecute = true
+                    });
+                    logger.LogInfo($"[HONEYCOMB] Launched Honeycomb-GUI with project: {ghprojFile}");
+                    return Results.Ok(new { success = true, opened = ghprojFile, method = "Honeycomb-GUI.exe" });
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarn($"[HONEYCOMB] Direct exe launch failed ({ex.Message}), falling back to shell...");
+                }
+            }
+
             try
             {
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
@@ -1174,7 +1197,7 @@ if (!args.Contains("--no-browser") && !args.Contains("--headless"))
 }
 
 Console.WriteLine("=================================================");
-Console.WriteLine("  🎸 GH3-Sync Beta 3 | P2P Synchronizer, Friends & ONOGAMI");
+Console.WriteLine("  🎸 GH3-Sync Beta 4 | P2P Synchronizer, Friends & ONOGAMI");
 Console.WriteLine($"  Local Web Dashboard: http://localhost:{port}");
 Console.WriteLine($"  LAN Address:         http://{GetLocalIpAddress()}:{port}");
 Console.WriteLine($"  Public / NAT Address: {GetBestPublicOrLanAddress()}");
