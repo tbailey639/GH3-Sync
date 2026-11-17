@@ -76,6 +76,20 @@ public class HoneycombCompilerService
     /// </summary>
     public static string FindHoneycombDirectory(string? preferredPath = null, string? gamePath = null)
     {
+        // 0. Bundled internal compiler tools inside GH3-Sync (Zero separate install required!)
+        string[] bundledCandidates = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "tools", "compiler"),
+            Path.Combine(AppContext.BaseDirectory, "compiler"),
+            Path.Combine(Directory.GetCurrentDirectory(), "tools", "compiler"),
+            Path.Combine(Directory.GetCurrentDirectory(), "compiler")
+        };
+        foreach (var bundled in bundledCandidates)
+        {
+            if (Directory.Exists(bundled) && IsValidHoneycombDirectory(bundled))
+                return bundled;
+        }
+
         // 1. Explicitly preferred path
         if (!string.IsNullOrWhiteSpace(preferredPath) && Directory.Exists(preferredPath))
         {

@@ -33,7 +33,9 @@ var securityService = new SecurityService();
 var friendService = new FriendService(baseDir);
 var saveManager = new SaveManager(syncLogger);
 var compilerService = new HoneycombCompilerService(gh3Service, syncLogger, saveManager);
-var creatorService = new SongCreatorService(compilerService);
+var audioAnalysisService = new AudioAnalysisService(syncLogger);
+var demucsService = new DemucsService(syncLogger);
+var creatorService = new SongCreatorService(compilerService, audioAnalysisService, demucsService);
 var natService = new NatPortMappingService(port, syncLogger);
 
 builder.Services.AddSingleton(gh3Service);
@@ -41,6 +43,8 @@ builder.Services.AddSingleton(syncLogger);
 builder.Services.AddSingleton(securityService);
 builder.Services.AddSingleton(friendService);
 builder.Services.AddSingleton(compilerService);
+builder.Services.AddSingleton(audioAnalysisService);
+builder.Services.AddSingleton(demucsService);
 builder.Services.AddSingleton(creatorService);
 builder.Services.AddSingleton(saveManager);
 builder.Services.AddSingleton(natService);
@@ -1002,7 +1006,45 @@ app.MapGet("/api/peer/download-file", async (string remoteUrl, string songId, IH
     }
 });
 
-// ==================== ONOGAMI SONG CREATOR ====================
+// ==================== ONOGAMI SONG CREATOR & AI AUDIO ====================
+app.MapGet("/api/demucs/status", (DemucsService demucs) =>
+{
+    return Results.Ok(demucs.GetStatus());
+});
+
+app.MapPost("/api/audio/detect-bpm", async (HttpRequest request, AudioAnalysisService analyzer) =>
+{
+    if (!request.HasFormContentType)
+        return Results.BadRequest(new { error = "Form-data required with audio file." });
+
+    var form = await request.ReadFormAsync();
+    var audio = form.Files.GetFile("audioFile");
+    if (audio == null || audio.Length == 0)
+        return Results.BadRequest(new { error = "Audio file required." });
+
+    var tempPath = Path.Combine(Path.GetTempPath(), $"bpm_check_{Guid.NewGuid():N}.mp3");
+    try
+    {
+        using (var fs = File.Create(tempPath))
+        {
+            await audio.CopyToAsync(fs);
+        }
+        var analysis = analyzer.AnalyzeAudio(tempPath);
+        return Results.Ok(new
+        {
+            success = analysis.Success,
+            bpm = analysis.Bpm,
+            downbeatMs = analysis.DownbeatOffsetMs,
+            message = analysis.Message,
+            onsetsCount = analysis.OnsetTimestampsSeconds.Count
+        });
+    }
+    finally
+    {
+        if (File.Exists(tempPath)) File.Delete(tempPath);
+    }
+});
+
 app.MapPost("/api/creator/create-song", async (HttpRequest request, SongCreatorService creator, SyncLogger logger) =>
 {
     if (!request.HasFormContentType)
@@ -1011,6 +1053,9 @@ app.MapPost("/api/creator/create-song", async (HttpRequest request, SongCreatorS
     var form = await request.ReadFormAsync();
     var autoGen = form["autoGenerateChart"].ToString() == "true";
     var autoCompile = form["autoCompile"].ToString() == "true" || (form.ContainsKey("autoCompile") ? false : AppConfig.Current.AutoCompileCreatedSongs);
+    var autoDetectBpm = form["autoDetectBpm"].ToString() == "true" || !form.ContainsKey("bpm") || string.IsNullOrWhiteSpace(form["bpm"]);
+    var separateStems = form["separateStems"].ToString() == "true";
+
     var meta = new SongCreationRequest
     {
         Title = form["title"].ToString(),
@@ -1023,6 +1068,8 @@ app.MapPost("/api/creator/create-song", async (HttpRequest request, SongCreatorS
         DiffRhythm = int.TryParse(form["diffRhythm"], out var dr) ? dr : 3,
         PreviewStartMs = int.TryParse(form["previewStartMs"], out var ps) ? ps : 5000,
         Bpm = int.TryParse(form["bpm"], out var bpmVal) ? bpmVal : 130,
+        AutoDetectBpm = autoDetectBpm,
+        SeparateStemsWithDemucs = separateStems,
         AutoGenerateChart = autoGen,
         AutoCompile = autoCompile
     };
@@ -1178,24 +1225,6 @@ app.MapGet("/api/export-pack", (Gh3Service gh3, SyncLogger logger) =>
     return Results.File(ms.ToArray(), "application/zip", "GH3_Full_Customs_Pack.gh3pack");
 });
 
-// Auto launch browser
-if (!args.Contains("--no-browser") && !args.Contains("--headless"))
-{
-    _ = Task.Run(async () =>
-    {
-        await Task.Delay(1200);
-        try
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = $"http://localhost:{port}",
-                UseShellExecute = true
-            });
-        }
-        catch { }
-    });
-}
-
 Console.WriteLine("=================================================");
 Console.WriteLine("  🎸 GH3-Sync Beta 4 | P2P Synchronizer, Friends & ONOGAMI");
 Console.WriteLine($"  Local Web Dashboard: http://localhost:{port}");
@@ -1205,4 +1234,34 @@ Console.WriteLine($"  Active Profile:      {friendService.Profile.Username} [{fr
 Console.WriteLine($"  Session PIN:         {securityService.PairingPin}");
 Console.WriteLine("=================================================");
 
-app.Run();
+bool isHeadless = args.Contains("--headless") || args.Contains("--no-gui") || args.Contains("--server");
+
+if (isHeadless)
+{
+    app.Run();
+}
+else
+{
+    await app.StartAsync();
+    try
+    {
+        ApplicationConfiguration.Initialize();
+        var mainWin = new MainWindow($"http://localhost:{port}", syncLogger);
+        Application.Run(mainWin);
+        await app.StopAsync();
+    }
+    catch (Exception ex)
+    {
+        syncLogger.LogWarn($"[DESKTOP] Desktop window fallback to browser/console: {ex.Message}");
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = $"http://localhost:{port}",
+                UseShellExecute = true
+            });
+        }
+        catch { }
+        await app.WaitForShutdownAsync();
+    }
+}

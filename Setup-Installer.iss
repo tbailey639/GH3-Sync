@@ -39,6 +39,8 @@ Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\wwwroot\*"; DestDir: "{app}\wwwroot"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "dist\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "CREDITS.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "tools\compiler\*"; DestDir: "{app}\tools\compiler"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

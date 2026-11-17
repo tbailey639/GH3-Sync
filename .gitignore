@@ -11,3 +11,7 @@ dist/*.log
 dist/*.dll
 *.br
 *.gz
+tools/compiler/*.exe
+dist/runtimes/
+dist/tools/
+dist/*.xml

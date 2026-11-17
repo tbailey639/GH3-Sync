@@ -401,17 +401,40 @@
               <input type="number" id="crDiffRhythm" min="1" max="5" value="3">
             </div>
             <div class="form-group" id="bpmGroup" style="display: none;">
-              <label>Song Tempo (BPM) for Auto-Chart</label>
-              <input type="number" id="crBpm" min="40" max="300" value="130">
+              <label style="display: flex; justify-content: space-between; align-items: center;">
+                <span>Song Tempo (BPM) for Auto-Chart</span>
+                <button type="button" class="btn btn-outline btn-sm" onclick="triggerDetectBpm()" style="padding: 2px 8px; font-size: 11px;">🎵 Auto-Detect BPM</button>
+              </label>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="number" id="crBpm" min="40" max="300" value="130" style="flex: 1;">
+                <span id="bpmDetectStatus" style="font-size: 11px; color: #10b981;"></span>
+              </div>
             </div>
             <div class="form-group">
               <label>Audio File (.mp3, .wav, or .ogg) *</label>
-              <input type="file" id="crAudioFile" accept=".mp3,.wav,.ogg" required>
+              <input type="file" id="crAudioFile" accept=".mp3,.wav,.ogg" required onchange="triggerDetectBpm()">
             </div>
             <div class="form-group" id="chartUploadGroup">
               <label>Chart / MIDI File (.chart or .mid) *</label>
               <input type="file" id="crChartFile" accept=".chart,.mid">
             </div>
+          </div>
+
+          <!-- Demucs AI Stem Separation Panel -->
+          <div style="margin-top: 14px; padding: 12px 16px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <div style="font-weight: 700; color: #60a5fa; font-size: 13px; display: flex; align-items: center; gap: 6px;">
+                <span>🤖 Demucs AI Multi-Track Stem Isolation</span>
+                <span class="badge blue" id="demucsBadge" style="font-size: 10px;">Checking...</span>
+              </div>
+              <div id="demucsStatusText" style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+                Automatically separates Guitar, Bass, Drums, and Vocals so only the guitar cuts out when you miss a note.
+              </div>
+            </div>
+            <label class="switch-label" style="font-size: 13px; font-weight: 600; cursor: pointer; color: #93c5fd; display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" id="crSeparateStems" style="width: 18px; height: 18px; accent-color: #3b82f6; cursor: pointer;">
+              <span>Enable AI Stem Separation</span>
+            </label>
           </div>
 
           <div style="margin-top: 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
@@ -742,6 +765,24 @@
           <ul>
             <li><strong>"⚠️ Not Working?" Instant Feedback:</strong> Encountered an issue or have a suggestion? Click the <strong>Not Working?</strong> button on any page to submit feedback with automatic diagnostic tags directly to the Admin Hub.</li>
             <li><strong>Standalone Admin Panel (GH3-Sync-Admin):</strong> Administrators can run <code>GH3-Sync-Admin.exe</code> on port 7575 to monitor live active users, track feature popularity on the usage leaderboard, review and filter feedback, and broadcast system-wide announcements to all active players.</li>
+          </ul>
+        </div>
+
+        <div class="doc-section" style="background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 18px; margin-top: 24px;">
+          <h3 style="color: #10b981; margin-top: 0; display: flex; align-items: center; gap: 8px;">
+            <span>📜 Credits & Open-Source Acknowledgments</span>
+          </h3>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+            GH3-Sync and the ONOGAMI Song Creator are built with immense gratitude to the open-source community, reverse engineers, and developers whose work powers custom rhythm gaming:
+          </p>
+          <ul style="line-height: 1.8; font-size: 13px;">
+            <li><strong>Honeycomb-GUI & GH-Toolkit-Core:</strong> Created by <em>AddyMills</em> and the Neversoft modding community. Powers the chart <code>.pak.xen</code> compiler, QB bytecode serialization, and CRC key tables.</li>
+            <li><strong>Demucs AI:</strong> Developed by <em>Alexandre Défossez et al. (Meta AI Research)</em>. Powers state-of-the-art deep learning stem separation (Guitar, Bass, Drums, Vocals).</li>
+            <li><strong>BetterGH3:</strong> Developed by the <em>BetterGH3 Team</em>. The gold-standard modern PC enhancement mod for Guitar Hero III featuring instant loading, custom partitions, and online multiplayer.</li>
+            <li><strong>FFmpeg:</strong> The industry-standard multimedia engine utilized for audio stem extraction, downmixing, and PCM transient analysis.</li>
+            <li><strong>FMOD / FSB Sound Tools:</strong> FMOD sound engine and FSB3 soundbank assembly utilities for multi-track interactive gaming audio.</li>
+            <li><strong>Aubio & Audio Community:</strong> Fast audio onset and tempo detection algorithms for real-time BPM and downbeat analysis.</li>
+            <li><strong>Moonscraper / Reaper Community:</strong> The custom rhythm game community whose chart specifications (<code>.chart</code>, <code>.mid</code>) make community music sharing possible.</li>
           </ul>
         </div>
       </div>
@@ -1338,6 +1379,48 @@
       loadFriends();
     }
 
+    async function triggerDetectBpm() {
+      const audioInput = document.getElementById('crAudioFile');
+      const statusSpan = document.getElementById('bpmDetectStatus');
+      if (!audioInput || !audioInput.files || audioInput.files.length === 0) {
+        if (statusSpan) statusSpan.innerText = '⚠️ Select audio first';
+        return;
+      }
+      const audio = audioInput.files[0];
+      if (statusSpan) statusSpan.innerText = '🎵 Analyzing audio waveform & onsets...';
+      const fd = new FormData();
+      fd.append('audioFile', audio);
+      try {
+        const res = await fetch('/api/audio/detect-bpm', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.success) {
+          const bpmField = document.getElementById('crBpm');
+          if (bpmField) bpmField.value = Math.round(data.bpm);
+          if (statusSpan) statusSpan.innerText = `✓ Detected ${data.bpm} BPM (${data.onsetsCount} onsets)`;
+        } else {
+          if (statusSpan) statusSpan.innerText = `⚠️ ${data.message || 'BPM detection failed'}`;
+        }
+      } catch (err) {
+        if (statusSpan) statusSpan.innerText = 'Detection error.';
+      }
+    }
+
+    async function checkDemucsStatus() {
+      const badge = document.getElementById('demucsBadge');
+      const txt = document.getElementById('demucsStatusText');
+      try {
+        const res = await fetch('/api/demucs/status');
+        const data = await res.json();
+        if (data.isInstalled) {
+          if (badge) { badge.className = 'badge green'; badge.innerText = '✓ Ready'; }
+          if (txt) txt.innerText = 'Demucs AI Engine is installed! Multi-track stem isolation enabled for Guitar, Bass, Drums, and Vocals.';
+        } else {
+          if (badge) { badge.className = 'badge yellow'; badge.innerText = 'Not Installed'; }
+          if (txt) txt.innerText = 'Demucs AI not detected in AppData/tools. Uploaded single-track audio will be mixed directly.';
+        }
+      } catch { }
+    }
+
     function toggleChartMode() {
       const mode = document.querySelector('input[name="chartMode"]:checked').value;
       const bpmGroup = document.getElementById('bpmGroup');
@@ -1367,6 +1450,7 @@
       statusLabel.innerText = autoComp ? '⚡ Creating project & running automated Honeycomb compilation...' : 'Creating ONOGAMI project files...';
       alertBox.style.display = 'none';
 
+      const separateStems = document.getElementById('crSeparateStems') && document.getElementById('crSeparateStems').checked;
       const formData = new FormData();
       formData.append('title', document.getElementById('crTitle').value.trim());
       formData.append('artist', document.getElementById('crArtist').value.trim());
@@ -1378,6 +1462,8 @@
       formData.append('diffRhythm', document.getElementById('crDiffRhythm').value);
       formData.append('autoGenerateChart', mode === 'autogen' ? 'true' : 'false');
       formData.append('autoCompile', autoComp ? 'true' : 'false');
+      formData.append('autoDetectBpm', 'true');
+      formData.append('separateStems', separateStems ? 'true' : 'false');
       formData.append('bpm', document.getElementById('crBpm').value);
 
       const audio = document.getElementById('crAudioFile').files[0];
@@ -1977,6 +2063,7 @@
 
     loadStatus();
     loadFriends();
+    checkDemucsStatus();
   </script>
 </body>
 </html>
