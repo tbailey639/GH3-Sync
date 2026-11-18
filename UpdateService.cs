@@ -30,7 +30,7 @@ public class UpdateCheckResult
 /// </summary>
 public class UpdateService
 {
-    public const string CurrentAppVersion = "1.0.2";
+    public const string CurrentAppVersion = "1.0.3";
     private const string RepoOwner = "tbailey639";
     private const string RepoName = "GH3-Sync";
     private static readonly string LatestReleaseApiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
@@ -130,7 +130,68 @@ public class UpdateService
             var tempDir = Path.Combine(Path.GetTempPath(), "GH3-Sync-Updates");
             Directory.CreateDirectory(tempDir);
             var safeVer = string.Concat(updateInfo.LatestVersion.Select(c => char.IsLetterOrDigit(c) || c == '.' || c == '-' ? c : '_'));
-            var targetFile = Path.Combine(tempDir, $"GH3-Sync-Setup-{safeVer}.exe");
+
+            // Safe cleanup of stale updates older than 24h
+            try
+            {
+                var dirInfo = new DirectoryInfo(tempDir);
+                foreach (var oldFile in dirInfo.GetFiles("GH3-Sync-Setup-*.exe"))
+                {
+                    if (DateTime.UtcNow - oldFile.LastWriteTimeUtc > TimeSpan.FromHours(24))
+                    {
+                        try { oldFile.Delete(); } catch { }
+                    }
+                }
+            }
+            catch { }
+
+            // If an existing downloaded installer already matches the SHA-256 checksum or expected size, reuse it!
+            var candidateFile = Path.Combine(tempDir, $"GH3-Sync-Setup-{safeVer}.exe");
+            if (File.Exists(candidateFile))
+            {
+                bool isValid = false;
+                if (!string.IsNullOrWhiteSpace(updateInfo.InstallerSha256))
+                {
+                    isValid = SecurityService.VerifyFileSha256(candidateFile, updateInfo.InstallerSha256);
+                }
+                else
+                {
+                    var existingLen = new FileInfo(candidateFile).Length;
+                    if (updateInfo.InstallerSizeBytes > 0 && existingLen == updateInfo.InstallerSizeBytes)
+                    {
+                        isValid = true;
+                    }
+                }
+
+                if (isValid)
+                {
+                    _logger?.LogInfo($"[UPDATER] Existing installer {candidateFile} is already fully downloaded and verified. Skipping re-download.");
+                    onProgress?.Invoke(100, "Installer ready! Launching...");
+                    return (true, candidateFile, "");
+                }
+            }
+
+            // Determine safe target path: if candidateFile is locked or in-use by another process, use unique filename
+            string targetFile = candidateFile;
+            bool canWriteCandidate = false;
+            try
+            {
+                using (var testStream = new FileStream(candidateFile, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete))
+                {
+                    canWriteCandidate = true;
+                }
+                try { File.Delete(candidateFile); } catch { }
+            }
+            catch
+            {
+                canWriteCandidate = false;
+            }
+
+            if (!canWriteCandidate)
+            {
+                targetFile = Path.Combine(tempDir, $"GH3-Sync-Setup-{safeVer}_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N[..6]}.exe");
+                _logger?.LogInfo($"[UPDATER] Standard target was locked; using unique installer target path: {targetFile}");
+            }
 
             onProgress?.Invoke(0, $"Connecting to GitHub to download v{updateInfo.LatestVersion}...");
             _logger?.LogInfo($"[UPDATER] Downloading update from {updateInfo.InstallerDownloadUrl}");
@@ -140,7 +201,7 @@ public class UpdateService
 
             var totalBytes = resp.Content.Headers.ContentLength ?? updateInfo.InstallerSizeBytes;
             await using var src = await resp.Content.ReadAsStreamAsync(ct);
-            await using var dst = File.Create(targetFile);
+            await using var dst = new FileStream(targetFile, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete, 81920, useAsync: true);
 
             var buffer = new byte[81920];
             long downloaded = 0;

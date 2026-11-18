@@ -4,6 +4,17 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.0.3] - 2026-11-18
+
+### Bug Fixes
+* **Fixed In-App Update File-Locking Sharing Violation:** Resolved `The process cannot access the file ... GH3-Sync-Setup-*.exe because it is being used by another process` during 1-click in-app updates. The updater now:
+  - Automatically reuses already downloaded and verified setup installers in `Temp\GH3-Sync-Updates` without redundant re-downloads or file handle conflicts.
+  - Generates unique timestamped installer paths if the default target file is held open by Windows Defender, antivirus scanners, or background processes.
+  - Opens download streams with shared read/write/delete permissions (`FileShare.ReadWrite | FileShare.Delete`) to prevent collisions during active disk writes.
+  - Automatically purges stale installer executables older than 24 hours.
+
+---
+
 ## [v1.0.2] - 2026-11-18
 
 ### Bug Fixes

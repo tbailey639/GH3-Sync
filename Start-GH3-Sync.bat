@@ -1,5 +1,5 @@
 @echo off
-title GH3-Sync v1.0.2
+title GH3-Sync v1.0.3
 cd /d "%~dp0"
 if exist "GH3-Sync.exe" (
     start "" "GH3-Sync.exe"
