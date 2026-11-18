@@ -8,11 +8,27 @@ using System.Diagnostics;
 using GH3_Sync;
 
 var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+var appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GH3-Sync");
+var writableWebRoot = Path.Combine(appDataDir, "p2p_root");
+Directory.CreateDirectory(writableWebRoot);
+
+AppDomain.CurrentDomain.UnhandledException += (_, exArgs) =>
+{
+    try
+    {
+        var err = exArgs.ExceptionObject?.ToString() ?? "Unknown fatal error";
+        File.WriteAllText(Path.Combine(appDataDir, "crash.log"), $"[{DateTime.Now}]\n{err}\n");
+        System.Windows.MessageBox.Show($"GH3-Sync encountered a startup error:\n\n{err}", "GH3-Sync Error",
+            System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+    }
+    catch { }
+};
+
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args = args,
-    ContentRootPath = baseDir,
-    WebRootPath = Path.Combine(baseDir, "wwwroot")
+    ContentRootPath = appDataDir,
+    WebRootPath = writableWebRoot
 });
 
 // Configure port
@@ -56,8 +72,7 @@ builder.Services.AddHttpClient();
 
 var app = builder.Build();
 
-app.UseDefaultFiles();
-app.UseStaticFiles();
+// Native Windows 11 WPF app uses direct C# services; Kestrel serves P2P sync /api/* endpoints only.
 
 // Start In-Game Overlay
 var overlay = new InGameOverlay(syncLogger);
@@ -1257,13 +1272,33 @@ else
                 ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown
             };
 
+            wpfApp.DispatcherUnhandledException += (_, exArgs) =>
+            {
+                syncLogger.LogError("WPF UI Error", exArgs.Exception);
+                try
+                {
+                    File.WriteAllText(Path.Combine(appDataDir, "crash.log"), $"[{DateTime.Now}]\n{exArgs.Exception}\n");
+                    System.Windows.MessageBox.Show($"UI Error: {exArgs.Exception.Message}", "GH3-Sync",
+                        System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                }
+                catch { }
+                exArgs.Handled = true;
+            };
+
             wpfApp.Startup += async (_, _) =>
             {
                 var splash = new GH3_Sync.Views.SplashWindow();
                 splash.Show();
                 splash.UpdateProgress(20, "Starting background P2P sync listener...");
 
-                await app.StartAsync();
+                try
+                {
+                    await app.StartAsync();
+                }
+                catch (Exception srvEx)
+                {
+                    syncLogger.LogWarn($"[P2P] Background listener port {port} busy or unavailable: {srvEx.Message}");
+                }
                 splash.UpdateProgress(55, "Verifying BetterGH3 & bundled Honeycomb compiler...");
                 await Task.Delay(550);
 

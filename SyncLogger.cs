@@ -31,9 +31,10 @@ public class SyncLogger
 
     public SyncLogger(string? gamePath = null)
     {
-        // 1. App local debug log
-        var appDir = AppDomain.CurrentDomain.BaseDirectory;
-        _logPaths.Add(Path.Combine(appDir, "debug.log"));
+        // 1. Always-writable AppData debug log (safe when installed in C:\Program Files\GH3-Sync\)
+        var appDataLogDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GH3-Sync");
+        try { Directory.CreateDirectory(appDataLogDir); } catch { }
+        _logPaths.Add(Path.Combine(appDataLogDir, "debug.log"));
 
         // 2. Game folder debug log if detected
         if (!string.IsNullOrEmpty(gamePath) && Directory.Exists(gamePath))
