@@ -6,25 +6,27 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ## [v1.0.0] - 2026-11-18 — Official Launch (Legends of Rock Edition)
 
-### Animated Stage UI Overhaul & Theme Studio
-* **Master UI Animations Toggle (`Enable UI Animations & Stage Effects`):** Instantly enable or disable animated concert stage spotlights, flowing 5-fret neon energy shimmer, smooth page & tab slide-in transitions, live status-dot heartbeat pulse, hover lift/glow cards, and the real-time **5-Fret Neon Audio Spectrum Visualizer** in the bottom preview bar.
+### Iconic Guitar Hero III Animated Stage UI & Theme Studio
+* **Master UI Animations Toggle (`Enable UI Animations & Stage Effects`):** Instantly toggle all stage effects on or off from `Settings → Appearance & Overlay`.
+* **Animated GH3 Rock Meter & Streak Multiplier Ring:** Live Red→Yellow→Green GH3 gauge arc with animated needle in the top header (reacting to BetterGH3/library health & subtly bouncing to preview audio) paired with a dynamic `1x → 4x → ⚡ 8x` Streak Multiplier ring in the sidebar.
+* **Rising "Lou's Inferno" Concert Stage Embers & 5-Fret Fretboard Gems:** 22 softly drifting glowing embers & fret sparks behind workspace panels, 5-fret glowing gems on sidebar navigation, flowing 5-fret top shimmer, **Staggered Setlist Card Cascade**, **Spinning Vinyl / Album Disc** + **5-Fret Neon Audio Spectrum Visualizer**, and animated **GH3 Stage Toast Notification Banners**.
 * **5 Custom Guitar Hero Stage Themes:** **Dark GH3**, **Light GH3**, **⚡ Star Power (Cyber Blue)**, **🔥 Through the Fire & Flames**, and **🌌 Encore Synthwave**.
 * **Power-User Keyboard Shortcuts:** `Ctrl+F` (Search Customs), `F5` (Refresh), `Ctrl+1..8` (Jump Pages), and `Space` (Play/Pause Preview).
 
-### Gameplay, Charting & Controller Tools
-* **Playable Highway Previewer + A→B Solo Looper:** Play any custom chart directly inside GH3-Sync using an **XInput Guitar Controller** or **Keyboard (`A S J K L` + `Space`/`Enter`)** with hit detection, streak/multiplier, accuracy %, FC tracking, Practice Speed (`50% / 75% / 90% / 100%`), and A→B section looping.
-* **Visual Quick-Fix Note Editor:** Switch the Highway Previewer into **Edit Mode** to left-click lanes to add/remove 16th-snapped notes, right-click to toggle HOPO, undo edits, and save/recompile straight into Guitar Hero III.
-* **Live Guitar Controller Diagnostic Tester:** Real-time 60 FPS XInput & keyboard diagnostic panel lighting up all 5 frets, Strum Up/Down, Start/Back, Whammy Bar analog meter, and Star Power Tilt axis.
-* **Custom GH3 Highway Skin Studio:** Drop any PNG/JPG artwork to auto-format a crisp `512×1024` highway texture with lane guides, safe vault backups, and 1-click default restoration.
-* **BetterGH3 Live `_log.txt` Verifier & 1-Click Presets:** Displays live `✓ Loaded (0x...)` verification badges from `PLUGINS\_log.txt`, plus 1-click **Competitive Online** and **Classic 60 FPS Vanilla** plugin presets.
+### Security Hardening & Privacy Suite
+* **Strict External-IP API Lockdown:** External/Internet & proxied tunnel IPs can ONLY ever reach `/api/auth/challenge`, `/api/manifest`, `/api/download/*`, and `/api/download-customs-pak`; all desktop/local routes (`/api/status`, `/api/open-folder`, `/api/settings/*`, `/obs-overlay`, etc.) return `403 Forbidden`.
+* **Challenge-Response HMAC-SHA256 P2P Authentication:** Trust Tokens, 4-Hour Expiring Invite Tokens, and Session PINs never cross the wire in plaintext — single-use 90-second nonces prevent replay attacks, protected by unified 5-attempt IP lockout.
+* **Per-Transfer Salted AES-256-GCM (`GH3E` v2) & Encrypted `.gh3backup` Profile Backups:** Unique random salt per P2P transfer plus passphrase-encrypted (`PBKDF2-SHA256` 150k + `AES-256-GCM`) profile backup & restore.
+* **Settings → 🔒 Security & Privacy Dashboard:** Live security status badges, live Blocked IPs & auth audit log with manual IP ban/unban, **1-Click Rotate All Tokens & PIN**, strict SHA-256 verification on updates & `yt-dlp.exe`, `ArgumentList`-only process execution, and real streaming Zip-Bomb & double-extension/Zip-Slip archive defense.
 
-### Library, Audio & Multiplayer Upgrades
-* **Auto-Fetch High-Res Album Art & Metadata (iTunes Search API):** 1-click `600×600` cover art, Album, Year, and Genre lookup in My Customs & ONOGAMI Song Creator (zero API keys needed).
-* **Batch Library Volume Soundcheck (`-14 LUFS`):** Scans existing customs for quiet/clipping audio and batch-normalizes them to official GH3 loudness.
-* **Real-Guitar Practice Stem Exporter:** Exports **75% Pitch-Preserved Slowdown MP3**, **Guitarless Backing Track**, and **Isolated Solo Guitar Stem**.
-* **Friend High-Score Leaderboard & FC Tracker:** Displays personal best Stars/Score/FC badges on My Customs cards and compares high scores live with Trusted Friends during P2P library checks.
-* **Optional Audio URL Importer (`yt-dlp`):** Managed add-on stored in AppData to grab audio, cover art, and Artist/Title metadata directly from supported URLs.
-* **Encore Roulette (`🎰`), Note Intensity Sparklines & Difficulty Tiers, Concert Tour Setlist Poster (`.png`), Custom Colored Song Tags, & 1-Click Library Auto-Heal Scanner.**
+### Zero-Config Multiplayer, Gameplay & Charting Tools
+* **Zero-Config CGNAT / Strict-Router P2P:** Auto-detects **Tailscale** (`100.64.0.0/10`) & **ZeroTier** mesh VPN interfaces plus a **1-Click Cloudflare HTTPS Quick Tunnel (`cloudflared`)** and **4-Hour Expiring Session Invites** for zero port-forwarding sync.
+* **Playable Highway Previewer + Co-Op Split-Screen + A→B Solo Looper + Visual Note Editor:** Play Lead or Co-Op Bass tracks using an XInput Guitar Controller or Keyboard (`A S J K L` + `Space`/`Enter`), preview **Lead + Co-Op Bass side-by-side in Split-Screen**, loop A→B sections at `50%–100%` speed, or click lanes in Edit Mode to fix notes & HOPOs.
+* **Real `s000.d` Career Save Score Auto-Importer:** Safely scans Guitar Hero III's career save (read-only) on refresh and automatically when `GH3.exe` closes to import real in-game scores & stars into your library and Friend Leaderboard.
+* **Streamer OBS "Now Playing" Loopback Browser Overlay:** 1-click copyable local-only transparent animated OBS widget (`http://127.0.0.1:7373/obs-overlay`) with spinning cover art and 5-fret spectrum bars.
+* **Venue Customizer & Bulk Metadata Editor:** Pick any GH3 Concert Stage Venue (`Backyard Bash` → `Lou's Inferno`) in Edit Song or batch-update Genre, Year, Charter & Venue across multiple selected songs.
+* **1-Click Chorus Encore 30-Second Audio Preview (`▶ 30s`):** Listen to a 30-second song preview directly on Chorus Encore search cards before downloading.
+* **Live Guitar Controller Diagnostic Tester**, **Custom GH3 Highway Skin Studio**, **BetterGH3 Live `_log.txt` Verifier & Presets**, **Auto-Fetch Cover Art**, **Batch Volume Soundcheck (`-14 LUFS`)**, **Real-Guitar Practice Stem Exporter**, **Optional `yt-dlp` Importer**, **Encore Roulette (`🎰`)**, **Note Intensity Sparklines**, **Concert Setlist Poster PNG**, **Custom Tags**, and **1-Click Library Auto-Heal**.
 
 ---
 

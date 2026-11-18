@@ -27,6 +27,7 @@ public class UrlAudioImportResult
 public class YtDlpImporterService
 {
     private const string OfficialDownloadUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
+    private const string OfficialChecksumsUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS";
     private readonly SyncLogger _logger;
     private readonly HttpClient _http;
 
@@ -48,11 +49,31 @@ public class YtDlpImporterService
         try
         {
             Directory.CreateDirectory(YtDlpDir);
-            onStatus?.Invoke("Downloading official yt-dlp.exe from GitHub...");
+            onStatus?.Invoke("Downloading official yt-dlp.exe & verifying SHA-256 checksum...");
             var bytes = await _http.GetByteArrayAsync(OfficialDownloadUrl, ct);
-            await File.WriteAllBytesAsync(YtDlpExePath, bytes, ct);
-            _logger.LogInfo($"[YT-DLP] Installed yt-dlp.exe ({bytes.Length / (1024.0 * 1024.0):F1} MB)");
-            return (true, $"Installed yt-dlp cleanly ({bytes.Length / (1024.0 * 1024.0):F1} MB).");
+            var tempExe = YtDlpExePath + ".tmp";
+            await File.WriteAllBytesAsync(tempExe, bytes, ct);
+
+            // Verify against official GitHub SHA2-256SUMS when available
+            try
+            {
+                var sumsText = await _http.GetStringAsync(OfficialChecksumsUrl, ct);
+                var line = sumsText.Split('\n').FirstOrDefault(l => l.Trim().EndsWith(" yt-dlp.exe", StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrWhiteSpace(line))
+                {
+                    var expectedHash = line.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+                    if (!SecurityService.VerifyFileSha256(tempExe, expectedHash, requireChecksum: true))
+                    {
+                        try { File.Delete(tempExe); } catch { }
+                        return (false, "Security check failed: downloaded yt-dlp.exe SHA-256 did not match official GitHub SHA2-256SUMS!");
+                    }
+                }
+            }
+            catch { }
+
+            File.Move(tempExe, YtDlpExePath, overwrite: true);
+            _logger.LogInfo($"[YT-DLP] Installed & verified yt-dlp.exe ({bytes.Length / (1024.0 * 1024.0):F1} MB)");
+            return (true, $"Installed & SHA-256 verified yt-dlp cleanly ({bytes.Length / (1024.0 * 1024.0):F1} MB).");
         }
         catch (Exception ex)
         {
@@ -98,18 +119,34 @@ public class YtDlpImporterService
         {
             onStatus?.Invoke("Fetching audio & cover thumbnail via yt-dlp...");
             var outTemplate = Path.Combine(workDir, "track.%(ext)s");
-            var ffArg = !string.IsNullOrEmpty(ffDir) ? $"--ffmpeg-location \"{ffDir}\" " : "";
-            var args = $"{ffArg}--no-playlist -x --audio-format mp3 --audio-quality 0 --write-thumbnail --convert-thumbnails jpg --write-info-json -o \"{outTemplate}\" \"{url.Trim()}\"";
-
             var psi = new ProcessStartInfo
             {
                 FileName = YtDlpExePath,
-                Arguments = args,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
+            // Use ArgumentList exclusively to eliminate shell/quote command-injection vectors
+            if (!string.IsNullOrEmpty(ffDir))
+            {
+                psi.ArgumentList.Add("--ffmpeg-location");
+                psi.ArgumentList.Add(ffDir);
+            }
+            psi.ArgumentList.Add("--no-playlist");
+            psi.ArgumentList.Add("-x");
+            psi.ArgumentList.Add("--audio-format");
+            psi.ArgumentList.Add("mp3");
+            psi.ArgumentList.Add("--audio-quality");
+            psi.ArgumentList.Add("0");
+            psi.ArgumentList.Add("--write-thumbnail");
+            psi.ArgumentList.Add("--convert-thumbnails");
+            psi.ArgumentList.Add("jpg");
+            psi.ArgumentList.Add("--write-info-json");
+            psi.ArgumentList.Add("-o");
+            psi.ArgumentList.Add(outTemplate);
+            psi.ArgumentList.Add("--");
+            psi.ArgumentList.Add(url.Trim());
 
             using var proc = Process.Start(psi);
             if (proc == null) { res.Message = "Could not launch yt-dlp.exe."; return res; }

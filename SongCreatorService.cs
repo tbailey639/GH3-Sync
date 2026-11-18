@@ -207,10 +207,18 @@ public class SongCreatorService
                         var psi = new System.Diagnostics.ProcessStartInfo
                         {
                             FileName = ff,
-                            Arguments = $"-y -i \"{audioFullPath}\" -an -frames:v 1 -q:v 3 \"{albumArtOut}\"",
                             UseShellExecute = false,
                             CreateNoWindow = true
                         };
+                        psi.ArgumentList.Add("-y");
+                        psi.ArgumentList.Add("-i");
+                        psi.ArgumentList.Add(audioFullPath);
+                        psi.ArgumentList.Add("-an");
+                        psi.ArgumentList.Add("-frames:v");
+                        psi.ArgumentList.Add("1");
+                        psi.ArgumentList.Add("-q:v");
+                        psi.ArgumentList.Add("3");
+                        psi.ArgumentList.Add(albumArtOut);
                         using var p = System.Diagnostics.Process.Start(psi);
                         p?.WaitForExit(5000);
                         if (File.Exists(albumArtOut) && new FileInfo(albumArtOut).Length < 512)
@@ -703,7 +711,9 @@ public class SongCreatorService
         int diffRhythm,
         double guitarVolumeDb,
         double bandVolumeDb,
-        bool recompile)
+        bool recompile,
+        string? charter = null,
+        int? venueSource = null)
     {
         if (string.IsNullOrWhiteSpace(projectDir) || !Directory.Exists(projectDir))
             return (false, "Project folder not found.");
@@ -726,6 +736,10 @@ public class SongCreatorService
                     node["bassTier"] = Math.Clamp(diffRhythm, 1, 10);
                     node["gtrVolumeGh3"] = guitarVolumeDb;
                     node["bandVolumeGh3"] = bandVolumeDb;
+                    if (!string.IsNullOrWhiteSpace(charter))
+                        node["charter"] = charter.Trim();
+                    if (venueSource.HasValue)
+                        node["venueSource"] = Math.Clamp(venueSource.Value, 0, 8);
                     File.WriteAllText(ghproj, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
                 }
             }
@@ -739,6 +753,7 @@ public class SongCreatorService
                 $"album = {album}",
                 $"genre = {genre}",
                 $"year = {year}",
+                $"charter = {(string.IsNullOrWhiteSpace(charter) ? "Mad Scientist" : charter.Trim())}",
                 $"diff_guitar = {diffGuitar}",
                 $"diff_rhythm = {diffRhythm}",
                 "icon = onogami_creator"
@@ -757,6 +772,76 @@ public class SongCreatorService
         {
             return (false, $"Failed updating song info: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Batch-updates Genre, Year, Charter, Guitar/Band Volume, and GH3 Stage Venue across multiple selected songs.
+    /// </summary>
+    public async Task<(int Updated, int Recompiled, string Summary)> BulkUpdateMetadataAsync(
+        List<CustomSongInfo> songs,
+        string? genre = null,
+        int? year = null,
+        string? charter = null,
+        double? guitarVolumeDb = null,
+        double? bandVolumeDb = null,
+        int? venueSource = null,
+        bool recompile = false,
+        Action<int, int, string>? onProgress = null)
+    {
+        int updated = 0;
+        int recompiled = 0;
+        for (int i = 0; i < songs.Count; i++)
+        {
+            var s = songs[i];
+            if (string.IsNullOrWhiteSpace(s.ProjectDirectory) || !Directory.Exists(s.ProjectDirectory)) continue;
+            onProgress?.Invoke(i + 1, songs.Count, $"Updating '{s.Title}'...");
+
+            try
+            {
+                var ghproj = Directory.GetFiles(s.ProjectDirectory, "*.ghproj").FirstOrDefault();
+                if (!string.IsNullOrEmpty(ghproj) && File.Exists(ghproj))
+                {
+                    var node = System.Text.Json.Nodes.JsonNode.Parse(
+                        File.ReadAllText(ghproj),
+                        documentOptions: new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip })?.AsObject();
+                    if (node != null)
+                    {
+                        if (year.HasValue) node["songYear"] = Math.Clamp(year.Value, 1900, 2100);
+                        if (!string.IsNullOrWhiteSpace(charter)) node["charter"] = charter.Trim();
+                        if (guitarVolumeDb.HasValue) node["gtrVolumeGh3"] = guitarVolumeDb.Value;
+                        if (bandVolumeDb.HasValue) node["bandVolumeGh3"] = bandVolumeDb.Value;
+                        if (venueSource.HasValue) node["venueSource"] = Math.Clamp(venueSource.Value, 0, 8);
+                        File.WriteAllText(ghproj, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                    }
+                }
+
+                var iniPath = Path.Combine(s.ProjectDirectory, "song.ini");
+                var lines = File.Exists(iniPath) ? File.ReadAllLines(iniPath).ToList() : new List<string> { "[song]" };
+                void SetIni(string k, string v)
+                {
+                    var idx = lines.FindIndex(l => l.TrimStart().StartsWith(k + " ", StringComparison.OrdinalIgnoreCase) || l.TrimStart().StartsWith(k + "=", StringComparison.OrdinalIgnoreCase));
+                    if (idx >= 0) lines[idx] = $"{k} = {v}";
+                    else lines.Add($"{k} = {v}");
+                }
+                if (!string.IsNullOrWhiteSpace(genre)) SetIni("genre", genre.Trim());
+                if (year.HasValue) SetIni("year", year.Value.ToString());
+                if (!string.IsNullOrWhiteSpace(charter)) SetIni("charter", charter.Trim());
+                File.WriteAllText(iniPath, string.Join(Environment.NewLine, lines));
+                updated++;
+
+                if (recompile && _compiler != null && !string.IsNullOrEmpty(ghproj))
+                {
+                    var comp = await _compiler.CompileSongProjectAsync(ghproj);
+                    if (comp.Success) recompiled++;
+                }
+            }
+            catch { }
+        }
+
+        var summary = recompile
+            ? $"Bulk updated {updated}/{songs.Count} song(s) and recompiled {recompiled} into Guitar Hero III!"
+            : $"Bulk updated metadata for {updated}/{songs.Count} song(s)!";
+        return (updated, recompiled, summary);
     }
 
     public static bool HasAiCache(string? projectDir)
@@ -882,26 +967,41 @@ public class SongCreatorService
                 filters.Add($"afade=t=out:st={fadeStart.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}:d={fadeOutSec.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}");
             }
 
-            var argsSb = new StringBuilder("-y ");
-            if (trimStartSec > 0.1)
-                argsSb.Append($"-ss {trimStartSec.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)} ");
-            argsSb.Append($"-i \"{inputPath}\" ");
-            if (trimEndSec > trimStartSec + 1.0)
-            {
-                double dur = trimEndSec - Math.Max(0, trimStartSec);
-                argsSb.Append($"-t {dur.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)} ");
-            }
-            if (filters.Count > 0)
-                argsSb.Append($"-af \"{string.Join(",", filters)}\" ");
-            argsSb.Append($"-vn -c:a libmp3lame -b:a 192k -ar 44100 -ac 2 \"{outPath}\"");
-
             var psi = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = ff,
-                Arguments = argsSb.ToString(),
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
+            psi.ArgumentList.Add("-y");
+            if (trimStartSec > 0.1)
+            {
+                psi.ArgumentList.Add("-ss");
+                psi.ArgumentList.Add(trimStartSec.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
+            }
+            psi.ArgumentList.Add("-i");
+            psi.ArgumentList.Add(inputPath);
+            if (trimEndSec > trimStartSec + 1.0)
+            {
+                double dur = trimEndSec - Math.Max(0, trimStartSec);
+                psi.ArgumentList.Add("-t");
+                psi.ArgumentList.Add(dur.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
+            }
+            if (filters.Count > 0)
+            {
+                psi.ArgumentList.Add("-af");
+                psi.ArgumentList.Add(string.Join(",", filters));
+            }
+            psi.ArgumentList.Add("-vn");
+            psi.ArgumentList.Add("-c:a");
+            psi.ArgumentList.Add("libmp3lame");
+            psi.ArgumentList.Add("-b:a");
+            psi.ArgumentList.Add("192k");
+            psi.ArgumentList.Add("-ar");
+            psi.ArgumentList.Add("44100");
+            psi.ArgumentList.Add("-ac");
+            psi.ArgumentList.Add("2");
+            psi.ArgumentList.Add(outPath);
             using var p = System.Diagnostics.Process.Start(psi);
             p?.WaitForExit(90_000);
 

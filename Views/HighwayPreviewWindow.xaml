@@ -30,6 +30,13 @@
                 <TextBlock x:Name="SongHeaderMeta" Text="Loading chart..." FontSize="12" Foreground="#94A3B8" Margin="0,2,0,0"/>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="Track:" FontSize="12" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <ComboBox x:Name="TrackModeCombo" Width="136" SelectedIndex="0" Margin="0,0,8,0" SelectionChanged="TrackModeCombo_SelectionChanged"
+                          Background="#141722" Foreground="#F8FAFC" BorderBrush="#334155" ToolTip="Switch between Lead Guitar, Co-Op Bass/Rhythm, or Side-by-Side Co-Op Split-Screen">
+                    <ComboBoxItem Content="🎸 Lead Guitar"/>
+                    <ComboBoxItem Content="🎸 Co-Op Bass"/>
+                    <ComboBoxItem Content="👥 Co-Op Split-Screen"/>
+                </ComboBox>
                 <TextBlock Text="Diff:" FontSize="12" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <ComboBox x:Name="DifficultyCombo" Width="96" Margin="0,0,8,0" SelectionChanged="DifficultyCombo_SelectionChanged"
                           Background="#141722" Foreground="#F8FAFC" BorderBrush="#334155"/>

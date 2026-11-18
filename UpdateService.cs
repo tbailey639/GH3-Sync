@@ -90,6 +90,13 @@ public class UpdateService
                 }
             }
 
+            if (string.IsNullOrWhiteSpace(installerDigest) && !string.IsNullOrWhiteSpace(body))
+            {
+                var shaMatch = System.Text.RegularExpressions.Regex.Match(body, @"SHA-?256[^0-9a-fA-F]{1,12}([0-9a-fA-F]{64})", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (shaMatch.Success)
+                    installerDigest = "sha256:" + shaMatch.Groups[1].Value.ToLowerInvariant();
+            }
+
             result.Success = true;
             result.LatestVersion = tagName.TrimStart('v', 'V');
             result.ReleaseName = releaseName;
@@ -256,20 +263,17 @@ public class UpdateService
                 return (false, "", "Downloaded installer appears incomplete or corrupted.");
             }
 
-            if (!string.IsNullOrWhiteSpace(updateInfo.InstallerSha256))
+            onProgress?.Invoke(99, "Verifying SHA-256 cryptographic signature...");
+            onDetail?.Invoke($"Computing SHA-256 hash against expected {(string.IsNullOrWhiteSpace(updateInfo.InstallerSha256) ? "(MISSING)" : updateInfo.InstallerSha256)}...");
+            if (!SecurityService.VerifyFileSha256(targetFile, updateInfo.InstallerSha256, requireChecksum: true))
             {
-                onProgress?.Invoke(99, "Verifying SHA-256 cryptographic signature...");
-                onDetail?.Invoke($"Computing SHA-256 hash against expected {updateInfo.InstallerSha256}...");
-                if (!SecurityService.VerifyFileSha256(targetFile, updateInfo.InstallerSha256))
-                {
-                    try { File.Delete(targetFile); } catch { }
-                    _logger?.LogWarn($"[UPDATER] SECURITY BLOCK: SHA-256 mismatch on downloaded installer {targetFile}");
-                    onDetail?.Invoke("ERROR: SHA-256 checksum mismatch! Aborting update for safety.");
-                    return (false, "", "Security check failed: Downloaded installer SHA-256 checksum did not match the official GitHub release.");
-                }
-                _logger?.LogInfo("[UPDATER] Installer SHA-256 integrity verified.");
-                onDetail?.Invoke("SHA-256 integrity verified OK.");
+                try { File.Delete(targetFile); } catch { }
+                _logger?.LogWarn($"[UPDATER] SECURITY BLOCK: SHA-256 verification failed or checksum missing for {targetFile}");
+                onDetail?.Invoke("ERROR: SHA-256 checksum mismatch or missing release digest! Aborting update for safety.");
+                return (false, "", "Security check failed: Downloaded installer SHA-256 checksum is missing or did not match the official GitHub release.");
             }
+            _logger?.LogInfo("[UPDATER] Installer SHA-256 integrity verified.");
+            onDetail?.Invoke("SHA-256 integrity verified OK.");
 
             onProgress?.Invoke(100, "Package verified! Starting silent upgrade...");
             onDetail?.Invoke($"Saved verified package ({info.Length:N0} bytes) to {targetFile}");

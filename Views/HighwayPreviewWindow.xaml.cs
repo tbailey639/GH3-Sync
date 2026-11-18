@@ -27,6 +27,8 @@ public partial class HighwayPreviewWindow : Window
     private readonly Stopwatch _fallbackClock = new();
 
     private List<ChartPreviewNote> _activeNotes = new();
+    private List<ChartPreviewNote> _activeBassNotes = new();
+    private string _trackMode = "lead"; // "lead" | "bass" | "split"
     private readonly Stack<List<ChartPreviewNote>> _editUndoStack = new();
     private bool _hasAudio;
     private bool _isPlaying;
@@ -111,10 +113,19 @@ public partial class HighwayPreviewWindow : Window
                         var psi = new ProcessStartInfo
                         {
                             FileName = ff,
-                            Arguments = $"-y -v error -i \"{audioPath}\" -ar 44100 -ac 2 \"{tmpWav}\"",
                             CreateNoWindow = true,
                             UseShellExecute = false
                         };
+                        psi.ArgumentList.Add("-y");
+                        psi.ArgumentList.Add("-v");
+                        psi.ArgumentList.Add("error");
+                        psi.ArgumentList.Add("-i");
+                        psi.ArgumentList.Add(audioPath);
+                        psi.ArgumentList.Add("-ar");
+                        psi.ArgumentList.Add("44100");
+                        psi.ArgumentList.Add("-ac");
+                        psi.ArgumentList.Add("2");
+                        psi.ArgumentList.Add(tmpWav);
                         using var p = Process.Start(psi);
                         p?.WaitForExit(10000);
                         if (File.Exists(tmpWav)) playable = tmpWav;
@@ -146,8 +157,21 @@ public partial class HighwayPreviewWindow : Window
         if (DifficultyCombo == null || _chart == null) return;
         var diff = DifficultyCombo.SelectedItem?.ToString() ?? "Expert";
         double bpm = _chart.Tempos.FirstOrDefault()?.Bpm ?? 120.0;
-        SongHeaderMeta.Text = $"{diff} ({_activeNotes.Count:N0} notes)  •  Base BPM: {bpm:F1}  •  {_chart.StarPower.Count} Star Power phrases  •  {_chart.Sections.Count} sections" +
-                              (_hasAudio ? "" : "  •  [Visual Chart Mode — No Audio]");
+        var bassInfo = _activeBassNotes.Count > 0 ? $"  •  Co-Op Bass: {_activeBassNotes.Count:N0} notes" : "  •  No Co-Op Bass track";
+        SongHeaderMeta.Text = $"{diff} ({_activeNotes.Count:N0} Lead notes{bassInfo})  •  Base BPM: {bpm:F1}  •  {_chart.StarPower.Count} SP phrases" +
+                              (_hasAudio ? "" : "  •  [Visual Mode]");
+    }
+
+    private void TrackModeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded || TrackModeCombo == null) return;
+        _trackMode = TrackModeCombo.SelectedIndex switch
+        {
+            1 => "bass",
+            2 => "split",
+            _ => "lead"
+        };
+        RenderHighwayFrame();
     }
 
     private void ModeBtn_Click(object sender, RoutedEventArgs e)
@@ -513,6 +537,8 @@ public partial class HighwayPreviewWindow : Window
         if (_chart == null) return;
         var diff = DifficultyCombo.SelectedItem?.ToString() ?? "Expert";
         _activeNotes = _chart.Difficulties.TryGetValue(diff, out var list) ? list : new List<ChartPreviewNote>();
+        _activeBassNotes = _chart.BassDifficulties.TryGetValue(diff, out var bassList) ? bassList
+                         : (_chart.BassDifficulties.Values.FirstOrDefault() ?? new List<ChartPreviewNote>());
         ResetPlayStats();
         UpdateHeaderMeta();
         RenderHighwayFrame();
@@ -682,16 +708,55 @@ public partial class HighwayPreviewWindow : Window
 
         HighwayCanvas.Children.Clear();
 
-        double cx = w * 0.5;
-        double topY = 24.0;
-        double strikeY = h - 54.0;
-        double topHalfW = Math.Min(w * 0.16, 115.0);
-        double botHalfW = Math.Min(w * 0.38, 280.0);
-        double lookaheadSec = 1.65 / Math.Max(0.5, _speedMultiplier);
         double offsetSec = _offsetShiftMs / 1000.0;
-
         bool inSpNow = _chart.StarPower.Any(sp => (_currentTimeSec - offsetSec) >= sp.StartSec && (_currentTimeSec - offsetSec) <= sp.EndSec);
         StarPowerBadge.Visibility = inSpNow ? Visibility.Visible : Visibility.Collapsed;
+
+        int npsTotal;
+        if (_trackMode == "split")
+        {
+            double laneTopW = Math.Min(w * 0.105, 86.0);
+            double laneBotW = Math.Min(w * 0.225, 195.0);
+            int leftNps = DrawPerspectiveHighway(w * 0.27, h, laneTopW, laneBotW, _activeNotes, "🎸 LEAD GUITAR", inSpNow, isInteractivePrimary: true);
+            int rightNps = DrawPerspectiveHighway(w * 0.73, h, laneTopW, laneBotW, _activeBassNotes,
+                _activeBassNotes.Count > 0 ? "🎸 CO-OP BASS / RHYTHM" : "🎸 CO-OP BASS (NO CHART)", inSpNow, isInteractivePrimary: false);
+            npsTotal = leftNps + rightNps;
+        }
+        else if (_trackMode == "bass")
+        {
+            double topHalfW = Math.Min(w * 0.16, 115.0);
+            double botHalfW = Math.Min(w * 0.38, 280.0);
+            npsTotal = DrawPerspectiveHighway(w * 0.5, h, topHalfW, botHalfW, _activeBassNotes,
+                _activeBassNotes.Count > 0 ? "🎸 CO-OP BASS / RHYTHM" : "🎸 CO-OP BASS (NO BASS TRACK IN CHART)", inSpNow, isInteractivePrimary: true);
+        }
+        else
+        {
+            double topHalfW = Math.Min(w * 0.16, 115.0);
+            double botHalfW = Math.Min(w * 0.38, 280.0);
+            npsTotal = DrawPerspectiveHighway(w * 0.5, h, topHalfW, botHalfW, _activeNotes, null, inSpNow, isInteractivePrimary: true);
+        }
+
+        var activeSection = _chart.Sections.LastOrDefault(s => s.TimeSeconds <= (_currentTimeSec - offsetSec))?.Name ?? "Intro";
+        var activeBpm = _chart.Tempos.LastOrDefault(t => t.TimeSeconds <= (_currentTimeSec - offsetSec))?.Bpm ?? 120.0;
+        SectionPillText.Text = $"Section: {activeSection}";
+        LiveStatsText.Text = $"BPM: {activeBpm:F1}  •  NPS: {npsTotal:F1}" + (_trackMode == "split" ? "  •  CO-OP SPLIT" : "");
+    }
+
+    private int DrawPerspectiveHighway(
+        double cx,
+        double h,
+        double topHalfW,
+        double botHalfW,
+        List<ChartPreviewNote> notes,
+        string? headerBadge,
+        bool inSpNow,
+        bool isInteractivePrimary)
+    {
+        double topY = 24.0;
+        double strikeY = h - 54.0;
+        double lookaheadSec = 1.65 / Math.Max(0.5, _speedMultiplier);
+        double offsetSec = _offsetShiftMs / 1000.0;
+        double scaleFactor = Math.Clamp(botHalfW / 260.0, 0.58, 1.0);
 
         // Perspective fretboard polygon
         var board = new Polygon
@@ -707,10 +772,26 @@ public partial class HighwayPreviewWindow : Window
                 inSpNow ? WpfColor.FromRgb(8, 36, 62) : WpfColor.FromRgb(14, 18, 30),
                 inSpNow ? WpfColor.FromRgb(12, 52, 92) : WpfColor.FromRgb(22, 27, 44),
                 90),
-            Stroke = new SolidColorBrush(inSpNow ? WpfColor.FromRgb(56, 189, 248) : (_mode == "edit" ? WpfColor.FromRgb(129, 140, 248) : WpfColor.FromRgb(71, 85, 105))),
-            StrokeThickness = inSpNow || _mode == "edit" ? 2.5 : 2.0
+            Stroke = new SolidColorBrush(inSpNow ? WpfColor.FromRgb(56, 189, 248) : (_mode == "edit" && isInteractivePrimary ? WpfColor.FromRgb(129, 140, 248) : WpfColor.FromRgb(71, 85, 105))),
+            StrokeThickness = inSpNow || (_mode == "edit" && isInteractivePrimary) ? 2.5 : 2.0
         };
         HighwayCanvas.Children.Add(board);
+
+        if (!string.IsNullOrWhiteSpace(headerBadge))
+        {
+            var lbl = new TextBlock
+            {
+                Text = headerBadge,
+                FontSize = 11,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(WpfColor.FromRgb(251, 146, 60)),
+                TextAlignment = TextAlignment.Center,
+                Width = topHalfW * 2.4
+            };
+            Canvas.SetLeft(lbl, cx - topHalfW * 1.2);
+            Canvas.SetTop(lbl, 4);
+            HighwayCanvas.Children.Add(lbl);
+        }
 
         double ProjectY(double norm) => topY + (strikeY - topY) * Math.Pow(norm, 1.45);
         double HalfWidthAt(double norm) => topHalfW + (botHalfW - topHalfW) * Math.Pow(norm, 1.45);
@@ -750,7 +831,7 @@ public partial class HighwayPreviewWindow : Window
             });
         }
 
-        // Strike line fret targets (light up when held or hit in Playable Practice Mode!)
+        // Strike line & fret targets
         double strikeHw = HalfWidthAt(1.0);
         HighwayCanvas.Children.Add(new Line
         {
@@ -763,46 +844,48 @@ public partial class HighwayPreviewWindow : Window
         for (int f = 0; f < 5; f++)
         {
             double lx = LaneX(f, 1.0);
-            bool held = _mode == "play" && _heldFrets[f];
-            bool flash = _mode == "play" && _currentTimeSec < _hitFlashUntil[f];
+            bool held = isInteractivePrimary && _mode == "play" && _heldFrets[f];
+            bool flash = isInteractivePrimary && _mode == "play" && _currentTimeSec < _hitFlashUntil[f];
 
             if (flash)
             {
+                double bw = 58 * scaleFactor, bh = 30 * scaleFactor;
                 var burst = new Ellipse
                 {
-                    Width = 58, Height = 30,
+                    Width = bw, Height = bh,
                     Fill = new SolidColorBrush(WpfColor.FromArgb(115, 255, 255, 255)),
                     Stroke = new SolidColorBrush(FretColors[f]),
                     StrokeThickness = 2.5
                 };
-                Canvas.SetLeft(burst, lx - 29);
-                Canvas.SetTop(burst, strikeY - 15);
+                Canvas.SetLeft(burst, lx - bw * 0.5);
+                Canvas.SetTop(burst, strikeY - bh * 0.5);
                 HighwayCanvas.Children.Add(burst);
             }
 
+            double tw = 42 * scaleFactor, th = 20 * scaleFactor;
             var target = new Ellipse
             {
-                Width = 42, Height = 20,
+                Width = tw, Height = th,
                 Fill = new SolidColorBrush(held ? FretColors[f] : WpfColor.FromArgb(50, FretColors[f].R, FretColors[f].G, FretColors[f].B)),
                 Stroke = new SolidColorBrush(held ? WpfColor.FromRgb(255, 255, 255) : FretColors[f]),
-                StrokeThickness = held ? 3.0 : 2.6
+                StrokeThickness = held ? 3.0 : 2.4
             };
-            Canvas.SetLeft(target, lx - 21);
-            Canvas.SetTop(target, strikeY - 10);
+            Canvas.SetLeft(target, lx - tw * 0.5);
+            Canvas.SetTop(target, strikeY - th * 0.5);
             HighwayCanvas.Children.Add(target);
         }
 
         // Notes & Sustain Tails
         int notesInLastSec = 0;
         var visibleNotes = new List<ChartPreviewNote>();
-        foreach (var n in _activeNotes)
+        foreach (var n in notes)
         {
             double tStart = n.TimeSeconds + offsetSec;
             double tEnd = n.EndTimeSeconds + offsetSec;
             if (tStart >= _currentTimeSec - 0.5 && tStart <= _currentTimeSec + 0.5) notesInLastSec++;
             if (tEnd < minVisible) continue;
             if (tStart > maxVisible) break;
-            if (_mode == "play" && _hitNotes.Contains(n)) continue;
+            if (isInteractivePrimary && _mode == "play" && _hitNotes.Contains(n)) continue;
             visibleNotes.Add(n);
         }
 
@@ -813,7 +896,7 @@ public partial class HighwayPreviewWindow : Window
             double tEnd = n.EndTimeSeconds + offsetSec;
             double normStart = Math.Clamp(1.0 - ((tStart - _currentTimeSec) / lookaheadSec), 0.0, 1.12);
             double yStart = ProjectY(normStart);
-            double scale = 0.35 + 0.65 * Math.Pow(normStart, 1.3);
+            double scale = (0.35 + 0.65 * Math.Pow(normStart, 1.3)) * scaleFactor;
 
             if (n.Fret == 7)
             {
@@ -882,9 +965,6 @@ public partial class HighwayPreviewWindow : Window
             }
         }
 
-        var activeSection = _chart.Sections.LastOrDefault(s => s.TimeSeconds <= (_currentTimeSec - offsetSec))?.Name ?? "Intro";
-        var activeBpm = _chart.Tempos.LastOrDefault(t => t.TimeSeconds <= (_currentTimeSec - offsetSec))?.Bpm ?? 120.0;
-        SectionPillText.Text = $"Section: {activeSection}";
-        LiveStatsText.Text = $"BPM: {activeBpm:F1}  •  NPS: {notesInLastSec:F1}";
+        return notesInLastSec;
     }
 }

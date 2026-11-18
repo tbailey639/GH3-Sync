@@ -50,6 +50,7 @@ public class ParsedChartData
     public double OffsetSeconds { get; set; } = 0.0;
     public List<ChartTempoPoint> Tempos { get; set; } = new();
     public Dictionary<string, List<ChartPreviewNote>> Difficulties { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, List<ChartPreviewNote>> BassDifficulties { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public List<ChartStarPowerPhrase> StarPower { get; set; } = new();
     public List<ChartSectionMarker> Sections { get; set; } = new();
     public List<double> BeatTimesSeconds { get; set; } = new();
@@ -154,6 +155,9 @@ public class ChartDoctorService
         var rawNotesByDiff = new Dictionary<string, List<(long Tick, int Fret, long Len)>>(StringComparer.OrdinalIgnoreCase);
         var forcedTicksByDiff = new Dictionary<string, HashSet<long>>(StringComparer.OrdinalIgnoreCase);
         var tapTicksByDiff = new Dictionary<string, HashSet<long>>(StringComparer.OrdinalIgnoreCase);
+        var rawBassByDiff = new Dictionary<string, List<(long Tick, int Fret, long Len)>>(StringComparer.OrdinalIgnoreCase);
+        var forcedBassByDiff = new Dictionary<string, HashSet<long>>(StringComparer.OrdinalIgnoreCase);
+        var tapBassByDiff = new Dictionary<string, HashSet<long>>(StringComparer.OrdinalIgnoreCase);
         var rawSp = new List<(long Tick, long Len)>();
 
         foreach (var raw in lines)
@@ -226,6 +230,32 @@ public class ChartDoctorService
                     long.TryParse(sm.Groups[2].Value, out var spLen))
                 {
                     rawSp.Add((spTick, spLen));
+                }
+            }
+            else if (section.EndsWith("DoubleBass", StringComparison.OrdinalIgnoreCase) ||
+                     section.EndsWith("DoubleRhythm", StringComparison.OrdinalIgnoreCase))
+            {
+                var suffixLen = section.EndsWith("DoubleBass", StringComparison.OrdinalIgnoreCase)
+                    ? "DoubleBass".Length
+                    : "DoubleRhythm".Length;
+                var diffName = section.Substring(0, section.Length - suffixLen);
+                if (!rawBassByDiff.ContainsKey(diffName))
+                {
+                    rawBassByDiff[diffName] = new();
+                    forcedBassByDiff[diffName] = new();
+                    tapBassByDiff[diffName] = new();
+                }
+
+                var nm = Regex.Match(line, @"^(\d+)\s*=\s*N\s+(\d+)\s+(\d+)$", RegexOptions.IgnoreCase);
+                if (nm.Success &&
+                    long.TryParse(nm.Groups[1].Value, out var tick) &&
+                    int.TryParse(nm.Groups[2].Value, out var fret) &&
+                    long.TryParse(nm.Groups[3].Value, out var len))
+                {
+                    if (fret == 5) forcedBassByDiff[diffName].Add(tick);
+                    else if (fret == 6) tapBassByDiff[diffName].Add(tick);
+                    else if ((fret >= 0 && fret <= 4) || fret == 7)
+                        rawBassByDiff[diffName].Add((tick, fret, len));
                 }
             }
         }
@@ -313,6 +343,56 @@ public class ChartDoctorService
             }
 
             data.Difficulties[diff] = built;
+        }
+
+        // Build Co-Op Bass / Rhythm tracks using the exact same HOPO/Tap/StarPower rules
+        foreach (var kv in rawBassByDiff)
+        {
+            var diff = kv.Key;
+            var grouped = kv.Value.GroupBy(n => n.Tick).OrderBy(g => g.Key).ToList();
+            var built = new List<ChartPreviewNote>();
+            var forcedSet = forcedBassByDiff[diff];
+            var tapSet = tapBassByDiff[diff];
+
+            long prevTick = -10000;
+            int prevFret = -1;
+            int prevCount = 0;
+
+            foreach (var g in grouped)
+            {
+                var tick = g.Key;
+                if (tick > maxTick) maxTick = tick;
+                var notesAtTick = g.DistinctBy(x => x.Fret).ToList();
+                bool isChord = notesAtTick.Count > 1;
+                bool isTap = tapSet.Contains(tick);
+                bool naturalHopo = !isChord && prevCount == 1 && (tick - prevTick) <= hopoThresholdTicks && notesAtTick[0].Fret != prevFret;
+                bool isHopo = forcedSet.Contains(tick) ? !naturalHopo : naturalHopo;
+                bool inSp = data.StarPower.Any(sp => tick >= sp.StartTick && tick <= sp.StartTick + sp.LengthTicks);
+
+                double tSec = data.TickToSeconds(tick);
+                foreach (var n in notesAtTick)
+                {
+                    long endTick = tick + n.Len;
+                    if (endTick > maxTick) maxTick = endTick;
+                    built.Add(new ChartPreviewNote
+                    {
+                        Tick = tick,
+                        TimeSeconds = tSec,
+                        EndTimeSeconds = n.Len > 0 ? data.TickToSeconds(endTick) : tSec,
+                        Fret = n.Fret,
+                        LengthTicks = n.Len,
+                        IsHopo = isHopo,
+                        IsTap = isTap,
+                        InStarPower = inSp
+                    });
+                }
+
+                prevTick = tick;
+                prevFret = notesAtTick[0].Fret;
+                prevCount = notesAtTick.Count;
+            }
+
+            data.BassDifficulties[diff] = built;
         }
 
         data.TotalDurationSeconds = Math.Max(5.0, data.TickToSeconds(maxTick + data.Resolution * 4));

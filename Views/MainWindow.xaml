@@ -75,8 +75,33 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Right Actions -->
+                <!-- Right Actions + Animated GH3 Rock Meter -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Iconic GH3 Rock Meter Gauge -->
+                    <Border Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1"
+                            CornerRadius="12" Padding="8,3" Margin="0,0,10,0" VerticalAlignment="Center"
+                            ToolTip="GH3 Rock Meter — reflects BetterGH3 health, library readiness &amp; pulses to preview audio">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Canvas x:Name="RockMeterCanvas" Width="54" Height="30" Margin="0,0,6,0">
+                                <!-- Red / Yellow / Green GH3 Gauge Arcs -->
+                                <Path Data="M 5,26 A 22,22 0 0 1 17,7" Stroke="#EF4444" StrokeThickness="4.5" StrokeStartLineCap="Round"/>
+                                <Path Data="M 19,6 A 22,22 0 0 1 35,6" Stroke="#EAB308" StrokeThickness="4.5"/>
+                                <Path Data="M 37,7 A 22,22 0 0 1 49,26" Stroke="#22C55E" StrokeThickness="4.5" StrokeEndLineCap="Round"/>
+                                <!-- Animated Needle -->
+                                <Line x:Name="RockMeterNeedle" X1="27" Y1="26" X2="27" Y2="8" Stroke="#F8FAFC" StrokeThickness="2.2" StrokeEndLineCap="Round">
+                                    <Line.RenderTransform>
+                                        <RotateTransform x:Name="RockMeterNeedleRotate" Angle="38" CenterX="27" CenterY="26"/>
+                                    </Line.RenderTransform>
+                                </Line>
+                                <Ellipse Canvas.Left="23.5" Canvas.Top="22.5" Width="7" Height="7" Fill="#F97316" Stroke="#F8FAFC" StrokeThickness="1.2"/>
+                            </Canvas>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="ROCK METER" FontSize="8.5" FontWeight="ExtraBold" Foreground="{DynamicResource TextMuted}"/>
+                                <TextBlock x:Name="RockMeterStateText" Text="GREEN" FontSize="10.5" FontWeight="Black" Foreground="#22C55E"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
                     <Border x:Name="GameStatusPill" Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1"
                             CornerRadius="16" Padding="11,5" Margin="0,0,10,0" VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -123,29 +148,82 @@
                 <DockPanel>
                     <Border DockPanel.Dock="Bottom" Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1"
                             CornerRadius="10" Margin="10" Padding="12">
-                        <StackPanel>
-                            <TextBlock x:Name="SidebarProfileName" Text="Player" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
-                            <TextBlock x:Name="SidebarFriendCode" Text="GH3-XXXX-XXXX" FontSize="11.5" Foreground="{DynamicResource AccentFlameText}" FontFamily="Consolas" Margin="0,2,0,4"/>
-                            <TextBlock x:Name="SidebarLobbySummary" Text="Lobby Auto-Sync: 0 / 10" FontSize="11" Foreground="{DynamicResource TextMuted}"/>
-                            <TextBlock x:Name="SidebarP2pModeText" Text="P2P Sharing: Online" FontSize="10.5" Foreground="{DynamicResource CardSuccessTitle}" Margin="0,2,0,0"/>
-                        </StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock x:Name="SidebarProfileName" Text="Player" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock x:Name="SidebarFriendCode" Text="GH3-XXXX-XXXX" FontSize="11.5" Foreground="{DynamicResource AccentFlameText}" FontFamily="Consolas" Margin="0,2,0,4"/>
+                                <TextBlock x:Name="SidebarLobbySummary" Text="Lobby Auto-Sync: 0 / 10" FontSize="11" Foreground="{DynamicResource TextMuted}"/>
+                                <TextBlock x:Name="SidebarP2pModeText" Text="P2P Sharing: Online" FontSize="10.5" Foreground="{DynamicResource CardSuccessTitle}" Margin="0,2,0,0"/>
+                            </StackPanel>
+                            <!-- Iconic GH3 Streak Multiplier Ring -->
+                            <Border x:Name="SidebarMultiplierRing" Grid.Column="1" Width="40" Height="40" CornerRadius="20"
+                                    Background="#182235" BorderBrush="#38BDF8" BorderThickness="2" VerticalAlignment="Center" Margin="6,0,0,0"
+                                    ToolTip="GH3 Streak Multiplier — climbs as you install customs, ready BetterGH3 &amp; go online!">
+                                <TextBlock x:Name="SidebarMultiplierText" Text="4x" FontSize="13" FontWeight="Black" Foreground="#7DD3FC"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
                     </Border>
 
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,10,0,0">
                         <StackPanel>
                             <TextBlock Text="LIBRARY" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource TextSectionHeader}" Margin="18,6,0,6"/>
-                            <RadioButton x:Name="NavCustoms" Content="My Customs" Style="{StaticResource NavButtonStyle}" IsChecked="True" Checked="Nav_Checked"/>
-                            <RadioButton x:Name="NavCreator" Content="ONOGAMI Song Creator" Style="{StaticResource NavButtonStyle}" Checked="Nav_Checked"/>
-                            <RadioButton x:Name="NavAiTools" Content="Tools &amp; Stems" Style="{StaticResource NavButtonStyle}" Checked="Nav_Checked"/>
+                            <RadioButton x:Name="NavCustoms" Style="{StaticResource NavButtonStyle}" IsChecked="True" Checked="Nav_Checked">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="9" Height="9" Fill="#22C55E" Stroke="#DCFCE7" StrokeThickness="1" Margin="0,0,9,0"/>
+                                    <TextBlock Text="My Customs"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton x:Name="NavCreator" Style="{StaticResource NavButtonStyle}" Checked="Nav_Checked">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="9" Height="9" Fill="#EF4444" Stroke="#FEE2E2" StrokeThickness="1" Margin="0,0,9,0"/>
+                                    <TextBlock Text="ONOGAMI Song Creator"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton x:Name="NavAiTools" Style="{StaticResource NavButtonStyle}" Checked="Nav_Checked">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="9" Height="9" Fill="#EAB308" Stroke="#FEF9C3" StrokeThickness="1" Margin="0,0,9,0"/>
+                                    <TextBlock Text="Tools &amp; Stems"/>
+                                </StackPanel>
+                            </RadioButton>
 
                             <TextBlock Text="MULTIPLAYER" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource TextSectionHeader}" Margin="18,14,0,6"/>
-                            <RadioButton x:Name="NavFriends" Content="Friends &amp; Trust" Style="{StaticResource NavButtonStyle}" Checked="Nav_Checked"/>
-                            <RadioButton x:Name="NavP2P" Content="P2P Sync &amp; Lobby" Style="{StaticResource NavButtonStyle}" Checked="Nav_Checked"/>
-                            <RadioButton x:Name="NavImport" Content="Import &amp; Convert" Style="{StaticResource NavButtonStyle}" Checked="Nav_Checked"/>
+                            <RadioButton x:Name="NavFriends" Style="{StaticResource NavButtonStyle}" Checked="Nav_Checked">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="9" Height="9" Fill="#3B82F6" Stroke="#DBEAFE" StrokeThickness="1" Margin="0,0,9,0"/>
+                                    <TextBlock Text="Friends &amp; Trust"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton x:Name="NavP2P" Style="{StaticResource NavButtonStyle}" Checked="Nav_Checked">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="9" Height="9" Fill="#F97316" Stroke="#FFEDD5" StrokeThickness="1" Margin="0,0,9,0"/>
+                                    <TextBlock Text="P2P Sync &amp; Lobby"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton x:Name="NavImport" Style="{StaticResource NavButtonStyle}" Checked="Nav_Checked">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="9" Height="9" Fill="#22C55E" Stroke="#DCFCE7" StrokeThickness="1" Margin="0,0,9,0"/>
+                                    <TextBlock Text="Import &amp; Convert"/>
+                                </StackPanel>
+                            </RadioButton>
 
                             <TextBlock Text="SYSTEM" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource TextSectionHeader}" Margin="18,14,0,6"/>
-                            <RadioButton x:Name="NavSaves" Content="Career Saves" Style="{StaticResource NavButtonStyle}" Checked="Nav_Checked"/>
-                            <RadioButton x:Name="NavSettings" Content="Settings" Style="{StaticResource NavButtonStyle}" Checked="Nav_Checked"/>
+                            <RadioButton x:Name="NavSaves" Style="{StaticResource NavButtonStyle}" Checked="Nav_Checked">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="9" Height="9" Fill="#3B82F6" Stroke="#DBEAFE" StrokeThickness="1" Margin="0,0,9,0"/>
+                                    <TextBlock Text="Career Saves"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton x:Name="NavSettings" Style="{StaticResource NavButtonStyle}" Checked="Nav_Checked">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="9" Height="9" Fill="#F97316" Stroke="#FFEDD5" StrokeThickness="1" Margin="0,0,9,0"/>
+                                    <TextBlock Text="Settings &amp; Security"/>
+                                </StackPanel>
+                            </RadioButton>
                         </StackPanel>
                     </ScrollViewer>
                 </DockPanel>
@@ -172,6 +250,8 @@
                         </Ellipse.Fill>
                     </Ellipse>
                 </Canvas>
+                <!-- Rising "Lou's Inferno" Concert Stage Embers & Floating 5-Fret Sparks -->
+                <Canvas x:Name="StageEmbersCanvas" IsHitTestVisible="False" Opacity="0.72"/>
 
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20">
                     <Grid>
@@ -193,6 +273,8 @@
                                 <Button x:Name="ExportPosterBtn" Content="🖼 Setlist Poster" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="ExportSetlistPosterBtn_Click" ToolTip="Export a high-res Concert Tour Poster PNG for Discord"/>
                                 <Button x:Name="VolumeSoundcheckBtn" Content="🔊 Soundcheck" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="VolumeSoundcheckBtn_Click" ToolTip="Scan &amp; batch-normalize existing custom songs to -14 LUFS"/>
                                 <Button x:Name="AutoHealLibraryBtn" Content="🩺 Auto-Heal" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="AutoHealLibraryBtn_Click" ToolTip="Scan customs.pak.xen, soundbanks &amp; plugins and auto-heal issues"/>
+                                <Button x:Name="BulkEditBtn" Content="✏️ Bulk Edit" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="BulkEditBtn_Click" ToolTip="Batch-edit Genre, Year, Charter, Volume &amp; Venue across checked songs"/>
+                                <Button x:Name="CopyObsOverlayBtn" Content="📺 OBS Overlay" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="CopyObsOverlayBtn_Click" ToolTip="Copy local OBS Studio Browser Source URL (http://127.0.0.1:7373/obs-overlay)"/>
                                 <Button x:Name="ExportLobbyPackBtn" Content="Export Lobby" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="ExportLobbyPack_Click"/>
                                 <Button x:Name="ExportSelectedBtn" Content="Selected (0)" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="ExportSelectedPack_Click"/>
                                 <Button Content="Export All" Style="{StaticResource FlameButton}" Padding="11,6" Click="ExportAllPack_Click"/>
@@ -732,9 +814,31 @@
                                         <TextBlock x:Name="P2pMyLobbyCount" Text="  (0 / 10 songs tagged in My Customs)" FontSize="12" Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </StackPanel>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Button x:Name="CopyLobbyInviteBtn" Content="Copy Lobby Invite Code" Style="{StaticResource FlameButton}" Margin="0,0,8,0" Click="CopyLobbyInviteBtn_Click" ToolTip="Copy a single gh3sync:// invite string containing your address &amp; token for friends to paste"/>
+                                        <Button Content="Refresh NAT / UPnP" Style="{StaticResource OutlineButton}" Click="RefreshNatBtn_Click"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="ExpiringInviteChk" Content="⏱ Use 4-Hour Expiring Session Invite Token" Margin="0,6,0,0" HorizontalAlignment="Right" FontSize="11.5" ToolTip="Generates a temporary token that automatically expires after 4 hours instead of sharing a permanent friend token"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Zero-Config CGNAT / Strict-Router P2P (Mesh VPN + 1-Click HTTPS Quick Tunnel) -->
+                        <Border Style="{StaticResource GhCard}" BorderBrush="{DynamicResource CardInfoBorder}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Margin="0,0,14,0">
+                                    <TextBlock Text="Zero-Config P2P for CGNAT / Strict Routers (Tailscale • ZeroTier • HTTPS Quick Tunnel)" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource CardInfoTitle}"/>
+                                    <TextBlock x:Name="MeshNetworkSummaryText" Text="Scanning for Tailscale / ZeroTier mesh interfaces..." FontSize="12" Foreground="{DynamicResource TextSecondary}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="TunnelStatusText" Text="HTTPS Quick Tunnel: Inactive (No port forwarding needed when active)" FontSize="11.5" FontFamily="Consolas" Foreground="{DynamicResource TextMuted}" Margin="0,4,0,0"/>
+                                </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button x:Name="CopyLobbyInviteBtn" Content="Copy Lobby Invite Code" Style="{StaticResource FlameButton}" Margin="0,0,8,0" Click="CopyLobbyInviteBtn_Click" ToolTip="Copy a single gh3sync:// invite string containing your address &amp; token for friends to paste"/>
-                                    <Button Content="Refresh NAT / UPnP" Style="{StaticResource OutlineButton}" Click="RefreshNatBtn_Click"/>
+                                    <Button x:Name="StartTunnelBtn" Content="🌐 Start HTTPS Quick Tunnel" Style="{StaticResource BlueButton}" Padding="12,7" Margin="0,0,6,0" Click="ToggleTunnelBtn_Click" ToolTip="Opens an encrypted Cloudflare HTTPS tunnel so friends behind CGNAT/college routers can sync with zero router config"/>
+                                    <Button Content="Rescan Mesh" Style="{StaticResource OutlineButton}" Padding="10,7" Click="RescanMeshBtn_Click"/>
                                 </StackPanel>
                             </Grid>
                         </Border>
@@ -883,6 +987,7 @@
                             <Button x:Name="TabSetGeneralBtn" Content="General &amp; Paths" Style="{StaticResource FlameButton}" Padding="13,7" Margin="0,0,7,6" Click="SettingsSubTab_Click" Tag="general"/>
                             <Button x:Name="TabSetAppearanceBtn" Content="Appearance &amp; Overlay" Style="{StaticResource OutlineButton}" Padding="13,7" Margin="0,0,7,6" Click="SettingsSubTab_Click" Tag="appearance"/>
                             <Button x:Name="TabSetBetterGh3Btn" Content="BetterGH3 Tweaks" Style="{StaticResource OutlineButton}" Padding="13,7" Margin="0,0,7,6" Click="SettingsSubTab_Click" Tag="bettergh3"/>
+                            <Button x:Name="TabSetSecurityBtn" Content="🔒 Security &amp; Privacy" Style="{StaticResource OutlineButton}" Padding="13,7" Margin="0,0,7,6" Click="SettingsSubTab_Click" Tag="security"/>
                             <Button x:Name="TabSetUpdatesBtn" Content="Updates &amp; Compatibility" Style="{StaticResource OutlineButton}" Padding="13,7" Margin="0,0,7,6" Click="SettingsSubTab_Click" Tag="updates"/>
                             <Button x:Name="TabSetHowToBtn" Content="How-To Guide" Style="{StaticResource OutlineButton}" Padding="13,7" Margin="0,0,7,6" Click="SettingsSubTab_Click" Tag="howto"/>
                             <Button x:Name="TabSetCreditsBtn" Content="Credits" Style="{StaticResource OutlineButton}" Padding="13,7" Margin="0,0,7,6" Click="SettingsSubTab_Click" Tag="credits"/>
@@ -1237,6 +1342,66 @@
                             </Border>
                         </StackPanel>
 
+                        <!-- SUB-TAB 2C: SECURITY & PRIVACY DASHBOARD -->
+                        <StackPanel x:Name="SettingsSubSecurity" Visibility="Collapsed">
+                            <Border Style="{StaticResource GhCard}" BorderBrush="{DynamicResource CardSuccessBorder}">
+                                <StackPanel>
+                                    <TextBlock Text="Hardened P2P &amp; Local Security Status (v1.0.0)" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}" Margin="0,0,0,6"/>
+                                    <TextBlock Text="Every external P2P connection is protected by strict route isolation, single-use Challenge-Response HMAC-SHA256 authentication, per-transfer salted AES-256-GCM encryption, and streaming zip-bomb/executable defense."
+                                               FontSize="12.5" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                    <WrapPanel>
+                                        <Border Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1" CornerRadius="6" Padding="10,5" Margin="0,0,8,8">
+                                            <TextBlock Text="✓ External API Lockdown Active" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
+                                        </Border>
+                                        <Border Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1" CornerRadius="6" Padding="10,5" Margin="0,0,8,8">
+                                            <TextBlock Text="✓ Challenge-Response HMAC Auth" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
+                                        </Border>
+                                        <Border Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1" CornerRadius="6" Padding="10,5" Margin="0,0,8,8">
+                                            <TextBlock Text="✓ Per-Transfer Salted AES-256-GCM" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
+                                        </Border>
+                                        <Border Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1" CornerRadius="6" Padding="10,5" Margin="0,0,8,8">
+                                            <TextBlock Text="✓ Streaming Zip-Bomb &amp; SHA-256 Guard" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
+                                        </Border>
+                                    </WrapPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <Button x:Name="RotateCredentialsBtn" Content="🔄 Rotate All Tokens &amp; Session PIN Now" Style="{StaticResource DangerButton}" Padding="14,7" Click="RotateCredentialsBtn_Click"/>
+                                        <Button Content="Refresh Security Audit" Style="{StaticResource OutlineButton}" Margin="8,0,0,0" Padding="11,7" Click="RefreshSecurityAuditBtn_Click"/>
+                                    </StackPanel>
+                                    <TextBlock x:Name="SecurityActionStatusText" Text="" FontSize="12" Foreground="{DynamicResource CardWarnTitle}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Passphrase-Encrypted Profile Backup (.gh3backup) -->
+                            <Border Style="{StaticResource GhCard}">
+                                <StackPanel>
+                                    <TextBlock Text="Encrypted Profile Backup &amp; Restore (.gh3backup)" FontSize="15.5" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,4"/>
+                                    <TextBlock Text="Back up your config.json, Trusted Friends list, Local High Scores, Highway Skins, and Save Snapshots into a single AES-256-GCM passphrase-encrypted .gh3backup file for safe PC transfers."
+                                               FontSize="12.5" Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="ExportEncBackupBtn" Content="🔐 Export Encrypted .gh3backup..." Style="{StaticResource FlameButton}" Padding="13,7" Margin="0,0,8,0" Click="ExportEncBackupBtn_Click"/>
+                                        <Button x:Name="ImportEncBackupBtn" Content="🔓 Restore Encrypted .gh3backup..." Style="{StaticResource BlueButton}" Padding="13,7" Click="ImportEncBackupBtn_Click"/>
+                                    </StackPanel>
+                                    <TextBlock x:Name="EncBackupStatusText" Text="" FontSize="12" Foreground="{DynamicResource CardSuccessTitle}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Live Blocked IPs & Security Audit Log -->
+                            <Border Style="{StaticResource GhCard}">
+                                <StackPanel>
+                                    <TextBlock Text="Blocked IPs, Manual Ban &amp; Security Audit" FontSize="15.5" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,6"/>
+                                    <DockPanel Margin="0,0,0,10">
+                                        <Button x:Name="ManualBanIpBtn" DockPanel.Dock="Right" Content="Ban IP" Style="{StaticResource DangerButton}" Padding="12,5" Margin="8,0,0,0" Click="ManualBanIpBtn_Click"/>
+                                        <TextBox x:Name="ManualBanIpBox" ToolTip="Enter an IPv4/IPv6 address to manually block from P2P endpoints"/>
+                                    </DockPanel>
+                                    <StackPanel x:Name="SecurityBlockedPanel" Margin="0,0,0,10"/>
+                                    <TextBlock Text="Recent Security Events" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,4"/>
+                                    <TextBox x:Name="SecurityAuditBox" Height="150" IsReadOnly="True" FontFamily="Consolas" FontSize="11.5"
+                                             TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                             Background="{DynamicResource LogBoxBg}" Foreground="{DynamicResource LogBoxFg}"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
                         <!-- SUB-TAB 6: DIAGNOSTIC LOGS -->
                         <StackPanel x:Name="SettingsSubLogs" Visibility="Collapsed">
                             <Border Style="{StaticResource GhCard}">
@@ -1271,6 +1436,16 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Spinning Vinyl / Album Disc -->
+                    <Grid x:Name="PlayerVinylDisc" Width="34" Height="34" Margin="0,0,10,0" RenderTransformOrigin="0.5,0.5">
+                        <Grid.RenderTransform>
+                            <RotateTransform x:Name="PlayerVinylAngle" Angle="0"/>
+                        </Grid.RenderTransform>
+                        <Ellipse Fill="#111827" Stroke="#F97316" StrokeThickness="1.8"/>
+                        <Ellipse Width="22" Height="22" Stroke="#334155" StrokeThickness="1" Fill="Transparent"/>
+                        <Ellipse Width="12" Height="12" Fill="#F97316"/>
+                        <Ellipse Width="4" Height="4" Fill="#0F172A"/>
+                    </Grid>
                     <Button x:Name="PlayerPlayPauseBtn" Content="⏸" Style="{StaticResource FlameButton}" Padding="10,5" Margin="0,0,6,0" Click="PlayerPlayPauseBtn_Click"/>
                     <Button Content="⏹" Style="{StaticResource OutlineButton}" Padding="9,5" Margin="0,0,10,0" Click="PlayerStopBtn_Click"/>
                 </StackPanel>
@@ -1294,6 +1469,23 @@
                     <Button Content="✕" Style="{StaticResource OutlineButton}" Padding="8,4" Click="PlayerCloseBtn_Click"/>
                 </StackPanel>
             </Grid>
+        </Border>
+
+        <!-- ==================== ANIMATED GH3 STAGE TOAST BANNER ==================== -->
+        <Border x:Name="StageToastBanner" Grid.Row="0" Grid.RowSpan="5" Panel.ZIndex="950"
+                Visibility="Collapsed" IsHitTestVisible="False"
+                VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="0,0,26,74"
+                Background="#EE111827" BorderBrush="#F97316" BorderThickness="1.8" CornerRadius="12" Padding="16,10" MaxWidth="420">
+            <Border.RenderTransform>
+                <TranslateTransform x:Name="StageToastTranslate" X="0" Y="24"/>
+            </Border.RenderTransform>
+            <Border.Effect>
+                <DropShadowEffect Color="#F97316" BlurRadius="22" ShadowDepth="0" Opacity="0.4"/>
+            </Border.Effect>
+            <StackPanel>
+                <TextBlock x:Name="StageToastHeadline" Text="★ YOU ROCK!" FontSize="13.5" FontWeight="Black" Foreground="#FDBA74"/>
+                <TextBlock x:Name="StageToastDetail" Text="Action completed." FontSize="12" Foreground="#E2E8F0" TextWrapping="Wrap" Margin="0,2,0,0"/>
+            </StackPanel>
         </Border>
 
         <!-- ==================== SILENT UPDATE GUITAR PROGRESS OVERLAY ==================== -->

@@ -17,6 +17,7 @@ public class FetchedSongMetadata
     public int Year { get; set; }
     public string Genre { get; set; } = "";
     public string ArtworkUrl { get; set; } = "";
+    public string PreviewAudioUrl { get; set; } = "";
     public string SavedArtworkPath { get; set; } = "";
     public string Message { get; set; } = "";
 }
@@ -86,6 +87,7 @@ public class AlbumArtMetadataService
             var art100 = best.TryGetProperty("artworkUrl100", out var aw) ? aw.GetString() ?? "" : "";
             if (!string.IsNullOrWhiteSpace(art100))
                 result.ArtworkUrl = art100.Replace("100x100bb", "600x600bb");
+            result.PreviewAudioUrl = best.TryGetProperty("previewUrl", out var pv) ? pv.GetString() ?? "" : "";
 
             if (!string.IsNullOrWhiteSpace(result.ArtworkUrl) && !string.IsNullOrWhiteSpace(saveToDirectory) && Directory.Exists(saveToDirectory))
             {

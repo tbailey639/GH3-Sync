@@ -86,6 +86,8 @@ var tempSessionService = new TemporarySessionService(gh3Service, saveManager, sy
 var componentUpdater = new ComponentUpdaterService(gh3Service, updateService, demucsService, syncLogger);
 var chartDoctor = new ChartDoctorService(compilerService, syncLogger);
 var betterGh3Tweaks = new BetterGh3TweaksService(gh3Service, syncLogger);
+var tunnelService = new TunnelAndMeshService(port, syncLogger);
+var careerScores = new CareerSaveScoreService(gh3Service, saveManager, syncLogger);
 var discordRpc = new DiscordRpcService(
     syncLogger,
     () => gh3Service.GetInstalledCustomSongs().Count,
@@ -105,24 +107,69 @@ builder.Services.AddSingleton(natService);
 builder.Services.AddSingleton(updateService);
 builder.Services.AddSingleton(tempSessionService);
 builder.Services.AddSingleton(componentUpdater);
+builder.Services.AddSingleton(tunnelService);
+builder.Services.AddSingleton(careerScores);
 builder.Services.AddHttpClient();
 
 var app = builder.Build();
 
-// Online/Offline P2P Mode & Per-IP Rate Limit Middleware
+static (string EffectiveIp, bool IsExternal) ResolveClientIdentity(HttpContext context)
+{
+    var rawIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    bool isDirectLoopback = SecurityService.IsLoopbackIp(rawIp);
+    // Cloudflare Quick Tunnel / reverse proxy connections arrive from 127.0.0.1 with CF-Connecting-IP / X-Forwarded-For
+    if (isDirectLoopback)
+    {
+        if (context.Request.Headers.TryGetValue("CF-Connecting-IP", out var cfIp) && !string.IsNullOrWhiteSpace(cfIp.ToString()))
+            return (cfIp.ToString().Trim(), true);
+        if (context.Request.Headers.TryGetValue("X-Forwarded-For", out var xff) && !string.IsNullOrWhiteSpace(xff.ToString()))
+            return (xff.ToString().Split(',')[0].Trim(), true);
+        return (rawIp, false);
+    }
+    return (rawIp, true);
+}
+
+static bool IsExternalP2pRoute(string path)
+{
+    if (path.Equals("/api/auth/challenge", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/api/manifest", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/api/download-customs-pak", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.StartsWith("/api/download/", StringComparison.OrdinalIgnoreCase)) return true;
+    return false;
+}
+
+// Strict External-IP Lockdown, IP Ban, Online/Offline P2P Mode & Per-IP Rate Limit Middleware
 app.Use(async (context, next) =>
 {
-    var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-    bool isLoopback = remoteIp == "127.0.0.1" || remoteIp == "::1" || remoteIp == "::ffff:127.0.0.1";
+    var (effectiveIp, isExternal) = ResolveClientIdentity(context);
+    var reqPath = context.Request.Path.Value ?? "/";
 
-    if (!isLoopback && !AppConfig.Current.P2pOnlineEnabled)
+    if (isExternal)
     {
-        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-        await context.Response.WriteAsJsonAsync(new { error = "Peer P2P sharing is currently in Offline Mode." });
-        return;
+        if (securityService.IsIpBlocked(effectiveIp))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new { error = "Access denied: IP is temporarily locked or banned." });
+            return;
+        }
+
+        if (!IsExternalP2pRoute(reqPath))
+        {
+            syncLogger.LogWarn($"[SECURITY] Blocked external IP {effectiveIp} from local-only endpoint: {reqPath}");
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new { error = "Forbidden: endpoint restricted to local desktop access only." });
+            return;
+        }
+
+        if (!AppConfig.Current.P2pOnlineEnabled)
+        {
+            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            await context.Response.WriteAsJsonAsync(new { error = "Peer P2P sharing is currently in Offline Mode." });
+            return;
+        }
     }
 
-    if (!securityService.CheckRequestRateLimit(remoteIp, syncLogger))
+    if (!securityService.CheckRequestRateLimit(effectiveIp, syncLogger))
     {
         context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
         await context.Response.WriteAsJsonAsync(new { error = "Rate limit exceeded. Please wait a moment and try again." });
@@ -161,12 +208,19 @@ string globalBroadcastNotice = "";
 
 string GetBestPublicOrLanAddress()
 {
+    if (tunnelService.IsTunnelActive && !string.IsNullOrWhiteSpace(tunnelService.ActiveTunnelUrl))
+        return tunnelService.ActiveTunnelUrl!;
+
     if (!string.IsNullOrWhiteSpace(AppConfig.Current.CustomPublicAddress))
     {
         var custom = AppConfig.Current.CustomPublicAddress.Trim();
         if (!custom.StartsWith("http://") && !custom.StartsWith("https://")) custom = "http://" + custom;
         return custom;
     }
+
+    var meshUrl = tunnelService.GetPreferredMeshUrl();
+    if (!string.IsNullOrWhiteSpace(meshUrl))
+        return meshUrl;
 
     if (!string.IsNullOrEmpty(natService.PublicIp))
     {
@@ -195,10 +249,37 @@ bool TryAuthorize(HttpContext context, SecurityService sec, FriendService friend
 {
     sharedSecret = sec.PairingPin;
     isTrustedFriend = false;
-    var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-    bool isLoopback = remoteIp == "127.0.0.1" || remoteIp == "::1" || remoteIp == "::ffff:127.0.0.1";
+    var (remoteIp, isExternal) = ResolveClientIdentity(context);
 
-    // Prefer HTTP headers (no secrets in query strings); retain query fallback only for backwards compatibility
+    if (isExternal && sec.IsIpBlocked(remoteIp))
+        return false;
+
+    // 1. Challenge-Response HMAC-SHA256 Auth (Preferred — secret never crosses the wire in plaintext!)
+    if (context.Request.Headers.TryGetValue("X-GH3-Auth-Nonce", out var hdrNonce) &&
+        context.Request.Headers.TryGetValue("X-GH3-Auth-Timestamp", out var hdrTs) &&
+        context.Request.Headers.TryGetValue("X-GH3-Auth-Hmac", out var hdrHmac))
+    {
+        var candidates = new List<(string Secret, string Mode, string Principal)>();
+        foreach (var f in friends.Friends.Where(x => x.IsTrusted && !string.IsNullOrWhiteSpace(x.TrustToken)))
+            candidates.Add((f.TrustToken, "trusted", f.Username));
+        foreach (var inv in sec.GetActiveExpiringInvites())
+            candidates.Add((inv.Token, "invite", inv.Label));
+        candidates.Add((sec.PairingPin, "pin", "Session PIN"));
+
+        var methodPath = $"{context.Request.Method} {context.Request.Path.Value}";
+        if (sec.TryConsumeChallengeHmac(hdrNonce.ToString(), hdrTs.ToString(), hdrHmac.ToString(), methodPath, remoteIp, candidates, out var matchedSecret, out var mode, out var principal))
+        {
+            sharedSecret = matchedSecret;
+            isTrustedFriend = mode == "trusted" || mode == "invite";
+            sec.RecordAuthSuccess(remoteIp);
+            logger.LogInfo($"[SECURITY] Challenge-HMAC auth granted ({mode}: {principal}) from {remoteIp}");
+            return true;
+        }
+        sec.RecordAuthFailure(remoteIp, "Invalid or replayed Challenge-Response HMAC", logger);
+        return false;
+    }
+
+    // 2. Backwards-compatible HTTP Headers (for older peers) — still protected by unified 5-attempt IP lockout
     string? token = null;
     if (context.Request.Headers.TryGetValue("X-GH3-Trust-Token", out var headerToken))
         token = headerToken.ToString();
@@ -211,21 +292,28 @@ bool TryAuthorize(HttpContext context, SecurityService sec, FriendService friend
     else if (context.Request.Query.TryGetValue("pin", out var queryPin))
         pin = queryPin.ToString();
 
-    // 1. Verified Trusted Friend Token (grants full access including song downloads)
     if (!string.IsNullOrEmpty(token))
     {
         if (friends.ValidateTrustToken(token, out var trustedFriend))
         {
             sharedSecret = token;
             isTrustedFriend = true;
+            sec.RecordAuthSuccess(remoteIp);
             logger.LogInfo($"[SECURITY] Trusted Friend access granted to: {trustedFriend?.Username} from {remoteIp}");
             return true;
         }
-        logger.LogWarn($"[SECURITY] Rejected invalid/revoked Trust Token from {remoteIp}");
+        if (sec.ValidateExpiringInviteToken(token, out var invite))
+        {
+            sharedSecret = token;
+            isTrustedFriend = true;
+            sec.RecordAuthSuccess(remoteIp);
+            logger.LogInfo($"[SECURITY] Expiring Invite access granted ({invite?.Label}) from {remoteIp}");
+            return true;
+        }
+        sec.RecordAuthFailure(remoteIp, "Invalid/revoked Trust or Invite Token", logger);
         return false;
     }
 
-    // 2. Pairing PIN (grants view-only manifest access; downloads remain locked to Trusted Friends)
     if (!string.IsNullOrEmpty(pin))
     {
         if (sec.ValidatePin(pin, remoteIp, logger))
@@ -237,8 +325,8 @@ bool TryAuthorize(HttpContext context, SecurityService sec, FriendService friend
         return false;
     }
 
-    // 3. Unauthenticated local loopback (owner self-diagnostics only)
-    if (isLoopback)
+    // 3. Unauthenticated local loopback (owner self-diagnostics only — NEVER Cloudflare-proxied external)
+    if (!isExternal)
     {
         isTrustedFriend = true;
         return true;
@@ -796,7 +884,14 @@ app.MapPost("/api/feedback", async (HttpContext context, IHttpClientFactory clie
 
 app.MapGet("/api/feedback", () => Results.Ok(AppConfig.GetFeedback()));
 
-// ==================== P2P SYNC & MANIFEST APIs ====================
+// ==================== P2P CHALLENGE-RESPONSE & SYNC APIs ====================
+app.MapGet("/api/auth/challenge", (HttpContext context, SecurityService sec) =>
+{
+    var (remoteIp, _) = ResolveClientIdentity(context);
+    var nonce = sec.IssueAuthChallenge(remoteIp);
+    return Results.Ok(new { nonce, expiresInSeconds = 90 });
+});
+
 app.MapGet("/api/manifest", (HttpContext context, Gh3Service gh3, SyncLogger logger, SecurityService sec, FriendService friends) =>
 {
     if (!IsAuthorized(context, sec, friends, logger))
@@ -1324,6 +1419,17 @@ app.MapPost("/api/import-archive", async (HttpRequest request, Gh3Service gh3, S
     }
 });
 
+// ==================== OBS STUDIO LOOPBACK-ONLY OVERLAY ====================
+app.MapGet("/obs-overlay", () => Results.Content(ObsOverlayService.BuildOverlayHtml(), "text/html; charset=utf-8"));
+app.MapGet("/api/obs-now-playing", () => Results.Ok(ObsOverlayService.GetSnapshot()));
+app.MapGet("/api/obs-now-playing/art", () =>
+{
+    var art = ObsOverlayService.GetCoverArtPath();
+    if (string.IsNullOrEmpty(art) || !File.Exists(art)) return Results.NotFound();
+    var ct = art.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ? "image/png" : "image/jpeg";
+    return Results.File(File.ReadAllBytes(art), ct);
+});
+
 // ==================== LOGS & EXPORT ====================
 app.MapGet("/api/logs", (SyncLogger logger) => Results.Content(logger.ReadRecentLogs(200), "text/plain"));
 
@@ -1440,7 +1546,9 @@ else
                     port,
                     chartDoctor,
                     betterGh3Tweaks,
-                    discordRpc);
+                    discordRpc,
+                    tunnelService,
+                    careerScores);
 
                 // Single-instance restore listener (brings minimized/tray window to front if user launches GH3-Sync again)
                 if (!hasCustomPortArg)
@@ -1494,6 +1602,8 @@ else
 
     await uiDone.Task;
     pipeCts.Cancel();
+    tunnelService.Dispose();
+    careerScores.Dispose();
     discordRpc.Dispose();
     tempSessionService.Stop();
     await natService.RemoveMappingAsync();
