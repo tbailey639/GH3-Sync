@@ -2,7 +2,7 @@
 ; GH3-Sync: Guitar Hero III Custom Song Creator, Clone Hero Converter & P2P Synchronizer
 
 #define MyAppName "GH3-Sync"
-#define MyAppVersion "1.3.1"
+#define MyAppVersion "1.3.2"
 #define MyAppPublisher "Mad Scientist (tbailey639)"
 #define MyAppURL "https://github.com/tbailey639/GH3-Sync"
 #define MyAppExeName "GH3-Sync.exe"
@@ -29,6 +29,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 CloseApplications=yes
 RestartApplications=yes
+UsePreviousAppDir=yes
+UsePreviousTasks=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -50,7 +52,7 @@ Source: "Assets\gh3_sync_logo.png"; DestDir: "{app}\Assets"; Flags: ignoreversio
 Source: "dist\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "CREDITS.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "tools\compiler\*"; DestDir: "{app}\tools\compiler"; Flags: ignoreversion recursesubdirs createallsubdirs; Permissions: users-modify
+Source: "tools\compiler\*"; DestDir: "{app}\tools\compiler"; Excludes: "Backups\*,QBDebug\*_user.txt"; Flags: ignoreversion recursesubdirs createallsubdirs; Permissions: users-modify
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\Assets\app_icon.ico"
@@ -58,7 +60,8 @@ Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\Assets\app_icon.ico"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall runasoriginaluser skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait runasoriginaluser skipifnotsilent
 
 [Code]
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

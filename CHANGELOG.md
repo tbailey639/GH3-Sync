@@ -4,6 +4,23 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.3.2] - 2026-11-18
+
+### New Features
+* **Silent In-App Auto-Updater with Electric Guitar Progress Bar:**
+  - Clicking **Update Now** now downloads, verifies SHA-256 integrity, and applies the update completely silently (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`) using your existing install folder and configuration — no interactive Setup Wizard dialogs appear, and GH3-Sync relaunches automatically once updated.
+  - Added a custom **Electric Guitar Update Overlay** featuring a 6-string fretboard where the strings ignite and fill with electric neon blue (`0% → 100%`) as the update downloads and installs, complete with a glowing percentage readout and a collapsible **Show Details** console drawer for verbose upgrade logs.
+
+### Bug Fixes
+* **Fixed Shutdown Mutex Crash (`System.ApplicationException: Object synchronization method was called from an unsynchronized block of code`):**
+  - Switched the single-instance kernel `Mutex` to `initiallyOwned: false` and safely disposed the handle without cross-thread `ReleaseMutex()` calls after async shutdown continuations, eliminating the error popup when closing GH3-Sync.
+* **Fixed `CompilePakGh3 returned false` & `customs.pak.xen` Header Corruption After Deleting/Merging Songs:**
+  - Fixed a critical PAK header re-hashing bug in `CustomsPakService.RecompileAndSaveCustomsPak()` where missing `QBDebug\keys.txt` entries caused `dlc_songlist.qb` (`0x2cbadf14`) to be re-hashed into `0xf4301aa6` when deleting or merging a custom song, breaking subsequent Honeycomb compilations.
+  - Added automatic `CustomsPakService.RepairCustomsPakIfCorrupted()` self-healing on startup and before every compilation, restoring corrupted `DATA\customs.pak.xen` headers back to `dlc_songlist.qb` (`0x2cbadf14`) while preserving every installed custom song.
+  - Invoked `CompileGh3PakFile()` directly with full exception propagation instead of `CompilePakGh3()`'s silent headless dialog catch block, and enabled trailing-comma JSON parsing across all `.ghproj` readers for Honeycomb-saved project files.
+
+---
+
 ## [v1.3.1] - 2026-11-18
 
 ### Bug Fixes

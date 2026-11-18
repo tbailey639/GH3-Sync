@@ -19,7 +19,9 @@ Mutex? singleInstanceMutex = null;
 
 if (!isHeadlessArg && !hasCustomPortArg)
 {
-    singleInstanceMutex = new Mutex(true, @"Global\GH3_Sync_SingleInstance_v1", out bool createdNew);
+    // Use initiallyOwned: false so the named kernel Mutex tracks single-instance lifetime
+    // without thread-affinity ownership (avoids ApplicationException on async shutdown threads).
+    singleInstanceMutex = new Mutex(false, @"Global\GH3_Sync_SingleInstance_v1", out bool createdNew);
     if (!createdNew)
     {
         try
@@ -1404,7 +1406,11 @@ else
                     syncLogger.LogWarn($"[P2P] Background listener port {port} busy or unavailable: {srvEx.Message}");
                 }
                 splash.UpdateProgress(55, "Loading Guitar Hero III song library...");
-                await Task.Delay(450);
+                if (!string.IsNullOrWhiteSpace(gh3Service.GamePath))
+                {
+                    await Task.Run(() => CustomsPakService.RepairCustomsPakIfCorrupted(gh3Service.GamePath, syncLogger));
+                }
+                await Task.Delay(300);
 
                 splash.UpdateProgress(85, "Preparing workspace...");
                 var mainWin = new GH3_Sync.Views.MainWindow(
@@ -1479,6 +1485,10 @@ else
     tempSessionService.Stop();
     await natService.RemoveMappingAsync();
     await app.StopAsync();
-    singleInstanceMutex?.ReleaseMutex();
-    singleInstanceMutex?.Dispose();
+    try
+    {
+        GC.KeepAlive(singleInstanceMutex);
+        singleInstanceMutex?.Dispose();
+    }
+    catch { }
 }

@@ -64,6 +64,18 @@ public static class CustomsPakService
         var gvType = asm.GetType("GH_Toolkit_Core.Methods.GlobalVariables");
         gvType?.GetProperty("ExeRootFolder")?.SetValue(null, writableRoot);
 
+        // Seed essential GH3 customs PAK checksum names into DebugReader so PakExtractor
+        // always resolves 0x2cbadf14 -> "dlc_songlist.qb", 0x41ca13c0 -> "dlc_songlist", 0xa7f505c4 -> ".qb".
+        try
+        {
+            var crcType = asm.GetType("GH_Toolkit_Core.Checksum.CRC");
+            var qbKeyMethod = crcType?.GetMethod("QBKey", new[] { typeof(string), typeof(bool) });
+            qbKeyMethod?.Invoke(null, new object[] { ".qb", true });
+            qbKeyMethod?.Invoke(null, new object[] { "dlc_songlist.qb", true });
+            qbKeyMethod?.Invoke(null, new object[] { "dlc_songlist", true });
+        }
+        catch { }
+
         return (asm, hDir);
     }
 
@@ -83,8 +95,80 @@ public static class CustomsPakService
             var appWork = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 "GH3-Sync", "compiler_work");
-            Directory.CreateDirectory(Path.Combine(appWork, "QBDebug"));
+            var dstDebug = Path.Combine(appWork, "QBDebug");
+            Directory.CreateDirectory(dstDebug);
+
+            // Mirror keys.txt dictionary from bundled compiler so DebugReader can resolve standard QB keys
+            try
+            {
+                var srcKeys = Path.Combine(honeycombDir, "QBDebug", "keys.txt");
+                var dstKeys = Path.Combine(dstDebug, "keys.txt");
+                if (File.Exists(srcKeys) && !File.Exists(dstKeys))
+                {
+                    File.Copy(srcKeys, dstKeys, overwrite: false);
+                }
+            }
+            catch { }
+
             return appWork;
+        }
+    }
+
+    /// <summary>
+    /// Inspects DATA\customs.pak.xen and automatically repairs its PAK entry header if a previous version
+    /// re-hashed the dlc_songlist.qb entry key (0x2cbadf14), preserving all installed custom songs cleanly.
+    /// </summary>
+    public static bool RepairCustomsPakIfCorrupted(string gamePath, SyncLogger? logger = null)
+    {
+        if (string.IsNullOrWhiteSpace(gamePath)) return false;
+
+        var pakPath = Path.Combine(gamePath, "DATA", "customs.pak.xen");
+        if (!File.Exists(pakPath)) return false;
+
+        lock (_pakLock)
+        {
+            try
+            {
+                var header = new byte[24];
+                using (var fs = new FileStream(pakPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    if (fs.Length < 32) return false;
+                    if (fs.Read(header, 0, 24) < 24) return false;
+                }
+
+                // Expected GH3 PC customs.pak.xen entry 0 header (big-endian):
+                // [0..3]  Extension   = 0xA7F505C4 (.qb)
+                // [16..19] FullName   = 0x2CBADF14 (dlc_songlist.qb)
+                // [20..23] NameNoExt  = 0x41CA13C0 (dlc_songlist)
+                bool hasValidExt = header[0] == 0xA7 && header[1] == 0xF5 && header[2] == 0x05 && header[3] == 0xC4;
+                bool hasValidFullName = header[16] == 0x2C && header[17] == 0xBA && header[18] == 0xDF && header[19] == 0x14;
+                bool hasValidNameNoExt = header[20] == 0x41 && header[21] == 0xCA && header[22] == 0x13 && header[23] == 0xC0;
+
+                if (hasValidExt && hasValidFullName && hasValidNameNoExt)
+                    return true; // Already healthy!
+
+                logger?.LogWarn($"[CUSTOMS PAK] Detected mismatched dlc_songlist.qb header key in DATA\\customs.pak.xen (FullName=0x{header[16]:x2}{header[17]:x2}{header[18]:x2}{header[19]:x2}); auto-repairing while preserving all custom songs...");
+
+                var loaded = LoadCoreAssembly(gamePath);
+                if (loaded == null) return false;
+                var (asm, _) = loaded.Value;
+
+                var (entriesObj, primaryEntry, qbText) = DecompileCustomsPak(asm, pakPath);
+                if (entriesObj == null || primaryEntry == null || string.IsNullOrWhiteSpace(qbText))
+                    return false;
+
+                var ok = RecompileAndSaveCustomsPak(asm, pakPath, entriesObj, primaryEntry, qbText, logger);
+                if (ok)
+                {
+                    logger?.LogInfo("[CUSTOMS PAK] Successfully repaired DATA\\customs.pak.xen header key back to dlc_songlist.qb (0x2cbadf14)!");
+                }
+                return ok;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarn($"[CUSTOMS PAK] Header health check/repair error: {ex.Message}");
+                return false;
+            }
         }
     }
 
@@ -324,7 +408,16 @@ public static class CustomsPakService
         if (qbType == null || pakCompilerType == null) return false;
 
         var entryType = primaryEntry.GetType();
-        var fullName = entryType.GetProperty("FullName")?.GetValue(primaryEntry) as string ?? "0x2cbadf14.0x41ca13c0.qb";
+        // Always normalize the BetterGH3 customs songlist entry identity so CompilePakEntries
+        // never re-hashes a fallback hex string like "0x2cbadf14.0x41ca13c0.qb" into 0xf4301aa6.
+        const string canonicalFullName = "dlc_songlist.qb";
+        const string canonicalNameNoExt = "dlc_songlist";
+        const string canonicalExt = ".qb";
+
+        entryType.GetProperty("FullName")?.SetValue(primaryEntry, canonicalFullName);
+        entryType.GetProperty("NameNoExt")?.SetValue(primaryEntry, canonicalNameNoExt);
+        entryType.GetProperty("Extension")?.SetValue(primaryEntry, canonicalExt);
+        entryType.GetProperty("AssetContext")?.SetValue(primaryEntry, "0x00000000");
 
         var parsedTuple = qbType.GetMethod("ParseQFile")?.Invoke(null, new object[] { qbText, "PC", "GH3" });
         if (parsedTuple == null) return false;
@@ -332,13 +425,13 @@ public static class CustomsPakService
         var parsedList = parsedTuple.GetType().GetField("Item1")?.GetValue(parsedTuple);
         if (parsedList == null) return false;
 
-        var newQbBytes = qbType.GetMethod("CompileQbFile")?.Invoke(null, new object[] { parsedList, fullName, "GH3", "PC" }) as byte[];
+        var newQbBytes = qbType.GetMethod("CompileQbFile")?.Invoke(null, new object[] { parsedList, canonicalFullName, "GH3", "PC" }) as byte[];
         if (newQbBytes == null || newQbBytes.Length < 16) return false;
 
         entryType.GetProperty("EntryData")?.SetValue(primaryEntry, newQbBytes);
         entryType.GetProperty("FileSize")?.SetValue(primaryEntry, (uint)newQbBytes.Length);
 
-        var compiler = Activator.CreateInstance(pakCompilerType, new object[] { "GH3", "PC", "", true, false });
+        var compiler = Activator.CreateInstance(pakCompilerType, new object?[] { "GH3", "PC", null, false, false });
         if (compiler == null) return false;
 
         var compiledTuple = pakCompilerType.GetMethod("CompilePakEntries")?.Invoke(compiler, new object[] { entriesObj });
@@ -347,10 +440,11 @@ public static class CustomsPakService
         var pakBytes = compiledTuple.GetType().GetField("Item1")?.GetValue(compiledTuple) as byte[];
         if (pakBytes == null || pakBytes.Length < 32) return false;
 
-        // Validate GH3 PC PAK magic header (A7 F5 05 C4)
-        if (pakBytes[0] != 0xA7 || pakBytes[1] != 0xF5 || pakBytes[2] != 0x05 || pakBytes[3] != 0xC4)
+        // Validate GH3 PC PAK magic header (.qb = A7 F5 05 C4) AND dlc_songlist.qb FullName key (2C BA DF 14)
+        if (pakBytes[0] != 0xA7 || pakBytes[1] != 0xF5 || pakBytes[2] != 0x05 || pakBytes[3] != 0xC4 ||
+            pakBytes[16] != 0x2C || pakBytes[17] != 0xBA || pakBytes[18] != 0xDF || pakBytes[19] != 0x14)
         {
-            logger?.LogWarn("[CUSTOMS PAK] Compiled PAK failed magic header check; aborting write.");
+            logger?.LogWarn($"[CUSTOMS PAK] Compiled PAK failed header verification (Ext={pakBytes[0]:X2}{pakBytes[1]:X2}{pakBytes[2]:X2}{pakBytes[3]:X2}, FullName={pakBytes[16]:X2}{pakBytes[17]:X2}{pakBytes[18]:X2}{pakBytes[19]:X2}); aborting write.");
             return false;
         }
 

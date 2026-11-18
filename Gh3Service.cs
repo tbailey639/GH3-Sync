@@ -344,7 +344,7 @@ public class Gh3Service
                 try
                 {
                     var json = File.ReadAllText(ghprojFiles[0]);
-                    using var doc = JsonDocument.Parse(json);
+                    using var doc = JsonDocument.Parse(json, new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
                     var root = doc.RootElement;
                     if (string.IsNullOrEmpty(title) && root.TryGetProperty("title", out var tProp))
                         title = tProp.GetString() ?? "";

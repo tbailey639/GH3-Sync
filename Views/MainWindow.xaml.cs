@@ -556,7 +556,14 @@ public partial class MainWindow : Window
 
     // ==================== AUTO-UPDATER ====================
     private async void CheckUpdatesBtn_Click(object sender, RoutedEventArgs e)
-        => await RunUpdateCheckAsync(silentIfUpToDate: false);
+    {
+        if (_latestUpdate != null && _latestUpdate.UpdateAvailable)
+        {
+            UpdateNowBtn_Click(sender, e);
+            return;
+        }
+        await RunUpdateCheckAsync(silentIfUpToDate: false);
+    }
 
     private async Task RunUpdateCheckAsync(bool silentIfUpToDate)
     {
@@ -602,6 +609,44 @@ public partial class MainWindow : Window
         }
     }
 
+    private void SetGuitarUpdateProgress(double percent, string statusText)
+    {
+        double clamped = Math.Clamp(percent, 0.0, 100.0);
+        double fillWidth = 434.0 * (clamped / 100.0);
+        GuitarStringsClip.Rect = new Rect(92, 48, fillWidth, 54);
+        UpdateGuitarPercentText.Text = $"{(int)Math.Round(clamped)}%";
+        UpdateGuitarStatusText.Text = statusText;
+
+        if (clamped > 0.5 && clamped < 99.5)
+        {
+            GuitarProgressPulse.Visibility = Visibility.Visible;
+            Canvas.SetLeft(GuitarProgressPulse, 92.0 + fillWidth - 2.5);
+        }
+        else
+        {
+            GuitarProgressPulse.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void AppendUpdateVerboseLog(string line)
+    {
+        UpdateVerboseLogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {line}{Environment.NewLine}");
+        UpdateVerboseLogBox.ScrollToEnd();
+    }
+
+    private void UpdateDetailsToggleBtn_Click(object sender, RoutedEventArgs e)
+    {
+        bool show = UpdateVerboseLogPanel.Visibility != Visibility.Visible;
+        UpdateVerboseLogPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        UpdateDetailsToggleBtn.Content = show ? "Hide Details ▲" : "Show Details ▼";
+    }
+
+    private void UpdateOverlayCloseBtn_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateGuitarOverlay.Visibility = Visibility.Collapsed;
+        UpdateNowBtn.IsEnabled = true;
+    }
+
     private async void UpdateNowBtn_Click(object sender, RoutedEventArgs e)
     {
         if (_latestUpdate == null || !_latestUpdate.UpdateAvailable)
@@ -617,32 +662,73 @@ public partial class MainWindow : Window
         }
 
         UpdateNowBtn.IsEnabled = false;
-        UpdateBannerProgress.Visibility = Visibility.Visible;
-        UpdateBannerProgress.Value = 0;
+        UpdateBannerProgress.Visibility = Visibility.Collapsed;
+        UpdateVerboseLogBox.Clear();
+        UpdateVerboseLogPanel.Visibility = Visibility.Collapsed;
+        UpdateDetailsToggleBtn.Content = "Show Details ▼";
+        UpdateOverlayCloseBtn.Visibility = Visibility.Collapsed;
 
-        var (ok, installerPath, err) = await _updater.DownloadUpdateAsync(_latestUpdate, (pct, msg) =>
-        {
-            Dispatcher.Invoke(() =>
+        UpdateGuitarTitle.Text = "Installing Update";
+        UpdateGuitarVersionBadge.Text = $"v{_latestUpdate.CurrentVersion} → v{_latestUpdate.LatestVersion}";
+        UpdateGuitarSubnote.Text = "Using existing config • Silent background upgrade";
+        SetGuitarUpdateProgress(0, $"Installing update v{_latestUpdate.LatestVersion}...");
+        UpdateGuitarOverlay.Visibility = Visibility.Visible;
+
+        AppendUpdateVerboseLog($"Starting silent update from v{_latestUpdate.CurrentVersion} to v{_latestUpdate.LatestVersion}");
+        AppendUpdateVerboseLog($"Release: {_latestUpdate.ReleaseName}");
+
+        var (ok, installerPath, err) = await _updater.DownloadUpdateAsync(
+            _latestUpdate,
+            (pct, msg) =>
             {
-                UpdateBannerProgress.Value = pct;
-                UpdateBannerSubtitle.Text = msg;
-            });
-        });
+                Dispatcher.Invoke(() =>
+                {
+                    // Download + SHA-256 verification spans 0% -> 82% of the guitar strings
+                    double mapped = Math.Min(82.0, pct * 0.82);
+                    SetGuitarUpdateProgress(mapped, $"Installing update... {msg}");
+                });
+            },
+            default,
+            detail => Dispatcher.Invoke(() => AppendUpdateVerboseLog(detail)));
 
         if (!ok)
         {
+            UpdateGuitarTitle.Text = "Update Failed";
+            SetGuitarUpdateProgress(0, err);
+            AppendUpdateVerboseLog($"FAILED: {err}");
+            UpdateVerboseLogPanel.Visibility = Visibility.Visible;
+            UpdateDetailsToggleBtn.Content = "Hide Details ▲";
+            UpdateOverlayCloseBtn.Visibility = Visibility.Visible;
             UpdateNowBtn.IsEnabled = true;
-            WpfMessageBox.Show($"Update failed: {err}", "Update Error", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
 
-        if (_updater.LaunchInstallerAndPrepareExit(installerPath))
-            ExitApplication();
-        else
+        SetGuitarUpdateProgress(86, "Installing update silently (keeping existing settings)...");
+        await Task.Delay(250);
+
+        var (launched, cancelled, launchErr, installLogPath) = _updater.LaunchSilentInstaller(
+            installerPath,
+            detail => Dispatcher.Invoke(() => AppendUpdateVerboseLog(detail)));
+
+        if (!launched)
         {
+            UpdateGuitarTitle.Text = cancelled ? "Update Cancelled" : "Update Error";
+            SetGuitarUpdateProgress(86, launchErr);
+            UpdateVerboseLogPanel.Visibility = Visibility.Visible;
+            UpdateDetailsToggleBtn.Content = "Hide Details ▲";
+            UpdateOverlayCloseBtn.Visibility = Visibility.Visible;
             UpdateNowBtn.IsEnabled = true;
-            WpfMessageBox.Show($"Downloaded installer to:\n{installerPath}", "Installer Ready", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
         }
+
+        AppendUpdateVerboseLog($"Silent installer log: {installLogPath}");
+        SetGuitarUpdateProgress(93, "Installing update... Applying new files silently...");
+        await Task.Delay(350);
+        SetGuitarUpdateProgress(100, "Installing update... Restarting GH3-Sync automatically!");
+        AppendUpdateVerboseLog("Closing current instance so the silent upgrade completes and relaunches GH3-Sync.");
+        await Task.Delay(750);
+
+        ExitApplication();
     }
 
     private void DismissUpdateBanner_Click(object sender, RoutedEventArgs e) => UpdateBanner.Visibility = Visibility.Collapsed;

@@ -501,7 +501,9 @@ public class SongCreatorService
             var ghproj = Directory.GetFiles(projectDir, "*.ghproj").FirstOrDefault();
             if (!string.IsNullOrEmpty(ghproj) && File.Exists(ghproj))
             {
-                var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(ghproj))?.AsObject();
+                var node = System.Text.Json.Nodes.JsonNode.Parse(
+                    File.ReadAllText(ghproj),
+                    documentOptions: new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip })?.AsObject();
                 if (node != null)
                 {
                     node["title"] = title;

@@ -465,7 +465,8 @@ public class HoneycombCompilerService
         {
             if (File.Exists(ghprojPath))
             {
-                using var doc = JsonDocument.Parse(File.ReadAllText(ghprojPath));
+                using var doc = JsonDocument.Parse(File.ReadAllText(ghprojPath),
+                    new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
                 if (doc.RootElement.TryGetProperty("title", out var tProp) && !string.IsNullOrWhiteSpace(tProp.GetString()))
                 {
                     result.Title = tProp.GetString()!;
@@ -548,6 +549,19 @@ public class HoneycombCompilerService
         gvType?.GetProperty("ExeRootFolder")?.SetValue(null, CustomsPakService.GetWritableToolkitRoot(honeycombDir));
         var blankWav = Path.Combine(honeycombDir, "Audio", "Blank Audio", "blankWav.wav");
         if (File.Exists(blankWav)) gvType?.GetProperty("BlankWav")?.SetValue(null, blankWav);
+
+        // Seed essential GH3 customs songlist checksums into DebugReader and verify DATA\customs.pak.xen header health
+        try
+        {
+            var crcType = ghCore.GetType("GH_Toolkit_Core.Checksum.CRC");
+            var qbKeyMethod = crcType?.GetMethod("QBKey", new[] { typeof(string), typeof(bool) });
+            qbKeyMethod?.Invoke(null, new object[] { ".qb", true });
+            qbKeyMethod?.Invoke(null, new object[] { "dlc_songlist.qb", true });
+            qbKeyMethod?.Invoke(null, new object[] { "dlc_songlist", true });
+        }
+        catch { }
+
+        CustomsPakService.RepairCustomsPakIfCorrupted(gamePath, _logger);
 
         var fsbType = ghCore.GetType("GH_Toolkit_Core.Audio.FSB");
         var audioPadField = fsbType?.GetField("audioPad48k128kbps", BindingFlags.NonPublic | BindingFlags.Static);
@@ -640,17 +654,26 @@ public class HoneycombCompilerService
                     var renderCheck = csType.GetField("gh3_rendered_preview_check", flags)?.GetValue(form) as System.Windows.Forms.CheckBox;
                     if (renderCheck != null) renderCheck.Checked = true;
 
-                    // PreChecks
+                    // PreChecks (validates game path, copies BetterGH3 resources if missing, handles duplicate checksums)
                     Log("Executing compiler pre-flight validation checks...");
                     csType.GetMethod("PreChecks", flags)?.Invoke(form, Array.Empty<object>());
 
-                    // Compile PAK (chart, scripts, cameras, lightshow, QB)
+                    // Compile PAK directly via CompileGh3PakFile() so real exceptions bubble up cleanly
+                    // instead of being swallowed by CompilePakGh3()'s headless MessageBox catch block.
                     Log("Compiling chart PAK, cameras, lightshow, and QB bytecode...");
-                    var mCompilePakGh3 = csType.GetMethod("CompilePakGh3", flags);
-                    var pakOk = mCompilePakGh3?.Invoke(form, null);
-                    if (pakOk is bool b && !b)
+                    var mCompileGh3Pak = csType.GetMethod("CompileGh3PakFile", flags);
+                    if (mCompileGh3Pak != null)
                     {
-                        throw new InvalidOperationException("CompilePakGh3 returned false.");
+                        mCompileGh3Pak.Invoke(form, null);
+                    }
+                    else
+                    {
+                        var mCompilePakGh3 = csType.GetMethod("CompilePakGh3", flags);
+                        var pakOk = mCompilePakGh3?.Invoke(form, null);
+                        if (pakOk is bool b && !b)
+                        {
+                            throw new InvalidOperationException("CompilePakGh3 returned false.");
+                        }
                     }
                     Log("Chart PAK compilation completed successfully!");
 
@@ -866,7 +889,7 @@ public class HoneycombCompilerService
     private static void FixProjectPaths(string ghprojPath, string projectDir, string honeycombDir, Action<string> log)
     {
         var jsonText = File.ReadAllText(ghprojPath);
-        using var doc = JsonDocument.Parse(jsonText);
+        using var doc = JsonDocument.Parse(jsonText, new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
         var root = doc.RootElement;
 
         var dict = new Dictionary<string, object?>();

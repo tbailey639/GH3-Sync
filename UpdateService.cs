@@ -30,7 +30,7 @@ public class UpdateCheckResult
 /// </summary>
 public class UpdateService
 {
-    public const string CurrentAppVersion = "1.3.1";
+    public const string CurrentAppVersion = "1.3.2";
     private const string RepoOwner = "tbailey639";
     private const string RepoName = "GH3-Sync";
     private static readonly string LatestReleaseApiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
@@ -118,7 +118,8 @@ public class UpdateService
     public async Task<(bool Success, string InstallerPath, string Error)> DownloadUpdateAsync(
         UpdateCheckResult updateInfo,
         Action<int, string>? onProgress = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Action<string>? onDetail = null)
     {
         if (string.IsNullOrWhiteSpace(updateInfo.InstallerDownloadUrl))
         {
@@ -130,6 +131,7 @@ public class UpdateService
             var tempDir = Path.Combine(Path.GetTempPath(), "GH3-Sync-Updates");
             Directory.CreateDirectory(tempDir);
             var safeVer = string.Concat(updateInfo.LatestVersion.Select(c => char.IsLetterOrDigit(c) || c == '.' || c == '-' ? c : '_'));
+            onDetail?.Invoke($"Update staging directory: {tempDir}");
 
             // Safe cleanup of stale updates older than 24h
             try
@@ -149,6 +151,7 @@ public class UpdateService
             var candidateFile = Path.Combine(tempDir, $"GH3-Sync-Setup-{safeVer}.exe");
             if (File.Exists(candidateFile))
             {
+                onDetail?.Invoke($"Found cached package: {Path.GetFileName(candidateFile)} — checking integrity...");
                 bool isValid = false;
                 if (!string.IsNullOrWhiteSpace(updateInfo.InstallerSha256))
                 {
@@ -166,7 +169,8 @@ public class UpdateService
                 if (isValid)
                 {
                     _logger?.LogInfo($"[UPDATER] Existing installer {candidateFile} is already fully downloaded and verified. Skipping re-download.");
-                    onProgress?.Invoke(100, "Installer ready! Launching...");
+                    onDetail?.Invoke("Cached package verified via SHA-256 checksum. Skipping download.");
+                    onProgress?.Invoke(100, "Update package verified! Preparing silent install...");
                     return (true, candidateFile, "");
                 }
             }
@@ -189,17 +193,21 @@ public class UpdateService
 
             if (!canWriteCandidate)
             {
-                targetFile = Path.Combine(tempDir, $"GH3-Sync-Setup-{safeVer}_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N[..6]}.exe");
+                targetFile = Path.Combine(tempDir, $"GH3-Sync-Setup-{safeVer}_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString("N")[..6]}.exe");
                 _logger?.LogInfo($"[UPDATER] Standard target was locked; using unique installer target path: {targetFile}");
+                onDetail?.Invoke($"Previous file locked; switching to unique target: {Path.GetFileName(targetFile)}");
             }
 
-            onProgress?.Invoke(0, $"Connecting to GitHub to download v{updateInfo.LatestVersion}...");
+            onProgress?.Invoke(0, $"Connecting to GitHub for v{updateInfo.LatestVersion}...");
+            onDetail?.Invoke($"GET {updateInfo.InstallerDownloadUrl}");
             _logger?.LogInfo($"[UPDATER] Downloading update from {updateInfo.InstallerDownloadUrl}");
 
             using var resp = await _http.GetAsync(updateInfo.InstallerDownloadUrl, HttpCompletionOption.ResponseHeadersRead, ct);
             resp.EnsureSuccessStatusCode();
 
             var totalBytes = resp.Content.Headers.ContentLength ?? updateInfo.InstallerSizeBytes;
+            onDetail?.Invoke($"Connected (HTTP {(int)resp.StatusCode}) — Payload size: {totalBytes / (1024.0 * 1024.0):F2} MB");
+
             await using (var src = await resp.Content.ReadAsStreamAsync(ct))
             {
                 var dst = new FileStream(targetFile, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete, 81920, useAsync: true);
@@ -209,6 +217,7 @@ public class UpdateService
                     long downloaded = 0;
                     int read;
                     int lastPct = -1;
+                    int lastDetailPct = -10;
 
                     while ((read = await src.ReadAsync(buffer, ct)) > 0)
                     {
@@ -223,7 +232,12 @@ public class UpdateService
                                 lastPct = pct;
                                 var dlMb = downloaded / (1024.0 * 1024.0);
                                 var totMb = totalBytes / (1024.0 * 1024.0);
-                                onProgress?.Invoke(pct, $"Downloading update... {pct}% ({dlMb:F1} / {totMb:F1} MB)");
+                                onProgress?.Invoke(pct, $"Downloading update... ({dlMb:F1} / {totMb:F1} MB)");
+                                if (pct >= lastDetailPct + 10 || pct == 100)
+                                {
+                                    lastDetailPct = pct;
+                                    onDetail?.Invoke($"Downloaded {dlMb:F1} MB / {totMb:F1} MB ({pct}%)");
+                                }
                             }
                         }
                     }
@@ -244,46 +258,75 @@ public class UpdateService
 
             if (!string.IsNullOrWhiteSpace(updateInfo.InstallerSha256))
             {
-                onProgress?.Invoke(99, "Verifying installer SHA-256 checksum...");
+                onProgress?.Invoke(99, "Verifying SHA-256 cryptographic signature...");
+                onDetail?.Invoke($"Computing SHA-256 hash against expected {updateInfo.InstallerSha256}...");
                 if (!SecurityService.VerifyFileSha256(targetFile, updateInfo.InstallerSha256))
                 {
                     try { File.Delete(targetFile); } catch { }
                     _logger?.LogWarn($"[UPDATER] SECURITY BLOCK: SHA-256 mismatch on downloaded installer {targetFile}");
+                    onDetail?.Invoke("ERROR: SHA-256 checksum mismatch! Aborting update for safety.");
                     return (false, "", "Security check failed: Downloaded installer SHA-256 checksum did not match the official GitHub release.");
                 }
                 _logger?.LogInfo("[UPDATER] Installer SHA-256 integrity verified.");
+                onDetail?.Invoke("SHA-256 integrity verified OK.");
             }
 
-            onProgress?.Invoke(100, "Download verified! Launching installer...");
+            onProgress?.Invoke(100, "Package verified! Starting silent upgrade...");
+            onDetail?.Invoke($"Saved verified package ({info.Length:N0} bytes) to {targetFile}");
             _logger?.LogInfo($"[UPDATER] Downloaded installer ({info.Length:N0} bytes) to {targetFile}");
             return (true, targetFile, "");
         }
         catch (Exception ex)
         {
             _logger?.LogWarn($"[UPDATER] Download failed: {ex.Message}");
+            onDetail?.Invoke($"ERROR: {ex.Message}");
             return (false, "", $"Update download failed: {ex.Message}");
+        }
+    }
+
+    public (bool Launched, bool CancelledByUser, string Error, string LogPath) LaunchSilentInstaller(
+        string installerPath,
+        Action<string>? onDetail = null)
+    {
+        var logPath = Path.Combine(Path.GetTempPath(), "GH3-Sync-Updates", $"install_{DateTime.Now:yyyyMMdd_HHmmss}.log");
+        try
+        {
+            if (!File.Exists(installerPath))
+                return (false, false, "Installer file not found.", logPath);
+
+            // Preserve existing install directory & configuration silently without showing any wizard UI
+            var args = $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /LOG=\"{logPath}\"";
+            onDetail?.Invoke($"Executing silent upgrade: {Path.GetFileName(installerPath)}");
+            onDetail?.Invoke($"Flags: {args}");
+            onDetail?.Invoke("Preserving existing GH3-Sync install directory, settings, friends, and song library...");
+            _logger?.LogInfo($"[UPDATER] Launching silent upgrade: {installerPath} {args}");
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = installerPath,
+                Arguments = args,
+                UseShellExecute = true
+            });
+            return (true, false, "", logPath);
+        }
+        catch (System.ComponentModel.Win32Exception wex) when (wex.NativeErrorCode == 1223)
+        {
+            onDetail?.Invoke("Silent upgrade cancelled (administrator prompt declined).");
+            _logger?.LogWarn("[UPDATER] Silent upgrade cancelled by user at UAC prompt.");
+            return (false, true, "Update cancelled at Windows permission prompt.", logPath);
+        }
+        catch (Exception ex)
+        {
+            onDetail?.Invoke($"ERROR launching silent upgrade: {ex.Message}");
+            _logger?.LogWarn($"[UPDATER] Failed to launch silent installer: {ex.Message}");
+            return (false, false, ex.Message, logPath);
         }
     }
 
     public bool LaunchInstallerAndPrepareExit(string installerPath)
     {
-        try
-        {
-            if (!File.Exists(installerPath)) return false;
-
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = installerPath,
-                Arguments = "/CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
-                UseShellExecute = true
-            });
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarn($"[UPDATER] Failed to launch installer: {ex.Message}");
-            return false;
-        }
+        var (launched, _, _, _) = LaunchSilentInstaller(installerPath);
+        return launched;
     }
 
     /// <summary>
