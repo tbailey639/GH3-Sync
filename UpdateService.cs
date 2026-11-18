@@ -30,7 +30,7 @@ public class UpdateCheckResult
 /// </summary>
 public class UpdateService
 {
-    public const string CurrentAppVersion = "1.0.1";
+    public const string CurrentAppVersion = "1.0.2";
     private const string RepoOwner = "tbailey639";
     private const string RepoName = "GH3-Sync";
     private static readonly string LatestReleaseApiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";

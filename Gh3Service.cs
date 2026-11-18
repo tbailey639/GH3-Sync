@@ -1400,6 +1400,28 @@ public class Gh3Service
                         TryDeleteFile(f, "intermediate temp audio");
                 }
 
+                // Leftover uncompressed Demucs WAV stems folder (400-500+ MB per song) if song is already compiled in DATA\MUSIC
+                var stemsDir = Path.Combine(subDir, "stems");
+                if (Directory.Exists(stemsDir))
+                {
+                    var p = ParseProjectDirectory(subDir);
+                    bool isInGame = p != null &&
+                        (File.Exists(Path.Combine(MusicPath, $"{p.SongId}.fsb.xen")) ||
+                         Directory.GetFiles(MusicPath, "*.fsb.xen").Any() && p.IsCompiled);
+                    if (isInGame)
+                    {
+                        try
+                        {
+                            long stemBytes = Directory.GetFiles(stemsDir, "*.*", SearchOption.AllDirectories).Sum(x => new FileInfo(x).Length);
+                            Directory.Delete(stemsDir, recursive: true);
+                            removed++;
+                            bytesFreed += stemBytes;
+                            summary.Add($"Removed uncompressed stems\\ folder in '{Path.GetFileName(subDir)}' ({stemBytes / (1024.0 * 1024.0):F1} MB)");
+                        }
+                        catch { }
+                    }
+                }
+
                 // Duplicate compiled game binaries (already deployed in DATA\SONGS and DATA\MUSIC)
                 foreach (var pat in new[] { "*_song.pak.xen", "*.fsb.xen", "*.dat.xen", "*.fsb", "*.dat" })
                 {

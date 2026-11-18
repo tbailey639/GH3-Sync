@@ -309,6 +309,10 @@ public class SongCreatorService
             var ghprojFullPath = Path.Combine(targetDir, ghprojName);
             var cleanSongId = SanitizeSongId(cleanTitle);
 
+            int safeYear = Math.Clamp(meta.Year, 1900, 2100);
+            int safeGuitarTier = Math.Clamp(meta.DiffGuitar, 1, 10);
+            int safeBassTier = Math.Clamp(meta.DiffRhythm, 1, 10);
+
             var projData = new
             {
                 GhprojVersion = 1,
@@ -360,6 +364,21 @@ public class SongCreatorService
                 dSkeleton = "Default",
                 vSkeleton = "Default",
                 ghwtDrumkit = "Modern Rock",
+                gh5Drumkit = "Modern Rock",
+                ghworDrumkit = "Modern Rock",
+                artistText = -1,
+                songYear = safeYear,
+                coverYear = 2024,
+                wtGenre = 0,
+                gh5Genre = 0,
+                worGenre = 0,
+                previewStart = Math.Max(0, meta.PreviewStartMs),
+                previewEnd = 30000,
+                hmxHopoVal = 170,
+                skaSourceGh3 = 0,
+                venueSourceGh3 = 0,
+                countoffGh3 = 0,
+                vocalGenderGh3 = 0,
                 bassistSelect = 0,
                 skaSource = 0,
                 venueSource = 2,
@@ -371,8 +390,8 @@ public class SongCreatorService
                 beat16thLow = 1,
                 beat16thHigh = 120,
                 bandTier = 1,
-                guitarTier = meta.DiffGuitar,
-                bassTier = meta.DiffRhythm,
+                guitarTier = safeGuitarTier,
+                bassTier = safeBassTier,
                 drumsTier = 1,
                 vocalsTier = 1,
                 guitarCareerTier = 0,
@@ -488,8 +507,9 @@ public class SongCreatorService
                     node["title"] = title;
                     node["artist"] = artist;
                     node["album"] = album;
-                    node["guitarTier"] = diffGuitar;
-                    node["bassTier"] = diffRhythm;
+                    node["songYear"] = Math.Clamp(year, 1900, 2100);
+                    node["guitarTier"] = Math.Clamp(diffGuitar, 1, 10);
+                    node["bassTier"] = Math.Clamp(diffRhythm, 1, 10);
                     node["gtrVolumeGh3"] = guitarVolumeDb;
                     node["bandVolumeGh3"] = bandVolumeDb;
                     File.WriteAllText(ghproj, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));

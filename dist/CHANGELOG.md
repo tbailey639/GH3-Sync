@@ -4,6 +4,15 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.0.2] - 2026-11-18
+
+### Bug Fixes
+* **Fixed ONOGAMI Song Creator Auto-Compile & Manual Compile Error (`Value of '0' is not valid for 'Value'`):** Added all required Honeycomb `.ghproj` fields (`songYear`, `coverYear`, `hmxHopoVal`, `previewStart`, `previewEnd`, `artistText`, genre/GH3 source defaults, and clamped tier ranges `1–10`) in `SongCreatorService`, `CloneHeroImportService`, and `HoneycombCompilerService.FixProjectPaths()` so both newly created songs and existing older `.ghproj` projects compile cleanly without crashing WinForms `NumericUpDown` controls.
+* **Fixed Multi-Track Demucs Stem Audio Routing:** `HoneycombCompilerService` now discovers isolated stems inside `stems\htdemucs_6s\**\*.wav` (and root project folders) and mixes `drums + vocals + piano + other` as the backing track alongside isolated `guitar.wav` and `bass.wav` for true mute-on-miss gameplay instead of falling back to single-track `song.mp3`.
+* **Eliminated ~490 MB Uncompressed WAV Bloat After Compilation:** Automatically deletes the temporary `stems\` folder of raw Demucs WAVs once the encrypted `.fsb.xen` and `.dat.xen` soundbanks are compiled and deployed to `DATA\MUSIC`, and added leftover `stems\` cleanup to **Settings → Clean Duplicate & Temp Files**.
+
+---
+
 ## [v1.0.1] - 2026-11-18
 
 ### New Features

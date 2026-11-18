@@ -671,39 +671,26 @@ public class HoneycombCompilerService
         var mCombine = fsbType.GetMethod("CombineFSB3File")
             ?? throw new InvalidOperationException("Could not find CombineFSB3File method");
 
-        // Discover audio files in song project
-        string primaryAudio = "";
-        string[] audioExtensions = new[] { ".mp3", ".ogg", ".wav" };
-        foreach (var ext in audioExtensions)
-        {
-            var p = Path.Combine(projectDir, "song" + ext);
-            if (File.Exists(p)) { primaryAudio = p; break; }
-        }
-        if (string.IsNullOrEmpty(primaryAudio))
-        {
-            var anyAudio = Directory.GetFiles(projectDir, "*.*")
-                .FirstOrDefault(f => audioExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
-            if (!string.IsNullOrEmpty(anyAudio)) primaryAudio = anyAudio;
-        }
-
-        if (string.IsNullOrEmpty(primaryAudio) || !File.Exists(primaryAudio))
+        // Discover primary audio & isolated multi-track stems (root OR Demucs stems\htdemucs_6s\**\*.wav)
+        var stems = DiscoverProjectStems(projectDir);
+        if (string.IsNullOrEmpty(stems.PrimaryAudio) && string.IsNullOrEmpty(stems.GuitarStem))
         {
             throw new FileNotFoundException("No valid audio file found in song folder to compile soundbank.");
         }
 
-        // Stems
-        var guitarStem = Path.Combine(projectDir, "guitar.mp3");
-        if (!File.Exists(guitarStem)) guitarStem = Path.Combine(projectDir, "guitar.ogg");
-        var rhythmStem = Path.Combine(projectDir, "rhythm.mp3");
-        if (!File.Exists(rhythmStem)) rhythmStem = Path.Combine(projectDir, "rhythm.ogg");
-        var backingStem = Path.Combine(projectDir, "backing.mp3");
-        if (!File.Exists(backingStem)) backingStem = Path.Combine(projectDir, "backing.ogg");
-        var previewStem = Path.Combine(projectDir, "preview.mp3");
+        string guitarInput = !string.IsNullOrEmpty(stems.GuitarStem) ? stems.GuitarStem : stems.PrimaryAudio;
+        string rhythmInput = stems.RhythmStem;
+        string[] backingInputs = stems.BackingStems.Count > 0
+            ? stems.BackingStems.ToArray()
+            : new[] { !string.IsNullOrEmpty(stems.PrimaryAudio) ? stems.PrimaryAudio : guitarInput };
+        string previewInput = !string.IsNullOrEmpty(stems.PreviewStem)
+            ? stems.PreviewStem
+            : (!string.IsNullOrEmpty(stems.PrimaryAudio) ? stems.PrimaryAudio : guitarInput);
 
-        string guitarInput = File.Exists(guitarStem) ? guitarStem : primaryAudio;
-        string rhythmInput = File.Exists(rhythmStem) ? rhythmStem : "";
-        string backingInput = File.Exists(backingStem) ? backingStem : primaryAudio;
-        string previewInput = File.Exists(previewStem) ? previewStem : primaryAudio;
+        if (stems.HasMultiStems)
+        {
+            log($"Multi-stem audio detected: Guitar={Path.GetFileName(guitarInput)}, Bass/Rhythm={(string.IsNullOrEmpty(rhythmInput) ? "none" : Path.GetFileName(rhythmInput))}, Backing={backingInputs.Length} stem(s)");
+        }
 
         var textGuitar = Path.Combine(projectDir, $"{songChecksum}_guitar.mp3");
         var textRhythm = Path.Combine(projectDir, $"{songChecksum}_rhythm.mp3");
@@ -714,17 +701,17 @@ public class HoneycombCompilerService
 
         try
         {
-            // 1. Guitar track
+            // 1. Guitar track (mute-on-miss channel)
             log("Converting guitar track to CBR MP3...");
             await (Task)mConvert.Invoke(fsbObj, new object[] { guitarInput, textGuitar })!;
 
-            // 2. Rhythm track (uses blank audio pad automatically if rhythmInput is empty)
+            // 2. Rhythm/bass track (uses blank audio pad automatically if rhythmInput is empty)
             log("Preparing rhythm/bass track...");
             await (Task)mConvert.Invoke(fsbObj, new object[] { rhythmInput, textRhythm })!;
 
-            // 3. Backing track
-            log("Mixing backing track...");
-            await (Task)mMix.Invoke(fsbObj, new object[] { new string[] { backingInput }, textSong, "", "", ".mp3", 48000 })!;
+            // 3. Backing track (mixes drums + vocals + piano + other stems cleanly when separated)
+            log($"Mixing backing track ({backingInputs.Length} input(s))...");
+            await (Task)mMix.Invoke(fsbObj, new object[] { backingInputs, textSong, "", "", ".mp3", 48000 })!;
 
             // 4. Preview track
             log("Generating preview audio...");
@@ -830,51 +817,27 @@ public class HoneycombCompilerService
         dict["midiPathGh3"] = resolvedMidi;
         dict["midiPath"] = resolvedMidi;
 
-        // 2. Resolve Audio Paths
-        var guitarPathGh3 = GetStr("guitarPathGh3");
-        var rhythmPathGh3 = GetStr("rhythmPathGh3");
-        var backingPathsGh3 = GetStr("backingPathsGh3");
+        // 2. Resolve Audio & Multi-Stem Paths (supports both root stems and Demucs stems\htdemucs_6s\**\*.wav)
+        var stems = DiscoverProjectStems(projectDir);
+        string primaryAudio = stems.PrimaryAudio;
 
-        // Find primary audio in project directory
-        string primaryAudio = "";
-        string[] audioExtensions = new[] { ".mp3", ".ogg", ".wav" };
-        foreach (var ext in audioExtensions)
+        if (stems.HasMultiStems)
         {
-            var p = Path.Combine(projectDir, "song" + ext);
-            if (File.Exists(p)) { primaryAudio = p; break; }
-        }
+            var backingJoined = stems.BackingStems.Count > 0 ? string.Join(";", stems.BackingStems) : primaryAudio;
+            var previewAudio = !string.IsNullOrEmpty(stems.PreviewStem) ? stems.PreviewStem : (!string.IsNullOrEmpty(primaryAudio) ? primaryAudio : stems.GuitarStem);
 
-        if (string.IsNullOrEmpty(primaryAudio))
-        {
-            var anyAudio = Directory.GetFiles(projectDir, "*.*")
-                .FirstOrDefault(f => audioExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
-            if (!string.IsNullOrEmpty(anyAudio)) primaryAudio = anyAudio;
-        }
-
-        // Check for isolated stem files
-        var guitarStem = Path.Combine(projectDir, "guitar.mp3");
-        if (!File.Exists(guitarStem)) guitarStem = Path.Combine(projectDir, "guitar.ogg");
-        var rhythmStem = Path.Combine(projectDir, "rhythm.mp3");
-        if (!File.Exists(rhythmStem)) rhythmStem = Path.Combine(projectDir, "rhythm.ogg");
-        var backingStem = Path.Combine(projectDir, "backing.mp3");
-        if (!File.Exists(backingStem)) backingStem = Path.Combine(projectDir, "backing.ogg");
-        var vocalsStem = Path.Combine(projectDir, "vocals.mp3");
-        var drumsStem = Path.Combine(projectDir, "drums.mp3");
-
-        bool hasStems = File.Exists(guitarStem);
-
-        if (hasStems)
-        {
-            dict["guitarPathGh3"] = guitarStem;
-            dict["rhythmPathGh3"] = File.Exists(rhythmStem) ? rhythmStem : "";
-            dict["backingPathsGh3"] = File.Exists(backingStem) ? backingStem : primaryAudio;
-            dict["previewAudioPathGh3"] = guitarStem;
-            dict["guitarPath"] = guitarStem;
-            dict["bassPath"] = File.Exists(rhythmStem) ? rhythmStem : "";
-            dict["backingPaths"] = File.Exists(backingStem) ? backingStem : primaryAudio;
-            dict["vocalsPath"] = File.Exists(vocalsStem) ? vocalsStem : "";
-            dict["previewAudioPath"] = guitarStem;
-            dict["isCoopAudio"] = File.Exists(rhythmStem);
+            dict["guitarPathGh3"] = stems.GuitarStem;
+            dict["rhythmPathGh3"] = stems.RhythmStem;
+            dict["backingPathsGh3"] = backingJoined;
+            dict["previewAudioPathGh3"] = previewAudio;
+            dict["guitarPath"] = stems.GuitarStem;
+            dict["bassPath"] = stems.RhythmStem;
+            dict["backingPaths"] = backingJoined;
+            dict["previewAudioPath"] = previewAudio;
+            dict["coopGuitarPath"] = stems.GuitarStem;
+            dict["coopRhythmPath"] = stems.RhythmStem;
+            dict["coopBackingPaths"] = backingJoined;
+            dict["isCoopAudio"] = !string.IsNullOrEmpty(stems.RhythmStem);
         }
         else
         {
@@ -890,6 +853,55 @@ public class HoneycombCompilerService
             dict["isCoopAudio"] = false;
         }
 
+        // 3. Ensure all required Honeycomb NumericUpDown & metadata fields exist and stay within valid bounds
+        //    (Prevents WinForms "Value of '0' is not valid for 'Value'. 'Value' should be between 'Minimum' and 'Maximum'")
+        int GetInt(string key, int fallback)
+        {
+            if (dict.TryGetValue(key, out var val) && val is JsonElement je && je.ValueKind == JsonValueKind.Number && je.TryGetInt32(out var n))
+                return n;
+            return fallback;
+        }
+
+        int fallbackYear = DateTime.Now.Year;
+        var iniPath = Path.Combine(projectDir, "song.ini");
+        if (File.Exists(iniPath))
+        {
+            foreach (var line in File.ReadAllLines(iniPath))
+            {
+                var tr = line.Trim();
+                if (tr.StartsWith("year", StringComparison.OrdinalIgnoreCase) && tr.Contains('='))
+                {
+                    if (int.TryParse(tr[(tr.IndexOf('=') + 1)..].Trim(), out var yVal) && yVal >= 1900 && yVal <= 2100)
+                        fallbackYear = yVal;
+                }
+            }
+        }
+
+        dict["songYear"] = Math.Clamp(GetInt("songYear", fallbackYear), 1900, 2100);
+        dict["coverYear"] = Math.Clamp(GetInt("coverYear", 2024), 1900, 2100);
+        dict["artistText"] = dict.ContainsKey("artistText") ? GetInt("artistText", -1) : -1;
+        dict["wtGenre"] = Math.Max(0, GetInt("wtGenre", 0));
+        dict["gh5Genre"] = Math.Max(0, GetInt("gh5Genre", 0));
+        dict["worGenre"] = Math.Max(0, GetInt("worGenre", 0));
+        dict["previewStart"] = Math.Max(0, GetInt("previewStart", 15000));
+        dict["previewEnd"] = Math.Clamp(GetInt("previewEnd", 30000), 1000, 600000);
+        dict["hmxHopoVal"] = Math.Clamp(GetInt("hmxHopoVal", 170), 1, 1000);
+        dict["skaSourceGh3"] = Math.Max(0, GetInt("skaSourceGh3", 0));
+        dict["venueSourceGh3"] = Math.Max(0, GetInt("venueSourceGh3", 0));
+        dict["countoffGh3"] = Math.Max(0, GetInt("countoffGh3", 0));
+        dict["vocalGenderGh3"] = Math.Max(0, GetInt("vocalGenderGh3", 0));
+        dict["beat8thLow"] = Math.Clamp(GetInt("beat8thLow", 1), 1, 500);
+        dict["beat8thHigh"] = Math.Clamp(GetInt("beat8thHigh", 180), 1, 500);
+        dict["beat16thLow"] = Math.Clamp(GetInt("beat16thLow", 1), 1, 500);
+        dict["beat16thHigh"] = Math.Clamp(GetInt("beat16thHigh", 120), 1, 500);
+        dict["bandTier"] = Math.Clamp(GetInt("bandTier", 1), 1, 10);
+        dict["guitarTier"] = Math.Clamp(GetInt("guitarTier", 4), 1, 10);
+        dict["bassTier"] = Math.Clamp(GetInt("bassTier", 3), 1, 10);
+        dict["drumsTier"] = Math.Clamp(GetInt("drumsTier", 1), 1, 10);
+        dict["vocalsTier"] = Math.Clamp(GetInt("vocalsTier", 1), 1, 10);
+        if (!dict.ContainsKey("gh5Drumkit")) dict["gh5Drumkit"] = "Modern Rock";
+        if (!dict.ContainsKey("ghworDrumkit")) dict["ghworDrumkit"] = "Modern Rock";
+
         dict["useRenderedPreviewGh3"] = true;
         dict["useRenderedPreview"] = true;
         dict["compilePath"] = projectDir;
@@ -898,6 +910,81 @@ public class HoneycombCompilerService
 
         var updatedJson = JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(ghprojPath, updatedJson);
+    }
+
+    private sealed record ProjectStemsInfo(
+        string PrimaryAudio,
+        string GuitarStem,
+        string RhythmStem,
+        List<string> BackingStems,
+        string PreviewStem,
+        bool HasMultiStems);
+
+    private static ProjectStemsInfo DiscoverProjectStems(string projectDir)
+    {
+        string[] audioExts = new[] { ".mp3", ".ogg", ".wav" };
+        string primaryAudio = "";
+        foreach (var ext in audioExts)
+        {
+            var p = Path.Combine(projectDir, "song" + ext);
+            if (File.Exists(p)) { primaryAudio = p; break; }
+        }
+        if (string.IsNullOrEmpty(primaryAudio))
+        {
+            primaryAudio = Directory.GetFiles(projectDir, "*.*", SearchOption.TopDirectoryOnly)
+                .FirstOrDefault(f => audioExts.Contains(Path.GetExtension(f).ToLowerInvariant())) ?? "";
+        }
+
+        string FindStemFile(params string[] baseNames)
+        {
+            // 1. Check root project folder
+            foreach (var bn in baseNames)
+            {
+                foreach (var ext in new[] { ".wav", ".ogg", ".mp3" })
+                {
+                    var p = Path.Combine(projectDir, bn + ext);
+                    if (File.Exists(p)) return p;
+                }
+            }
+            // 2. Check Demucs stems subfolder (e.g., stems\htdemucs_6s\song\guitar.wav)
+            var stemsDir = Path.Combine(projectDir, "stems");
+            if (Directory.Exists(stemsDir))
+            {
+                foreach (var bn in baseNames)
+                {
+                    foreach (var ext in new[] { ".wav", ".ogg", ".mp3" })
+                    {
+                        var found = Directory.GetFiles(stemsDir, bn + ext, SearchOption.AllDirectories).FirstOrDefault();
+                        if (!string.IsNullOrEmpty(found)) return found;
+                    }
+                }
+            }
+            return "";
+        }
+
+        string guitarStem = FindStemFile("guitar");
+        string rhythmStem = FindStemFile("rhythm", "bass");
+        string previewStem = FindStemFile("preview");
+
+        var backingList = new List<string>();
+        string explicitBacking = FindStemFile("backing");
+        if (!string.IsNullOrEmpty(explicitBacking)) backingList.Add(explicitBacking);
+
+        foreach (var stemName in new[] { "drums", "vocals", "piano", "keys", "other" })
+        {
+            var f = FindStemFile(stemName);
+            if (!string.IsNullOrEmpty(f) &&
+                !f.Equals(guitarStem, StringComparison.OrdinalIgnoreCase) &&
+                !f.Equals(rhythmStem, StringComparison.OrdinalIgnoreCase))
+            {
+                backingList.Add(f);
+            }
+        }
+
+        bool hasMultiStems = !string.IsNullOrEmpty(guitarStem) &&
+            (backingList.Count > 0 || !string.IsNullOrEmpty(rhythmStem));
+
+        return new ProjectStemsInfo(primaryAudio, guitarStem, rhythmStem, backingList, previewStem, hasMultiStems);
     }
 
     /// <summary>
@@ -965,8 +1052,21 @@ public class HoneycombCompilerService
                     }
                 }
 
+                // Auto-clean huge uncompressed Demucs WAV stems folder now that encrypted .fsb.xen is safely deployed in DATA\MUSIC!
+                var stemsDir = Path.Combine(projectDir, "stems");
+                if (Directory.Exists(stemsDir) && File.Exists(fsbPath))
+                {
+                    try
+                    {
+                        long wavBytes = Directory.GetFiles(stemsDir, "*.wav", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length);
+                        Directory.Delete(stemsDir, recursive: true);
+                        log($"Cleaned temporary uncompressed Demucs stems folder (freed {wavBytes / (1024.0 * 1024.0):F1} MB).");
+                    }
+                    catch { }
+                }
+
                 AppConfig.RegisterCreatedSong(songBaseName, projectDir);
-                log($"Linked compiled song ID '{songBaseName}' to project metadata (zero duplicate binaries kept).");
+                log($"Linked compiled song ID '{songBaseName}' to project metadata (zero duplicate binaries or raw WAV bloat kept).");
             }
             catch (Exception ex)
             {
