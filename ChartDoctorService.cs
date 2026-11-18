@@ -619,6 +619,127 @@ public class ChartDoctorService
         return result;
     }
 
+    /// <summary>
+    /// Computes a lightweight Note Intensity Sparkline (normalized 0..1 across N buckets)
+    /// and a 1..5 Guitar Hero Difficulty Tier from Expert notes for My Customs song cards.
+    /// </summary>
+    public static (double[] Buckets, int DifficultyTier, double PeakNps) ComputeIntensitySparkline(string? chartPath, int bucketCount = 18)
+    {
+        var buckets = new double[Math.Max(4, bucketCount)];
+        if (string.IsNullOrWhiteSpace(chartPath) || !File.Exists(chartPath))
+            return (buckets, 3, 0);
+
+        try
+        {
+            var parsed = ParseChartFile(chartPath);
+            var notes = parsed.Difficulties.TryGetValue("Expert", out var ex) && ex.Count > 0
+                ? ex
+                : parsed.Difficulties.Values.FirstOrDefault() ?? new List<ChartPreviewNote>();
+            if (notes.Count == 0) return (buckets, 1, 0);
+
+            double maxT = Math.Max(1.0, notes[^1].TimeSeconds);
+            var counts = new int[buckets.Length];
+            foreach (var n in notes)
+            {
+                int idx = Math.Clamp((int)((n.TimeSeconds / maxT) * buckets.Length), 0, buckets.Length - 1);
+                counts[idx]++;
+            }
+
+            int peakBucket = Math.Max(1, counts.Max());
+            for (int i = 0; i < buckets.Length; i++)
+                buckets[i] = Math.Clamp(counts[i] / (double)peakBucket, 0.08, 1.0);
+
+            double avgNps = notes.Count / Math.Max(10.0, maxT);
+            double peakNps = 0;
+            int left = 0;
+            for (int r = 0; r < notes.Count; r++)
+            {
+                while (notes[r].TimeSeconds - notes[left].TimeSeconds > 1.0) left++;
+                peakNps = Math.Max(peakNps, r - left + 1);
+            }
+
+            int tier = (avgNps, peakNps) switch
+            {
+                ( >= 7.5, _) or (_, >= 14) => 5,
+                ( >= 5.5, _) or (_, >= 10) => 4,
+                ( >= 3.5, _) or (_, >= 7) => 3,
+                ( >= 2.0, _) => 2,
+                _ => 1
+            };
+
+            return (buckets, tier, peakNps);
+        }
+        catch
+        {
+            return (buckets, 3, 0);
+        }
+    }
+
+    /// <summary>
+    /// Saves visually edited notes from the Highway Previewer Quick-Fix Note Editor back into
+    /// notes.chart, re-converts notes.mid, and recompiles into Guitar Hero III.
+    /// </summary>
+    public async Task<(bool Ok, string Message)> SaveEditedDifficultyNotesAsync(
+        string projectDir,
+        string difficultyName,
+        List<ChartPreviewNote> editedNotes,
+        bool recompile = true)
+    {
+        var chartPath = FindChartFileInProject(projectDir);
+        if (string.IsNullOrEmpty(chartPath))
+            return (false, "No notes.chart found in this project folder.");
+
+        try
+        {
+            var rawLines = File.ReadAllLines(chartPath).ToList();
+            var sections = SplitChartSections(rawLines);
+            var targetSection = $"{difficultyName}Single";
+
+            // Preserve existing Star Power (S 2) lines in that difficulty section
+            var preservedSp = sections.TryGetValue(targetSection, out var oldLines)
+                ? oldLines.Where(l => Regex.IsMatch(l, @"^\s*\d+\s*=\s*S\s+", RegexOptions.IgnoreCase)).ToList()
+                : new List<string>();
+
+            var noteLines = new List<string>();
+            var grouped = editedNotes.OrderBy(n => n.Tick).ThenBy(n => n.Fret).GroupBy(n => n.Tick);
+            foreach (var g in grouped)
+            {
+                var distinct = g.DistinctBy(x => x.Fret).ToList();
+                foreach (var n in distinct)
+                    noteLines.Add($"  {Math.Max(0, n.Tick)} = N {n.Fret} {Math.Max(0, n.LengthTicks)}");
+                if (distinct.Any(n => n.IsHopo) && distinct.Count == 1)
+                    noteLines.Add($"  {Math.Max(0, g.Key)} = N 5 0");
+            }
+
+            sections[targetSection] = InsertSortedChartLines(preservedSp, noteLines);
+
+            var bak = chartPath + ".edit.bak";
+            if (!File.Exists(bak)) File.Copy(chartPath, bak, overwrite: false);
+            File.WriteAllLines(chartPath, RebuildChartLines(sections));
+
+            var hDir = HoneycombCompilerService.FindHoneycombDirectory();
+            if (!string.IsNullOrEmpty(hDir))
+                HoneycombCompilerService.ConvertChartToMid(chartPath, hDir);
+
+            if (recompile)
+            {
+                var ghproj = Directory.GetFiles(projectDir, "*.ghproj").FirstOrDefault();
+                if (!string.IsNullOrEmpty(ghproj))
+                {
+                    var comp = await _compiler.CompileSongProjectAsync(ghproj);
+                    if (!comp.Success) return (false, $"Chart saved ({editedNotes.Count} notes), but recompile failed: {comp.Message}");
+                }
+            }
+
+            _logger.LogInfo($"[NOTE EDITOR] Saved {editedNotes.Count} edited {difficultyName} notes for '{Path.GetFileName(projectDir)}'.");
+            return (true, $"Saved {editedNotes.Count:N0} {difficultyName} notes & recompiled cleanly into Guitar Hero III!");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Could not save edited notes: {ex.Message}");
+        }
+    }
+
     private static List<string> InsertSortedChartLines(List<string> existing, List<string> additions)
     {
         var merged = new List<(long Tick, int Order, string Line)>();

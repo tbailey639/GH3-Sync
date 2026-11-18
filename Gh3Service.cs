@@ -71,6 +71,7 @@ public class LibraryManifest
     public int MaxLobbyAutoSyncSongs { get; set; } = 10;
     public List<string> LobbySetlistIds { get; set; } = new();
     public List<CustomSongInfo> Songs { get; set; } = new();
+    public Dictionary<string, SongScoreRecord> HighScores { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public class LibraryDiff
@@ -858,7 +859,8 @@ public class Gh3Service
         var manifest = new LibraryManifest
         {
             MaxLobbyAutoSyncSongs = Math.Clamp(AppConfig.Current.MaxLobbyAutoSyncSongs, 1, 25),
-            LobbySetlistIds = (AppConfig.Current.LobbySetlistIds ?? new List<string>()).ToList()
+            LobbySetlistIds = (AppConfig.Current.LobbySetlistIds ?? new List<string>()).ToList(),
+            HighScores = new Dictionary<string, SongScoreRecord>(AppConfig.Current.LocalHighScores ?? new(), StringComparer.OrdinalIgnoreCase)
         };
         if (File.Exists(CustomsPakPath))
         {

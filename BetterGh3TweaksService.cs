@@ -12,6 +12,8 @@ public class BetterGh3PluginInfo
     public string Description { get; set; } = "";
     public bool IsEnabled { get; set; }
     public bool IsCoreProtected { get; set; }
+    public bool VerifiedLoadedInLastLaunch { get; set; }
+    public string LoadedAddress { get; set; } = "";
     public string FullPath { get; set; } = "";
 }
 
@@ -50,18 +52,49 @@ public class BetterGh3TweaksService
 
     public bool IsBetterGh3PluginsPresent() => Directory.Exists(PluginsDir);
 
+    public Dictionary<string, string> ReadLastLoadedPluginsFromLog()
+    {
+        var loaded = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var logPath = Path.Combine(PluginsDir, "_log.txt");
+        if (!File.Exists(logPath)) return loaded;
+        try
+        {
+            foreach (var raw in File.ReadAllLines(logPath))
+            {
+                // Format: Loaded: plugins\borderlesswindow.dll @ 04440000
+                var m = System.Text.RegularExpressions.Regex.Match(raw, @"Loaded:\s*(?:plugins[\\/])?([^\s@]+\.dll)\s*@\s*([0-9A-Fa-f]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (m.Success)
+                    loaded[m.Groups[1].Value.Trim()] = "0x" + m.Groups[2].Value.Trim().ToUpperInvariant();
+            }
+        }
+        catch { }
+        return loaded;
+    }
+
     public List<BetterGh3PluginInfo> GetPlugins()
     {
         var list = new List<BetterGh3PluginInfo>();
         if (!Directory.Exists(PluginsDir)) return list;
 
+        var loadedLog = ReadLastLoadedPluginsFromLog();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var dll in Directory.GetFiles(PluginsDir, "*.dll").OrderBy(Path.GetFileName))
         {
             var name = Path.GetFileName(dll);
             seen.Add(name);
-            list.Add(BuildInfo(name, dll, enabled: true));
+            var info = BuildInfo(name, dll, enabled: true);
+            if (loadedLog.TryGetValue(name, out var addr))
+            {
+                info.VerifiedLoadedInLastLaunch = true;
+                info.LoadedAddress = addr;
+            }
+            else if (info.IsCoreProtected && loadedLog.Count > 0)
+            {
+                info.VerifiedLoadedInLastLaunch = true;
+                info.LoadedAddress = "Loader Active";
+            }
+            list.Add(info);
         }
 
         if (Directory.Exists(DisabledDir))
@@ -75,6 +108,29 @@ public class BetterGh3TweaksService
         }
 
         return list.OrderByDescending(p => p.IsCoreProtected).ThenBy(p => p.DisplayName).ToList();
+    }
+
+    public (bool Ok, string Message) ApplyPresetProfile(string presetName)
+    {
+        var plugins = GetPlugins().Where(p => !p.IsCoreProtected).ToList();
+        if (plugins.Count == 0) return (false, "No BetterGH3 plugins found.");
+
+        bool competitive = presetName.Equals("Competitive", StringComparison.OrdinalIgnoreCase);
+        var classicDisabled = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "UncappedFPS.dll", "TapHopoChord.dll" };
+        int changed = 0;
+
+        foreach (var p in plugins)
+        {
+            bool wantEnabled = competitive || !classicDisabled.Contains(p.FileName);
+            if (p.IsEnabled != wantEnabled)
+            {
+                var (ok, _) = SetPluginEnabled(p.FileName, wantEnabled);
+                if (ok) changed++;
+            }
+        }
+
+        var label = competitive ? "Competitive Online (All fixes + Uncapped FPS + Modern HOPOs)" : "Classic 60 FPS Vanilla Feel";
+        return (true, $"Applied BetterGH3 preset: {label} ({changed} plugin(s) toggled).");
     }
 
     private static BetterGh3PluginInfo BuildInfo(string fileName, string fullPath, bool enabled)

@@ -41,6 +41,17 @@ public class SetlistPreset
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
+public class SongScoreRecord
+{
+    public int BestScore { get; set; }
+    public double BestPercent { get; set; }
+    public int BestStreak { get; set; }
+    public int Stars { get; set; }
+    public bool IsFullCombo { get; set; }
+    public string Difficulty { get; set; } = "Expert";
+    public DateTime AchievedAt { get; set; } = DateTime.UtcNow;
+}
+
 public class FeedbackItem
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 8);
@@ -88,7 +99,10 @@ public class AppConfigData
     public bool ConvertOpenNotesToClassicGh3 { get; set; } = false;
     public bool NormalizeAudioLoudness { get; set; } = true;      // EBU R128 -14 LUFS loudness matching
     public bool EnableDiscordRichPresence { get; set; } = true;
+    public bool EnableUiAnimations { get; set; } = true;          // Animated stage lighting, transitions & visualizer
     public List<SetlistPreset> SetlistPresets { get; set; } = new();
+    public Dictionary<string, List<string>> SongTags { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, SongScoreRecord> LocalHighScores { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public static class AppConfig
@@ -436,6 +450,71 @@ public static class AppConfig
             Current.LobbySetlistIds.Add(songId);
             Save();
             return (true, $"Added to Lobby Auto-Sync ({Current.LobbySetlistIds.Count}/{max}).");
+        }
+    }
+
+    public static List<string> GetSongTags(string songId)
+    {
+        lock (_lock)
+        {
+            Current.SongTags ??= new(StringComparer.OrdinalIgnoreCase);
+            var key = Current.SongTags.Keys.FirstOrDefault(k => k.Equals(songId, StringComparison.OrdinalIgnoreCase));
+            return key != null ? Current.SongTags[key].ToList() : new List<string>();
+        }
+    }
+
+    public static List<string> ToggleSongTag(string songId, string tag)
+    {
+        lock (_lock)
+        {
+            Current.SongTags ??= new(StringComparer.OrdinalIgnoreCase);
+            var key = Current.SongTags.Keys.FirstOrDefault(k => k.Equals(songId, StringComparison.OrdinalIgnoreCase)) ?? songId;
+            if (!Current.SongTags.TryGetValue(key, out var list))
+            {
+                list = new List<string>();
+                Current.SongTags[key] = list;
+            }
+            if (list.Any(t => t.Equals(tag, StringComparison.OrdinalIgnoreCase)))
+                list.RemoveAll(t => t.Equals(tag, StringComparison.OrdinalIgnoreCase));
+            else
+                list.Add(tag);
+            Save();
+            return list.ToList();
+        }
+    }
+
+    public static SongScoreRecord? GetHighScore(string songId)
+    {
+        lock (_lock)
+        {
+            Current.LocalHighScores ??= new(StringComparer.OrdinalIgnoreCase);
+            var key = Current.LocalHighScores.Keys.FirstOrDefault(k => k.Equals(songId, StringComparison.OrdinalIgnoreCase));
+            return key != null ? Current.LocalHighScores[key] : null;
+        }
+    }
+
+    public static bool RecordHighScore(string songId, int score, double percent, int streak, bool isFc, string difficulty = "Expert")
+    {
+        lock (_lock)
+        {
+            Current.LocalHighScores ??= new(StringComparer.OrdinalIgnoreCase);
+            var key = Current.LocalHighScores.Keys.FirstOrDefault(k => k.Equals(songId, StringComparison.OrdinalIgnoreCase)) ?? songId;
+            int stars = percent >= 95 ? 5 : percent >= 85 ? 4 : percent >= 75 ? 3 : percent >= 60 ? 2 : 1;
+            if (Current.LocalHighScores.TryGetValue(key, out var prev) && prev.BestScore >= score && (!isFc || prev.IsFullCombo))
+                return false;
+
+            Current.LocalHighScores[key] = new SongScoreRecord
+            {
+                BestScore = Math.Max(score, prev?.BestScore ?? 0),
+                BestPercent = Math.Max(percent, prev?.BestPercent ?? 0),
+                BestStreak = Math.Max(streak, prev?.BestStreak ?? 0),
+                Stars = Math.Max(stars, prev?.Stars ?? 0),
+                IsFullCombo = isFc || (prev?.IsFullCombo ?? false),
+                Difficulty = difficulty,
+                AchievedAt = DateTime.UtcNow
+            };
+            Save();
+            return true;
         }
     }
 
