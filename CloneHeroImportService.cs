@@ -100,14 +100,17 @@ public class CloneHeroImportService
             var targetDir = Path.Combine(songsRoot, $"{Sanitize(artist)} - {Sanitize(title)}");
             Directory.CreateDirectory(targetDir);
 
-            // Copy all chart, ini, and audio files cleanly
+            // Copy all chart, ini, album art, and audio files cleanly
             string[] audioExts = new[] { ".ogg", ".mp3", ".wav", ".opus", ".flac" };
+            string[] artNames = new[] { "album.png", "album.jpg", "album.jpeg", "cover.png", "cover.jpg" };
             foreach (var file in Directory.GetFiles(songSourceDir))
             {
                 var ext = Path.GetExtension(file).ToLowerInvariant();
-                if (ext == ".chart" || ext == ".mid" || ext == ".ini" || audioExts.Contains(ext))
+                var fname = Path.GetFileName(file);
+                if (ext == ".chart" || ext == ".mid" || ext == ".ini" || audioExts.Contains(ext) ||
+                    artNames.Contains(fname, StringComparer.OrdinalIgnoreCase))
                 {
-                    File.Copy(file, Path.Combine(targetDir, Path.GetFileName(file)), overwrite: true);
+                    File.Copy(file, Path.Combine(targetDir, fname), overwrite: true);
                 }
             }
 
@@ -367,8 +370,9 @@ public class CloneHeroImportService
         }
         catch (Exception ex)
         {
-            _logger.LogWarn($"[CLONE HERO IMPORT] Failed: {ex.Message}");
-            return new CloneHeroImportResult { Success = false, Message = $"Clone Hero import error: {ex.Message}" };
+            var realMsg = ex.InnerException?.Message ?? ex.Message;
+            _logger.LogWarn($"[CLONE HERO IMPORT] Failed: {realMsg}");
+            return new CloneHeroImportResult { Success = false, Message = $"Clone Hero import error: {realMsg}" };
         }
         finally
         {

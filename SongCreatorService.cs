@@ -168,11 +168,35 @@ public class SongCreatorService
             var targetDir = Path.Combine(_defaultSongsDir, dirName);
             Directory.CreateDirectory(targetDir);
 
-            // 1. Save Audio File
+            // 1. Save Audio File + extract embedded album cover art if present
             var audioExt = Path.GetExtension(audioFileName);
             if (string.IsNullOrEmpty(audioExt)) audioExt = ".mp3";
             var audioFullPath = Path.Combine(targetDir, $"song{audioExt.ToLowerInvariant()}");
             File.WriteAllBytes(audioFullPath, audioBytes);
+
+            try
+            {
+                var albumArtOut = Path.Combine(targetDir, "album.jpg");
+                if (!File.Exists(albumArtOut))
+                {
+                    var ff = HoneycombCompilerService.EnsureFfmpeg(HoneycombCompilerService.FindHoneycombDirectory());
+                    if (!string.IsNullOrEmpty(ff) && File.Exists(ff))
+                    {
+                        var psi = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = ff,
+                            Arguments = $"-y -i \"{audioFullPath}\" -an -frames:v 1 -q:v 3 \"{albumArtOut}\"",
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+                        using var p = System.Diagnostics.Process.Start(psi);
+                        p?.WaitForExit(5000);
+                        if (File.Exists(albumArtOut) && new FileInfo(albumArtOut).Length < 512)
+                            try { File.Delete(albumArtOut); } catch { }
+                    }
+                }
+            }
+            catch { }
 
             // 2. Analyze Full Mix for BPM & Duration
             onProgress?.Invoke(12, "Analyzing audio tempo (BPM) & guitar frequencies...");

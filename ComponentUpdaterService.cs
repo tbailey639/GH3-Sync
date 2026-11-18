@@ -136,7 +136,7 @@ public class ComponentUpdaterService
             Status = hasFfmpeg ? $"Ready ({ffVer})" : "Not found"
         });
 
-        // 5. Stem Separator & Pitch Engine (Demucs + Basic Pitch)
+        // 5. Stem Separator & AI Pitch Engine (Demucs + Basic Pitch + Librosa)
         var stemStatus = _demucs.GetStatus();
         var py = stemStatus.ExecutablePath;
         bool hasStems = stemStatus.IsInstalled && !string.IsNullOrEmpty(py);
@@ -144,7 +144,7 @@ public class ComponentUpdaterService
         bool stemOutdated = hasStems && await CheckIfDemucsOutdatedAsync(py, ct);
         items.Add(new ComponentStatusItem
         {
-            Name = "Stem Separator & Pitch Engine (Demucs + Basic Pitch)",
+            Name = "AI Stem & Chart Engine (Demucs + Basic Pitch + Librosa)",
             IsInstalled = hasStems,
             InstalledVersion = stemVer,
             LatestVersion = stemOutdated ? "Update available" : stemVer,
@@ -152,6 +152,19 @@ public class ComponentUpdaterService
             Status = !hasStems
                 ? "Optional component (install from Song Creator tab)"
                 : (stemOutdated ? "Package update available (safe rollback enabled)" : $"Ready ({stemVer})")
+        });
+
+        // 6. Chorus Encore Community Chart Engine (built into GH3-Sync)
+        bool chorusOnline = await CheckChorusEncoreReachableAsync(ct);
+        items.Add(new ComponentStatusItem
+        {
+            Name = "Chorus Encore Community Charts & SNG Extractor",
+            IsInstalled = true,
+            InstalledVersion = $"Built-in v{UpdateService.CurrentAppVersion}",
+            LatestVersion = $"Built-in v{UpdateService.CurrentAppVersion}",
+            UpdateAvailable = false,
+            Status = chorusOnline ? "Online & connected (api.enchor.us)" : "Offline (check internet connection)",
+            ReleaseUrl = "https://www.enchor.us"
         });
 
         return items;
@@ -164,7 +177,7 @@ public class ComponentUpdaterService
     public async Task<CompatibilityReport> RunCompatibilitySelfTestAsync(CancellationToken ct = default)
     {
         var report = new CompatibilityReport();
-        _logger.LogInfo("[COMPATIBILITY] Starting 5-point compatibility self-test...");
+        _logger.LogInfo("[COMPATIBILITY] Starting 6-point compatibility self-test...");
 
         // Check 1: Honeycomb & GH-Toolkit-Core reflection entry points
         try
@@ -262,7 +275,7 @@ public class ComponentUpdaterService
             report.Checks.Add(new CompatibilityCheckItem { Component = "GH3 & customs.pak.xen", Passed = false, Details = ex.Message });
         }
 
-        // Check 4: Portable Stem Separator / Pitch Engine (if installed)
+        // Check 4: Portable AI Stem & Pitch Engine (Demucs + Basic Pitch + Librosa + SoundFile + SciPy)
         try
         {
             var st = _demucs.GetStatus();
@@ -271,29 +284,48 @@ public class ComponentUpdaterService
             {
                 report.Checks.Add(new CompatibilityCheckItem
                 {
-                    Component = "Stem Separator & Pitch Engine",
+                    Component = "AI Stem & Chart Engine",
                     Passed = true,
                     Details = "Not installed yet (optional — built-in DSP note engine active)."
                 });
             }
             else
             {
-                var (exitCode, output) = await RunProcessOutputAsync(py, "-c \"import torch, demucs, onnxruntime; print('OK:' + torch.__version__)\"", ct);
+                var checkCode = "import sys,types,importlib,os\n" +
+                    "try:\n    import pkg_resources\nexcept ImportError:\n    _p=types.ModuleType('pkg_resources'); _p.resource_filename=lambda a,b: os.path.join(os.path.dirname(importlib.import_module(a).__file__),b); sys.modules['pkg_resources']=_p\n" +
+                    "import torch, demucs, librosa, soundfile, scipy, onnxruntime, basic_pitch\nprint('OK:torch=' + torch.__version__ + ',librosa=' + librosa.__version__)";
+                var (exitCode, output) = await RunProcessOutputAsync(py, $"-c \"{checkCode}\"", ct);
                 bool ok = exitCode == 0 && output.Contains("OK:");
                 report.Checks.Add(new CompatibilityCheckItem
                 {
-                    Component = "Stem Separator & Pitch Engine",
+                    Component = "AI Stem & Chart Engine",
                     Passed = ok,
-                    Details = ok ? $"Python stem runtime healthy ({output.Trim()})." : $"Import check failed: {output.Trim()}"
+                    Details = ok ? $"Demucs + Basic Pitch + Librosa healthy ({output.Split('\n').LastOrDefault(l => l.Contains("OK:"))?.Trim()})." : $"Import check failed: {output.Trim()}"
                 });
             }
         }
         catch (Exception ex)
         {
-            report.Checks.Add(new CompatibilityCheckItem { Component = "Stem Separator & Pitch Engine", Passed = false, Details = ex.Message });
+            report.Checks.Add(new CompatibilityCheckItem { Component = "AI Stem & Chart Engine", Passed = false, Details = ex.Message });
         }
 
-        // Check 5: AppData Storage & Model Cache Writability
+        // Check 5: Chorus Encore Community Chart API
+        try
+        {
+            bool chorusOk = await CheckChorusEncoreReachableAsync(ct);
+            report.Checks.Add(new CompatibilityCheckItem
+            {
+                Component = "Chorus Encore Community Charts",
+                Passed = chorusOk,
+                Details = chorusOk ? "Chorus Encore API (api.enchor.us) reachable and SNG extractor ready." : "Chorus Encore API unreachable (offline or blocked)."
+            });
+        }
+        catch (Exception ex)
+        {
+            report.Checks.Add(new CompatibilityCheckItem { Component = "Chorus Encore Community Charts", Passed = false, Details = ex.Message });
+        }
+
+        // Check 6: AppData Storage & Model Cache Writability
         try
         {
             var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GH3-Sync");
@@ -318,8 +350,9 @@ public class ComponentUpdaterService
     }
 
     /// <summary>
-    /// Safely updates portable Demucs & Basic Pitch packages with a pre-update pip freeze snapshot
-    /// and automatic rollback if the post-update compatibility self-test fails.
+    /// Safely updates portable Demucs, Basic Pitch, Librosa, SoundFile, &amp; SciPy packages with a pre-update
+    /// pip freeze snapshot, safe dependency pins (numpy&lt;2, setuptools&lt;81), and automatic rollback if the
+    /// post-update compatibility self-test fails.
     /// </summary>
     public async Task<(bool Success, string Message)> UpdateStemToolsWithRollbackAsync(
         Action<string>? onStatus = null,
@@ -344,8 +377,11 @@ public class ComponentUpdaterService
                 File.WriteAllText(snapshotFile, freezeOut);
             }
 
-            onStatus?.Invoke("Updating Demucs & Basic Pitch packages...");
-            var (upCode, upOut) = await RunProcessOutputAsync(py, "-m pip install --upgrade demucs basic-pitch onnxruntime --quiet", ct);
+            onStatus?.Invoke("Updating Demucs, Basic Pitch, Librosa & SoundFile packages (with safe compatibility pins)...");
+            var (upCode, upOut) = await RunProcessOutputAsync(
+                py,
+                "-m pip install --upgrade --no-warn-script-location \"setuptools<81\" \"numpy<2\" demucs basic-pitch librosa soundfile scipy onnxruntime --quiet",
+                ct);
 
             onStatus?.Invoke("Running post-update compatibility self-test...");
             var report = await RunCompatibilitySelfTestAsync(ct);
@@ -353,7 +389,7 @@ public class ComponentUpdaterService
 
             if (upCode == 0 && (stemCheck == null || stemCheck.Passed))
             {
-                return (true, "Stem tools updated and verified compatible!");
+                return (true, "AI Stem & Chart Engine updated and verified compatible!");
             }
 
             if (AppConfig.Current.AutoRollbackOnFailedUpdate && File.Exists(snapshotFile))
@@ -370,6 +406,17 @@ public class ComponentUpdaterService
         {
             return (false, $"Stem tool update failed: {ex.Message}");
         }
+    }
+
+    private async Task<bool> CheckChorusEncoreReachableAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var content = new StringContent("{\"search\":\"test\",\"page\":1,\"instrument\":\"guitar\",\"source\":\"website\"}", Encoding.UTF8, "application/json");
+            using var resp = await _http.PostAsync("https://api.enchor.us/search", content, ct);
+            return resp.IsSuccessStatusCode;
+        }
+        catch { return false; }
     }
 
     private async Task<(string Tag, string Url)> GetLatestGitHubTagAsync(string owner, string repo, CancellationToken ct)
@@ -403,7 +450,7 @@ public class ComponentUpdaterService
     {
         var (code, output) = await RunProcessOutputAsync(
             pythonExe,
-            "-c \"import importlib.metadata as m; print('demucs ' + m.version('demucs') + ', basic-pitch ' + (m.version('basic-pitch') if 'basic-pitch' in [d.metadata['Name'].lower() for d in m.distributions()] else 'n/a'))\"",
+            "-c \"import importlib.metadata as m; vs={d.metadata['Name'].lower(): d.version for d in m.distributions()}; print(f\\\"demucs {vs.get('demucs','?')}, basic-pitch {vs.get('basic-pitch','?')}, librosa {vs.get('librosa','?')}\\\")\"",
             ct);
         return code == 0 && !string.IsNullOrWhiteSpace(output) ? output.Trim() : "Installed";
     }
@@ -413,7 +460,8 @@ public class ComponentUpdaterService
         var (code, output) = await RunProcessOutputAsync(pythonExe, "-m pip list --outdated --format=json", ct);
         if (code != 0 || string.IsNullOrWhiteSpace(output)) return false;
         return output.Contains("\"demucs\"", StringComparison.OrdinalIgnoreCase) ||
-               output.Contains("\"basic-pitch\"", StringComparison.OrdinalIgnoreCase);
+               output.Contains("\"basic-pitch\"", StringComparison.OrdinalIgnoreCase) ||
+               output.Contains("\"librosa\"", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<(int ExitCode, string Output)> RunProcessOutputAsync(string exe, string args, CancellationToken ct)

@@ -45,9 +45,14 @@ public partial class MainWindow : Window
     private List<CustomSongInfo> _allSongs = new();
     private readonly HashSet<string> _selectedExportIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<QueuedSongItem> _batchQueue = new();
+    private int _editingQueueIndex = -1;
     private string _currentFilter = "all";
     private bool _friendCodeVisible = false;
     private int _creatorPreviewStartMs = 5000;
+
+    // Community chart search cache for client-side filtering & sorting
+    private List<CommunityChartEntry> _lastCommunitySearchCharts = new();
+    private string _lastCommunitySearchQuery = "";
 
     // P2P comparison state
     private LibraryManifest? _lastPeerManifest;
@@ -311,62 +316,163 @@ public partial class MainWindow : Window
         var dropped = e.Data.GetData(System.Windows.DataFormats.FileDrop) as string[];
         if (dropped == null || dropped.Length == 0) return;
 
-        var first = dropped[0];
+        var audioExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp3", ".wav", ".ogg" };
+        var chartExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".chart", ".mid", ".midi" };
+        var archiveExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".gh3pack", ".gh3song", ".sgh" };
 
-        // 1. Folder dropped -> check Clone Hero folder!
-        if (Directory.Exists(first))
+        var droppedAudios = dropped.Where(p => File.Exists(p) && audioExts.Contains(Path.GetExtension(p))).ToList();
+        var droppedCharts = dropped.Where(p => File.Exists(p) && chartExts.Contains(Path.GetExtension(p))).ToList();
+        var droppedImportables = dropped.Where(p =>
+            (Directory.Exists(p) && CloneHeroImportService.IsCloneHeroFolder(p)) ||
+            (File.Exists(p) && (Path.GetExtension(p).Equals(".sng", StringComparison.OrdinalIgnoreCase) ||
+                                Path.GetExtension(p).Equals(".zip", StringComparison.OrdinalIgnoreCase) ||
+                                archiveExts.Contains(Path.GetExtension(p))))).ToList();
+
+        // 1. Multiple audio files dropped -> auto-populate interactive Batch Queue!
+        if (droppedAudios.Count >= 2)
         {
-            if (CloneHeroImportService.IsCloneHeroFolder(first))
+            NavCreator.IsChecked = true;
+            CrProgressLabel.Text = $"Queueing {droppedAudios.Count} dropped audio files...";
+            int added = 0;
+            foreach (var audioPath in droppedAudios)
             {
-                NavImport.IsChecked = true;
-                await RunCloneHeroImportAsync(first);
-                return;
+                var (artist, title) = ParseArtistTitleFromFileName(audioPath);
+                double bpm = 120.0;
+                try
+                {
+                    var analysis = await Task.Run(() => _audioAnalysis.AnalyzeAudio(audioPath));
+                    if (analysis.Success && analysis.Bpm > 30) bpm = analysis.Bpm;
+                }
+                catch { }
+
+                var req = new SongCreationRequest
+                {
+                    Title = title,
+                    Artist = artist,
+                    Album = "",
+                    Year = int.TryParse(CrYearBox.Text, out var y) ? y : DateTime.Now.Year,
+                    Genre = string.IsNullOrWhiteSpace(CrGenreBox.Text) ? "Rock" : CrGenreBox.Text.Trim(),
+                    Charter = string.IsNullOrWhiteSpace(CrCharterBox.Text) ? "Mad Scientist" : CrCharterBox.Text.Trim(),
+                    Bpm = bpm,
+                    PreviewStartMs = 5000,
+                    AutoDetectBpm = true,
+                    UseVariableTempoMap = CrVariableTempoChk.IsChecked == true,
+                    ChartFeel = (CrFeelCombo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Standard",
+                    InstrumentFocus = GetSelectedFocusValue(),
+                    AudioMixMode = GetSelectedAudioModeValue(),
+                    AutoGenerateChart = true,
+                    SeparateStemsWithDemucs = CrSeparateStemsChk.IsChecked == true && _demucs.GetStatus().IsInstalled,
+                    AutoCompile = CrAutoCompileChk.IsChecked == true
+                };
+                _batchQueue.Add(new QueuedSongItem(req, audioPath, null));
+                added++;
+                CrProgressLabel.Text = $"Queued {added}/{droppedAudios.Count}: {artist} - {title} ({bpm:F1} BPM)";
             }
-            WpfMessageBox.Show("Dropped folder does not contain notes.chart, notes.mid, or song.ini.", "Folder Drop", MessageBoxButton.OK, MessageBoxImage.Information);
+
+            CrProgressLabel.Text = $"Added {added} songs to Batch Queue! Click Edit on any card to customize or click Compile Batch Queue.";
+            RenderBatchQueue();
             return;
         }
 
-        var ext = Path.GetExtension(first).ToLowerInvariant();
-        if (ext is ".mp3" or ".wav" or ".ogg")
+        // 2. Single audio (+ optional paired chart) dropped
+        if (droppedAudios.Count == 1)
         {
             NavCreator.IsChecked = true;
-            await LoadAudioIntoCreatorAsync(first);
+            await LoadAudioIntoCreatorAsync(droppedAudios[0], overwriteTitleArtist: true);
+            if (droppedCharts.Count > 0)
+            {
+                ModeUploadRadio.IsChecked = true;
+                CrChartPathBox.Text = droppedCharts[0];
+            }
+            return;
         }
-        else if (ext is ".chart" or ".mid" or ".midi")
+
+        // 3. Single chart/MIDI dropped
+        if (droppedCharts.Count > 0 && droppedImportables.Count == 0)
         {
             NavCreator.IsChecked = true;
             ModeUploadRadio.IsChecked = true;
-            CrChartPathBox.Text = first;
+            CrChartPathBox.Text = droppedCharts[0];
+            return;
         }
-        else if (ext == ".sng")
-        {
-            NavImport.IsChecked = true;
-            await RunCloneHeroImportAsync(first);
-        }
-        else if (ext is ".gh3pack" or ".gh3song" or ".sgh")
-        {
-            NavImport.IsChecked = true;
-            ImportStandardArchive(first);
-        }
-        else if (ext == ".zip")
-        {
-            NavImport.IsChecked = true;
-            // Auto-detect whether this .zip is a Clone Hero song or a GH3-Sync pack
-            bool looksCloneHero = false;
-            try
-            {
-                using var zip = ZipFile.OpenRead(first);
-                looksCloneHero = zip.Entries.Any(en =>
-                    en.Name.Equals("notes.chart", StringComparison.OrdinalIgnoreCase) ||
-                    en.Name.Equals("notes.mid", StringComparison.OrdinalIgnoreCase));
-            }
-            catch { }
 
-            if (looksCloneHero)
-                await RunCloneHeroImportAsync(first);
-            else
-                ImportStandardArchive(first);
+        // 4. One or more .sng / .zip / .gh3song / .gh3pack / Clone Hero folders dropped -> import ALL sequentially!
+        if (droppedImportables.Count > 0)
+        {
+            NavImport.IsChecked = true;
+            int total = droppedImportables.Count;
+            int okCount = 0;
+            for (int i = 0; i < total; i++)
+            {
+                var item = droppedImportables[i];
+                if (Directory.Exists(item))
+                {
+                    ChImportStatusText.Text = total > 1 ? $"[{i + 1}/{total}] Converting Clone Hero folder '{Path.GetFileName(item)}'..." : "Starting Clone Hero conversion...";
+                    if (await RunCloneHeroImportAsync(item)) okCount++;
+                    continue;
+                }
+
+                var ext = Path.GetExtension(item).ToLowerInvariant();
+                if (ext == ".sng")
+                {
+                    ChImportStatusText.Text = total > 1 ? $"[{i + 1}/{total}] Converting '{Path.GetFileName(item)}'..." : "Starting Clone Hero conversion...";
+                    if (await RunCloneHeroImportAsync(item)) okCount++;
+                }
+                else if (archiveExts.Contains(ext))
+                {
+                    ImportStandardArchive(item);
+                    okCount++;
+                }
+                else if (ext == ".zip")
+                {
+                    bool looksCloneHero = false;
+                    try
+                    {
+                        using var zip = ZipFile.OpenRead(item);
+                        looksCloneHero = zip.Entries.Any(en =>
+                            en.Name.Equals("notes.chart", StringComparison.OrdinalIgnoreCase) ||
+                            en.Name.Equals("notes.mid", StringComparison.OrdinalIgnoreCase));
+                    }
+                    catch { }
+
+                    if (looksCloneHero)
+                    {
+                        if (await RunCloneHeroImportAsync(item)) okCount++;
+                    }
+                    else
+                    {
+                        ImportStandardArchive(item);
+                        okCount++;
+                    }
+                }
+            }
+
+            if (total > 1)
+            {
+                ChImportStatusText.Text = $"Batch drop complete: imported {okCount} / {total} item(s).";
+                RefreshSongsList();
+            }
+            return;
         }
+
+        if (Directory.Exists(dropped[0]))
+        {
+            WpfMessageBox.Show("Dropped folder does not contain notes.chart, notes.mid, or song.ini.", "Folder Drop", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+    }
+
+    private static (string Artist, string Title) ParseArtistTitleFromFileName(string path)
+    {
+        var fname = Path.GetFileNameWithoutExtension(path).Trim();
+        if (fname.Contains(" - "))
+        {
+            var parts = fname.Split(" - ", 2);
+            var artist = parts[0].Trim();
+            var title = parts[1].Trim();
+            return (string.IsNullOrWhiteSpace(artist) ? "Unknown Artist" : artist,
+                    string.IsNullOrWhiteSpace(title) ? fname : title);
+        }
+        return ("Unknown Artist", fname);
     }
 
     // ==================== NAVIGATION ====================
@@ -855,13 +961,14 @@ public partial class MainWindow : Window
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        // Select Checkbox + Favorite Star
+        // Select Checkbox + Favorite Star + Album Art Thumbnail
         var leftTools = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
         var selChk = new System.Windows.Controls.CheckBox
         {
             IsChecked = _selectedExportIds.Contains(song.SongId),
             ToolTip = "Select for Pack Export",
-            Margin = new Thickness(0, 0, 6, 0)
+            Margin = new Thickness(0, 0, 6, 0),
+            VerticalAlignment = VerticalAlignment.Center
         };
         selChk.Checked += (_, _) => { _selectedExportIds.Add(song.SongId); ExportSelectedBtn.Content = $"Export Selected ({_selectedExportIds.Count})"; };
         selChk.Unchecked += (_, _) => { _selectedExportIds.Remove(song.SongId); ExportSelectedBtn.Content = $"Export Selected ({_selectedExportIds.Count})"; };
@@ -875,12 +982,43 @@ public partial class MainWindow : Window
             FontSize = 16,
             Cursor = System.Windows.Input.Cursors.Hand,
             Padding = new Thickness(4, 0, 4, 0),
+            VerticalAlignment = VerticalAlignment.Center,
             ToolTip = "Toggle Favorite"
         };
         favBtn.Click += (_, _) => { AppConfig.ToggleFavorite(song.SongId); RefreshSongsList(); };
 
         leftTools.Children.Add(selChk);
         leftTools.Children.Add(favBtn);
+
+        // Optional Real Album Art Thumbnail (non-locking BitmapCacheOption.OnLoad)
+        if (!string.IsNullOrWhiteSpace(song.AlbumArtPath) && File.Exists(song.AlbumArtPath))
+        {
+            try
+            {
+                var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                bmp.BeginInit();
+                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bmp.DecodePixelWidth = 88;
+                bmp.UriSource = new Uri(song.AlbumArtPath, UriKind.Absolute);
+                bmp.EndInit();
+                bmp.Freeze();
+
+                var artBorder = new Border
+                {
+                    Width = 44,
+                    Height = 44,
+                    CornerRadius = new CornerRadius(7),
+                    Margin = new Thickness(6, 0, 2, 0),
+                    BorderBrush = (WpfBrush)FindResource("BorderSubtle"),
+                    BorderThickness = new Thickness(1),
+                    ClipToBounds = true,
+                    Background = new ImageBrush(bmp) { Stretch = Stretch.UniformToFill }
+                };
+                leftTools.Children.Add(artBorder);
+            }
+            catch { }
+        }
+
         Grid.SetColumn(leftTools, 0);
         grid.Children.Add(leftTools);
 
@@ -893,9 +1031,11 @@ public partial class MainWindow : Window
             FontWeight = FontWeights.Bold,
             Foreground = (WpfBrush)FindResource("TextPrimary")
         });
+        var metaLine = $"{(string.IsNullOrWhiteSpace(song.Artist) ? "Unknown Artist" : song.Artist)}  •  {song.SongId}  •  {sizeMb:F1} MB";
+        if (song.ExpertNoteCount > 0) metaLine += $"  •  {song.ExpertNoteCount:N0} notes";
         infoStack.Children.Add(new TextBlock
         {
-            Text = $"{(string.IsNullOrWhiteSpace(song.Artist) ? "Unknown Artist" : song.Artist)}  •  {song.SongId}  •  {sizeMb:F1} MB",
+            Text = metaLine,
             FontSize = 11.5,
             Foreground = (WpfBrush)FindResource("TextMuted"),
             Margin = new Thickness(0, 2, 0, 5)
@@ -910,6 +1050,14 @@ public partial class MainWindow : Window
             badgeRow.Children.Add(MakeBadge("Synced / Imported", "#172554", "#93C5FD"));
 
         badgeRow.Children.Add(MakeBadge(song.IsProject ? "Project Only" : "In-Game Ready", song.IsProject ? "#422006" : "#064E3B", song.IsProject ? "#FDE047" : "#6EE7B7"));
+        if (!string.IsNullOrWhiteSpace(song.AudioModeTag))
+        {
+            var modeBg = song.AudioModeTag.Contains("Multi-Stem", StringComparison.OrdinalIgnoreCase) ? "#0F3D3E" : "#1E293B";
+            var modeFg = song.AudioModeTag.Contains("Multi-Stem", StringComparison.OrdinalIgnoreCase) ? "#5EEAD4" : "#CBD5E1";
+            badgeRow.Children.Add(MakeBadge(song.AudioModeTag, modeBg, modeFg));
+        }
+        if (song.HasCoopBass)
+            badgeRow.Children.Add(MakeBadge("Co-Op Bass", "#312E81", "#C7D2FE"));
         if (song.IsInLobbySetlist)
             badgeRow.Children.Add(MakeBadge("Lobby Auto-Sync", "#431407", "#FDBA74"));
         if (song.IsTemporarySessionSong)
@@ -992,6 +1140,20 @@ public partial class MainWindow : Window
 
         if (hasProject)
         {
+            if (isOnogami && hasAudio)
+            {
+                var rechartBtn = new System.Windows.Controls.Button
+                {
+                    Content = "Re-Chart AI v2",
+                    Style = (Style)FindResource("BlueButton"),
+                    Padding = new Thickness(9, 5, 9, 5),
+                    Margin = new Thickness(0, 0, 5, 0),
+                    ToolTip = "Load this song's audio into ONOGAMI Song Creator to re-chart with the latest AI Engine v2"
+                };
+                rechartBtn.Click += async (_, _) => await RechartSongInCreatorAsync(song);
+                btnRow.Children.Add(rechartBtn);
+            }
+
             var editBtn = new System.Windows.Controls.Button
             {
                 Content = "Edit",
@@ -1175,6 +1337,43 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task RechartSongInCreatorAsync(CustomSongInfo song)
+    {
+        var audio = Gh3Service.FindSongAudioPath(song, preferGuitarStem: false);
+        if (string.IsNullOrWhiteSpace(audio) || !File.Exists(audio))
+        {
+            WpfMessageBox.Show("Source audio file was not found in this song's project folder.", "Re-Chart AI v2", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        _editingQueueIndex = -1;
+        AddToQueueBtn.Content = "+ Add to Batch Queue";
+        NavCreator.IsChecked = true;
+        ModeAutoGenRadio.IsChecked = true;
+        CrAudioPathBox.Text = audio;
+        CrTitleBox.Text = song.Title;
+        CrArtistBox.Text = song.Artist;
+        CrFocusCombo.SelectedIndex = 0; // Auto (Smart Multi-Lead)
+        CrAudioMixCombo.SelectedIndex = 0; // Auto
+        CrFeelCombo.SelectedIndex = 1; // Standard
+        CrProgressLabel.Text = $"Loaded '{song.Title}' for AI v2 re-charting! Click 'Create & Compile Song' when ready.";
+        await DetectBpmInternalAsync(audio);
+    }
+
+    private void ExportLobbyPack_Click(object sender, RoutedEventArgs e)
+    {
+        var lobbyIds = new HashSet<string>(AppConfig.Current.LobbySetlistIds ?? new(), StringComparer.OrdinalIgnoreCase);
+        var lobbySongs = _allSongs.Where(s => lobbyIds.Contains(s.SongId) || s.IsInLobbySetlist).ToList();
+        if (lobbySongs.Count == 0)
+        {
+            WpfMessageBox.Show(
+                "Your Lobby Setlist is currently empty.\n\nClick '+ Lobby' on the songs you want to play with friends in My Customs, then click 'Export Lobby Pack'.",
+                "Export Lobby Pack", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        ExportSongsSubset(lobbySongs, $"GH3_Lobby_Setlist_{lobbySongs.Count}songs.gh3pack");
+    }
+
     private void ExportSelectedPack_Click(object sender, RoutedEventArgs e)
     {
         if (_selectedExportIds.Count == 0)
@@ -1315,19 +1514,15 @@ public partial class MainWindow : Window
             await LoadAudioIntoCreatorAsync(dlg.FileName);
     }
 
-    private async Task LoadAudioIntoCreatorAsync(string path)
+    private async Task LoadAudioIntoCreatorAsync(string path, bool overwriteTitleArtist = false)
     {
         CrAudioPathBox.Text = path;
-        if (string.IsNullOrWhiteSpace(CrTitleBox.Text))
+        if (overwriteTitleArtist || string.IsNullOrWhiteSpace(CrTitleBox.Text))
         {
-            var fname = Path.GetFileNameWithoutExtension(path);
-            if (fname.Contains(" - "))
-            {
-                var parts = fname.Split(" - ", 2);
-                if (string.IsNullOrWhiteSpace(CrArtistBox.Text)) CrArtistBox.Text = parts[0].Trim();
-                CrTitleBox.Text = parts[1].Trim();
-            }
-            else CrTitleBox.Text = fname;
+            var (artist, title) = ParseArtistTitleFromFileName(path);
+            if (overwriteTitleArtist || string.IsNullOrWhiteSpace(CrArtistBox.Text))
+                CrArtistBox.Text = artist == "Unknown Artist" ? CrArtistBox.Text : artist;
+            CrTitleBox.Text = title;
         }
         await DetectBpmInternalAsync(path);
     }
@@ -1366,6 +1561,56 @@ public partial class MainWindow : Window
         else BpmStatusLabel.Text = res.Message;
     }
 
+    private string GetSelectedFocusValue() => CrFocusCombo.SelectedIndex switch
+    {
+        1 => "Guitar",
+        2 => "Keys / Synth / Sax",
+        3 => "Bass",
+        4 => "Vocals",
+        _ => "Auto"
+    };
+
+    private string GetSelectedAudioModeValue() => CrAudioMixCombo.SelectedIndex switch
+    {
+        1 => "StudioMaster",
+        2 => "IsolatedStems",
+        3 => "HybridBlend",
+        _ => "Auto"
+    };
+
+    private void SelectComboByFocus(string? focus)
+    {
+        CrFocusCombo.SelectedIndex = focus switch
+        {
+            "Guitar" => 1,
+            "Keys / Synth / Sax" => 2,
+            "Bass" => 3,
+            "Vocals" => 4,
+            _ => 0
+        };
+    }
+
+    private void SelectComboByAudioMode(string? mode)
+    {
+        CrAudioMixCombo.SelectedIndex = mode switch
+        {
+            "StudioMaster" => 1,
+            "IsolatedStems" => 2,
+            "HybridBlend" => 3,
+            _ => 0
+        };
+    }
+
+    private void SelectComboByFeel(string? feel)
+    {
+        CrFeelCombo.SelectedIndex = feel switch
+        {
+            "Casual" => 0,
+            "Shredder" => 2,
+            _ => 1
+        };
+    }
+
     private SongCreationRequest? BuildCreatorRequest(out string audioPath, out string? chartPath)
     {
         audioPath = CrAudioPathBox.Text.Trim();
@@ -1389,23 +1634,6 @@ public partial class MainWindow : Window
             return null;
         }
 
-        string focusVal = CrFocusCombo.SelectedIndex switch
-        {
-            1 => "Guitar",
-            2 => "Keys / Synth / Sax",
-            3 => "Bass",
-            4 => "Vocals",
-            _ => "Auto"
-        };
-
-        string audioModeVal = CrAudioMixCombo.SelectedIndex switch
-        {
-            1 => "StudioMaster",
-            2 => "IsolatedStems",
-            3 => "HybridBlend",
-            _ => "Auto"
-        };
-
         return new SongCreationRequest
         {
             Title = CrTitleBox.Text.Trim(),
@@ -1419,12 +1647,49 @@ public partial class MainWindow : Window
             AutoDetectBpm = true,
             UseVariableTempoMap = CrVariableTempoChk.IsChecked == true,
             ChartFeel = (CrFeelCombo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Standard",
-            InstrumentFocus = focusVal,
-            AudioMixMode = audioModeVal,
+            InstrumentFocus = GetSelectedFocusValue(),
+            AudioMixMode = GetSelectedAudioModeValue(),
             AutoGenerateChart = autoGen,
             SeparateStemsWithDemucs = CrSeparateStemsChk.IsChecked == true && _demucs.GetStatus().IsInstalled,
             AutoCompile = CrAutoCompileChk.IsChecked == true
         };
+    }
+
+    private bool ConfirmDuplicateHandlingIfNeeded(string title, string artist)
+    {
+        var existing = _gh3.FindDuplicateInstalledSong(title, artist);
+        if (existing == null) return true;
+
+        var choice = WpfMessageBox.Show(
+            $"A song matching '{existing.Title}' by '{existing.Artist}' ({existing.SongId}) is already installed in Guitar Hero III.\n\n" +
+            "• Click YES to replace the existing version cleanly (recommended — removes the old one first).\n" +
+            "• Click NO to keep both versions.\n" +
+            "• Click CANCEL to abort.",
+            "Duplicate Song Detected",
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Question);
+
+        if (choice == MessageBoxResult.Cancel) return false;
+        if (choice == MessageBoxResult.Yes)
+        {
+            StopAudioPreview();
+            var del = _gh3.DeleteCustomSong(existing, deleteProjectFolder: true, _saves, _logger);
+            _logger.LogInfo($"[DUPLICATE] Replaced existing '{existing.SongId}': {del.Message}");
+            RefreshSongsList();
+        }
+        return true;
+    }
+
+    private void ClearCreatorInputFields()
+    {
+        CrTitleBox.Text = "";
+        CrArtistBox.Text = "";
+        CrAlbumBox.Text = "";
+        CrAudioPathBox.Text = "";
+        CrChartPathBox.Text = "";
+        BpmStatusLabel.Text = "";
+        _editingQueueIndex = -1;
+        AddToQueueBtn.Content = "+ Add to Batch Queue";
     }
 
     private void AddToQueueBtn_Click(object sender, RoutedEventArgs e)
@@ -1432,16 +1697,212 @@ public partial class MainWindow : Window
         var req = BuildCreatorRequest(out var audioPath, out var chartPath);
         if (req == null) return;
 
-        _batchQueue.Add(new QueuedSongItem(req, audioPath, chartPath));
-        RunQueueBtn.Visibility = Visibility.Visible;
-        RunQueueBtn.Content = $"Compile Batch Queue ({_batchQueue.Count})";
-        BatchQueueListText.Visibility = Visibility.Visible;
-        BatchQueueListText.Text = "Batch Queue: " + string.Join("  •  ", _batchQueue.Select((q, i) => $"{i + 1}. {q.Meta.Artist} - {q.Meta.Title}"));
+        var item = new QueuedSongItem(req, audioPath, chartPath);
+        if (_editingQueueIndex >= 0 && _editingQueueIndex < _batchQueue.Count)
+        {
+            _batchQueue[_editingQueueIndex] = item;
+            CrProgressLabel.Text = $"Saved changes to queued song #{_editingQueueIndex + 1}: {req.Artist} - {req.Title}";
+        }
+        else
+        {
+            _batchQueue.Add(item);
+            CrProgressLabel.Text = $"Added '{req.Artist} - {req.Title}' to Batch Queue ({_batchQueue.Count} total).";
+        }
 
-        CrTitleBox.Text = "";
-        CrArtistBox.Text = "";
-        CrAudioPathBox.Text = "";
-        CrChartPathBox.Text = "";
+        ClearCreatorInputFields();
+        RenderBatchQueue();
+    }
+
+    private void ClearQueueBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_batchQueue.Count == 0) return;
+        _batchQueue.Clear();
+        _editingQueueIndex = -1;
+        AddToQueueBtn.Content = "+ Add to Batch Queue";
+        RenderBatchQueue();
+    }
+
+    private void LoadQueueItemForEdit(int index)
+    {
+        if (index < 0 || index >= _batchQueue.Count) return;
+        var item = _batchQueue[index];
+        _editingQueueIndex = index;
+
+        CrAudioPathBox.Text = item.AudioPath;
+        if (!string.IsNullOrWhiteSpace(item.ChartPath))
+        {
+            ModeUploadRadio.IsChecked = true;
+            CrChartPathBox.Text = item.ChartPath;
+        }
+        else
+        {
+            ModeAutoGenRadio.IsChecked = true;
+            CrChartPathBox.Text = "";
+        }
+
+        CrTitleBox.Text = item.Meta.Title;
+        CrArtistBox.Text = item.Meta.Artist;
+        CrAlbumBox.Text = item.Meta.Album;
+        CrYearBox.Text = item.Meta.Year.ToString();
+        CrGenreBox.Text = item.Meta.Genre;
+        CrCharterBox.Text = item.Meta.Charter;
+        CrBpmBox.Text = item.Meta.Bpm.ToString("F1");
+        CrVariableTempoChk.IsChecked = item.Meta.UseVariableTempoMap;
+        SelectComboByFeel(item.Meta.ChartFeel);
+        SelectComboByFocus(item.Meta.InstrumentFocus);
+        SelectComboByAudioMode(item.Meta.AudioMixMode);
+        _creatorPreviewStartMs = item.Meta.PreviewStartMs;
+        CrPreviewStartLabel.Text = $"Menu Preview Start: {_creatorPreviewStartMs / 1000.0:F1}s";
+
+        AddToQueueBtn.Content = $"Save Queue Edit (#{index + 1})";
+        CrProgressLabel.Text = $"Editing queued song #{index + 1} ('{item.Meta.Title}') — tweak settings above and click 'Save Queue Edit (#{index + 1})'.";
+        RenderBatchQueue();
+    }
+
+    private void RenderBatchQueue()
+    {
+        BatchQueuePanel.Children.Clear();
+        bool hasItems = _batchQueue.Count > 0;
+        RunQueueBtn.Visibility = hasItems ? Visibility.Visible : Visibility.Collapsed;
+        ClearQueueBtn.Visibility = hasItems ? Visibility.Visible : Visibility.Collapsed;
+        BatchQueueContainer.Visibility = hasItems ? Visibility.Visible : Visibility.Collapsed;
+
+        RunQueueBtn.Content = $"Compile Batch Queue ({_batchQueue.Count})";
+        BatchQueueHeaderText.Text = $"Batch Queue ({_batchQueue.Count} {(_batchQueue.Count == 1 ? "song" : "songs")})";
+
+        for (int idx = 0; idx < _batchQueue.Count; idx++)
+        {
+            int i = idx;
+            var item = _batchQueue[i];
+            bool isEditing = i == _editingQueueIndex;
+
+            var card = new Border
+            {
+                Background = (WpfBrush)FindResource("BgCard"),
+                BorderBrush = isEditing ? (WpfBrush)FindResource("AccentFlame") : (WpfBrush)FindResource("BorderSubtle"),
+                BorderThickness = new Thickness(isEditing ? 1.5 : 1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(11, 8, 11, 8),
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            info.Children.Add(new TextBlock
+            {
+                Text = $"#{i + 1}  {item.Meta.Title}  —  {item.Meta.Artist}{(isEditing ? "  [Editing]" : "")}",
+                FontSize = 13,
+                FontWeight = FontWeights.Bold,
+                Foreground = (WpfBrush)FindResource(isEditing ? "AccentFlameText" : "TextPrimary"),
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+            var modeStr = string.IsNullOrWhiteSpace(item.ChartPath)
+                ? $"{item.Meta.Bpm:F1} BPM • {item.Meta.ChartFeel} • Focus: {item.Meta.InstrumentFocus} • Audio: {item.Meta.AudioMixMode}"
+                : $"Existing Chart: {Path.GetFileName(item.ChartPath)} • Audio: {item.Meta.AudioMixMode}";
+            info.Children.Add(new TextBlock
+            {
+                Text = $"{modeStr} • {Path.GetFileName(item.AudioPath)}",
+                FontSize = 11,
+                Foreground = (WpfBrush)FindResource("TextMuted"),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(0, 2, 0, 0)
+            });
+            Grid.SetColumn(info, 0);
+            grid.Children.Add(info);
+
+            var btns = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
+
+            var editBtn = new System.Windows.Controls.Button
+            {
+                Content = "Edit",
+                Style = (Style)FindResource(isEditing ? "FlameButton" : "OutlineButton"),
+                Padding = new Thickness(9, 4, 9, 4),
+                Margin = new Thickness(0, 0, 4, 0),
+                ToolTip = "Load this queued song into the form above to customize its BPM, Feel, Focus, or Audio Mode"
+            };
+            editBtn.Click += (_, _) => LoadQueueItemForEdit(i);
+
+            var upBtn = new System.Windows.Controls.Button
+            {
+                Content = "▲",
+                Style = (Style)FindResource("OutlineButton"),
+                Padding = new Thickness(7, 4, 7, 4),
+                Margin = new Thickness(0, 0, 4, 0),
+                IsEnabled = i > 0,
+                ToolTip = "Move Up"
+            };
+            upBtn.Click += (_, _) =>
+            {
+                (_batchQueue[i - 1], _batchQueue[i]) = (_batchQueue[i], _batchQueue[i - 1]);
+                if (_editingQueueIndex == i) _editingQueueIndex = i - 1;
+                else if (_editingQueueIndex == i - 1) _editingQueueIndex = i;
+                RenderBatchQueue();
+            };
+
+            var downBtn = new System.Windows.Controls.Button
+            {
+                Content = "▼",
+                Style = (Style)FindResource("OutlineButton"),
+                Padding = new Thickness(7, 4, 7, 4),
+                Margin = new Thickness(0, 0, 4, 0),
+                IsEnabled = i < _batchQueue.Count - 1,
+                ToolTip = "Move Down"
+            };
+            downBtn.Click += (_, _) =>
+            {
+                (_batchQueue[i + 1], _batchQueue[i]) = (_batchQueue[i], _batchQueue[i + 1]);
+                if (_editingQueueIndex == i) _editingQueueIndex = i + 1;
+                else if (_editingQueueIndex == i + 1) _editingQueueIndex = i;
+                RenderBatchQueue();
+            };
+
+            var previewBtn = new System.Windows.Controls.Button
+            {
+                Content = "▶",
+                Style = (Style)FindResource("OutlineButton"),
+                Padding = new Thickness(8, 4, 8, 4),
+                Margin = new Thickness(0, 0, 4, 0),
+                ToolTip = "Preview Audio"
+            };
+            previewBtn.Click += (_, _) => PlayAudioPreview(item.AudioPath, $"{item.Meta.Artist} - {item.Meta.Title}");
+
+            var removeBtn = new System.Windows.Controls.Button
+            {
+                Content = "✕",
+                Style = (Style)FindResource("DangerButton"),
+                Padding = new Thickness(8, 4, 8, 4),
+                ToolTip = "Remove from Batch Queue"
+            };
+            removeBtn.Click += (_, _) =>
+            {
+                _batchQueue.RemoveAt(i);
+                if (_editingQueueIndex == i)
+                {
+                    _editingQueueIndex = -1;
+                    AddToQueueBtn.Content = "+ Add to Batch Queue";
+                }
+                else if (_editingQueueIndex > i)
+                {
+                    _editingQueueIndex--;
+                    AddToQueueBtn.Content = $"Save Queue Edit (#{_editingQueueIndex + 1})";
+                }
+                RenderBatchQueue();
+            };
+
+            btns.Children.Add(editBtn);
+            btns.Children.Add(upBtn);
+            btns.Children.Add(downBtn);
+            btns.Children.Add(previewBtn);
+            btns.Children.Add(removeBtn);
+            Grid.SetColumn(btns, 1);
+            grid.Children.Add(btns);
+
+            card.Child = grid;
+            BatchQueuePanel.Children.Add(card);
+        }
     }
 
     private async void RunQueueBtn_Click(object sender, RoutedEventArgs e)
@@ -1450,6 +1911,7 @@ public partial class MainWindow : Window
 
         CreateSongSubmitBtn.IsEnabled = false;
         RunQueueBtn.IsEnabled = false;
+        ClearQueueBtn.IsEnabled = false;
         CrProgressBar.Visibility = Visibility.Visible;
         int succeeded = 0;
 
@@ -1471,14 +1933,16 @@ public partial class MainWindow : Window
 
             WpfMessageBox.Show($"Batch queue complete: {succeeded} / {_batchQueue.Count} song(s) created & compiled!", "Batch Complete", MessageBoxButton.OK, MessageBoxImage.Information);
             _batchQueue.Clear();
-            RunQueueBtn.Visibility = Visibility.Collapsed;
-            BatchQueueListText.Visibility = Visibility.Collapsed;
+            _editingQueueIndex = -1;
+            AddToQueueBtn.Content = "+ Add to Batch Queue";
+            RenderBatchQueue();
             RefreshSongsList();
         }
         finally
         {
             CreateSongSubmitBtn.IsEnabled = true;
             RunQueueBtn.IsEnabled = true;
+            ClearQueueBtn.IsEnabled = true;
             CrProgressBar.Visibility = Visibility.Collapsed;
             CrProgressLabel.Text = "";
         }
@@ -1496,6 +1960,8 @@ public partial class MainWindow : Window
 
         var meta = BuildCreatorRequest(out var audioPath, out var chartPath);
         if (meta == null) return;
+
+        if (!ConfirmDuplicateHandlingIfNeeded(meta.Title, meta.Artist)) return;
 
         CreateSongSubmitBtn.IsEnabled = false;
         CrProgressBar.Visibility = Visibility.Visible;
@@ -1558,12 +2024,30 @@ public partial class MainWindow : Window
     private async void CommunitySearchBtn_Click(object sender, RoutedEventArgs e)
         => await RunCommunityChartSearchAsync();
 
+    private void CommunityFilter_Changed(object sender, RoutedEventArgs e)
+    {
+        if (IsLoaded && _lastCommunitySearchCharts.Count > 0)
+            RenderCommunitySearchResults();
+    }
+
+    private void CommunitySortCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (IsLoaded && _lastCommunitySearchCharts.Count > 0)
+            RenderCommunitySearchResults();
+    }
+
+    private void CommunityClassicFretsChk_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        AppConfig.Current.ConvertOpenNotesToClassicGh3 = CommunityClassicFretsChk.IsChecked == true;
+        AppConfig.Save();
+    }
+
     private async Task RunCommunityChartSearchAsync()
     {
         var query = CommunitySearchBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(query))
         {
-            // Auto-build query from Title + Artist fields if user already filled them in!
             var autoQ = $"{CrTitleBox.Text.Trim()} {CrArtistBox.Text.Trim()}".Trim();
             if (!string.IsNullOrWhiteSpace(autoQ))
             {
@@ -1588,77 +2072,13 @@ public partial class MainWindow : Window
         try
         {
             var res = await _communityCharts.SearchChartsAsync(query);
+            _lastCommunitySearchQuery = query;
+            _lastCommunitySearchCharts = res.Success ? res.Charts : new List<CommunityChartEntry>();
             CommunitySearchStatus.Text = res.Message;
 
-            if (!res.Success || res.Charts.Count == 0) return;
+            if (!res.Success || _lastCommunitySearchCharts.Count == 0) return;
 
-            foreach (var ch in res.Charts)
-            {
-                var card = new Border
-                {
-                    Background = (WpfBrush)FindResource("BgCardHover"),
-                    BorderBrush = (WpfBrush)FindResource("BorderSubtle"),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(8),
-                    Padding = new Thickness(12, 8, 12, 8),
-                    Margin = new Thickness(0, 0, 0, 6)
-                };
-
-                var grid = new Grid();
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-                var infoStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-                infoStack.Children.Add(new TextBlock
-                {
-                    Text = $"{ch.Name}  —  {ch.Artist}",
-                    FontSize = 13,
-                    FontWeight = FontWeights.Bold,
-                    Foreground = (WpfBrush)FindResource("TextPrimary"),
-                    TextTrimming = TextTrimming.CharacterEllipsis
-                });
-                infoStack.Children.Add(new TextBlock
-                {
-                    Text = $"Charter: {(string.IsNullOrWhiteSpace(ch.Charter) ? "Community" : ch.Charter)}  •  {ch.DurationDisplay}  •  {ch.BadgesSummary}",
-                    FontSize = 11,
-                    Foreground = (WpfBrush)FindResource("TextMuted"),
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    Margin = new Thickness(0, 2, 0, 0)
-                });
-                Grid.SetColumn(infoStack, 0);
-                grid.Children.Add(infoStack);
-
-                var btnStack = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
-
-                var useChartBtn = new System.Windows.Controls.Button
-                {
-                    Content = "Use Chart",
-                    Style = (Style)FindResource("OutlineButton"),
-                    Padding = new Thickness(10, 5, 10, 5),
-                    Margin = new Thickness(0, 0, 6, 0),
-                    ToolTip = "Download chart/MIDI and load it into ONOGAMI Song Creator to pair with your own audio"
-                };
-                useChartBtn.Click += async (_, _) => await UseCommunityChartInCreatorAsync(ch);
-
-                var installBtn = new System.Windows.Controls.Button
-                {
-                    Content = "⚡ Install to GH3",
-                    Style = (Style)FindResource("GreenButton"),
-                    Padding = new Thickness(11, 5, 11, 5),
-                    ToolTip = "Download complete chart + audio and compile directly into Guitar Hero III"
-                };
-                installBtn.Click += async (_, _) => await InstallCommunityChartToGh3Async(ch);
-
-                btnStack.Children.Add(useChartBtn);
-                btnStack.Children.Add(installBtn);
-                Grid.SetColumn(btnStack, 1);
-                grid.Children.Add(btnStack);
-
-                card.Child = grid;
-                CommunityResultsPanel.Children.Add(card);
-            }
-
-            CommunityResultsScroll.Visibility = Visibility.Visible;
+            RenderCommunitySearchResults();
         }
         finally
         {
@@ -1666,8 +2086,104 @@ public partial class MainWindow : Window
         }
     }
 
+    private void RenderCommunitySearchResults()
+    {
+        CommunityResultsPanel.Children.Clear();
+
+        IEnumerable<CommunityChartEntry> filtered = _lastCommunitySearchCharts;
+        if (CommunityFullDiffsOnlyChk.IsChecked == true)
+            filtered = filtered.Where(c => c.HasFullDiffs);
+
+        filtered = CommunitySortCombo.SelectedIndex switch
+        {
+            1 => filtered.OrderByDescending(c => c.ExpertNoteCount),
+            2 => filtered.OrderByDescending(c => c.DiffGuitar).ThenByDescending(c => c.ExpertNoteCount),
+            _ => filtered
+        };
+
+        var display = filtered.ToList();
+        if (display.Count == 0)
+        {
+            CommunitySearchStatus.Text = $"No charts for '{_lastCommunitySearchQuery}' match the active filters (try unchecking 'Full Difficulties Only').";
+            CommunityResultsScroll.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        CommunitySearchStatus.Text = $"Showing {display.Count} of {_lastCommunitySearchCharts.Count} community chart(s) for '{_lastCommunitySearchQuery}':";
+
+        foreach (var ch in display)
+        {
+            var card = new Border
+            {
+                Background = (WpfBrush)FindResource("BgCardHover"),
+                BorderBrush = (WpfBrush)FindResource("BorderSubtle"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 8, 12, 8),
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var infoStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            infoStack.Children.Add(new TextBlock
+            {
+                Text = $"{ch.Name}  —  {ch.Artist}",
+                FontSize = 13,
+                FontWeight = FontWeights.Bold,
+                Foreground = (WpfBrush)FindResource("TextPrimary"),
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+            infoStack.Children.Add(new TextBlock
+            {
+                Text = $"Charter: {(string.IsNullOrWhiteSpace(ch.Charter) ? "Community" : ch.Charter)}  •  {ch.DurationDisplay}  •  {ch.BadgesSummary}",
+                FontSize = 11,
+                Foreground = (WpfBrush)FindResource("TextMuted"),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(0, 2, 0, 0)
+            });
+            Grid.SetColumn(infoStack, 0);
+            grid.Children.Add(infoStack);
+
+            var btnStack = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
+
+            var useChartBtn = new System.Windows.Controls.Button
+            {
+                Content = "Use Chart",
+                Style = (Style)FindResource("OutlineButton"),
+                Padding = new Thickness(10, 5, 10, 5),
+                Margin = new Thickness(0, 0, 6, 0),
+                ToolTip = "Download chart/MIDI and load it into ONOGAMI Song Creator to pair with your own audio"
+            };
+            useChartBtn.Click += async (_, _) => await UseCommunityChartInCreatorAsync(ch);
+
+            var installBtn = new System.Windows.Controls.Button
+            {
+                Content = "⚡ Install to GH3",
+                Style = (Style)FindResource("GreenButton"),
+                Padding = new Thickness(11, 5, 11, 5),
+                ToolTip = "Download complete chart + audio and compile directly into Guitar Hero III"
+            };
+            installBtn.Click += async (_, _) => await InstallCommunityChartToGh3Async(ch);
+
+            btnStack.Children.Add(useChartBtn);
+            btnStack.Children.Add(installBtn);
+            Grid.SetColumn(btnStack, 1);
+            grid.Children.Add(btnStack);
+
+            card.Child = grid;
+            CommunityResultsPanel.Children.Add(card);
+        }
+
+        CommunityResultsScroll.Visibility = Visibility.Visible;
+    }
+
     private async Task InstallCommunityChartToGh3Async(CommunityChartEntry chart)
     {
+        if (!ConfirmDuplicateHandlingIfNeeded(chart.Name, chart.Artist)) return;
+
         CommunitySearchBtn.IsEnabled = false;
         CommunityInstallProgress.Visibility = Visibility.Visible;
         CommunityInstallProgress.Value = 5;
@@ -2283,11 +2799,11 @@ public partial class MainWindow : Window
             await RunCloneHeroImportAsync(dlg.FileName);
     }
 
-    private async Task RunCloneHeroImportAsync(string path)
+    private async Task<bool> RunCloneHeroImportAsync(string path)
     {
         ChImportProgress.Visibility = Visibility.Visible;
         ChImportProgress.Value = 5;
-        ChImportStatusText.Text = "Starting Clone Hero conversion...";
+        ChImportStatusText.Text = $"Starting Clone Hero conversion ({Path.GetFileName(path)})...";
 
         var res = await _cloneHero.ImportFromZipOrFolderAsync(path, autoCompile: true, (pct, msg) => Dispatcher.Invoke(() =>
         {
@@ -2298,6 +2814,7 @@ public partial class MainWindow : Window
         ChImportProgress.Visibility = Visibility.Collapsed;
         ChImportStatusText.Text = res.Message;
         if (res.Success) RefreshSongsList();
+        return res.Success;
     }
 
     private void ImportArchiveBtn_Click(object sender, RoutedEventArgs e)
@@ -2430,14 +2947,18 @@ public partial class MainWindow : Window
         SettingsSubGeneral.Visibility = tag == "general" ? Visibility.Visible : Visibility.Collapsed;
         SettingsSubAppearance.Visibility = tag == "appearance" ? Visibility.Visible : Visibility.Collapsed;
         SettingsSubUpdates.Visibility = tag == "updates" ? Visibility.Visible : Visibility.Collapsed;
-        SettingsSubAbout.Visibility = tag == "about" ? Visibility.Visible : Visibility.Collapsed;
+        SettingsSubHowTo.Visibility = tag == "howto" ? Visibility.Visible : Visibility.Collapsed;
+        SettingsSubCredits.Visibility = tag == "credits" ? Visibility.Visible : Visibility.Collapsed;
+        SettingsSubLogs.Visibility = tag == "logs" ? Visibility.Visible : Visibility.Collapsed;
 
         TabSetGeneralBtn.Style = (Style)FindResource(tag == "general" ? "FlameButton" : "OutlineButton");
         TabSetAppearanceBtn.Style = (Style)FindResource(tag == "appearance" ? "FlameButton" : "OutlineButton");
         TabSetUpdatesBtn.Style = (Style)FindResource(tag == "updates" ? "FlameButton" : "OutlineButton");
-        TabSetAboutBtn.Style = (Style)FindResource(tag == "about" ? "FlameButton" : "OutlineButton");
+        TabSetHowToBtn.Style = (Style)FindResource(tag == "howto" ? "FlameButton" : "OutlineButton");
+        TabSetCreditsBtn.Style = (Style)FindResource(tag == "credits" ? "FlameButton" : "OutlineButton");
+        TabSetLogsBtn.Style = (Style)FindResource(tag == "logs" ? "FlameButton" : "OutlineButton");
 
-        if (tag == "about") RefreshLogs();
+        if (tag == "logs") RefreshLogs();
     }
 
     private void LoadSettingsForm()
@@ -2450,7 +2971,36 @@ public partial class MainWindow : Window
         SettingsP2pOnlineChk.IsChecked = AppConfig.Current.P2pOnlineEnabled;
         SettingsLobbyCapBox.Text = AppConfig.Current.MaxLobbyAutoSyncSongs.ToString();
         SettingsAutoRollbackChk.IsChecked = AppConfig.Current.AutoRollbackOnFailedUpdate;
+        SettingsOverlayEnabledChk.IsChecked = AppConfig.Current.EnableInGameOverlay;
+        SettingsOverlayCornerCombo.SelectedIndex = AppConfig.Current.InGameOverlayCorner switch
+        {
+            "TopLeft" => 1,
+            "BottomRight" => 2,
+            "BottomLeft" => 3,
+            _ => 0
+        };
+        CommunityClassicFretsChk.IsChecked = AppConfig.Current.ConvertOpenNotesToClassicGh3;
         UpdateThemeCardSelection();
+    }
+
+    private void SettingsOverlay_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        AppConfig.Current.EnableInGameOverlay = SettingsOverlayEnabledChk.IsChecked == true;
+        AppConfig.Save();
+    }
+
+    private void SettingsOverlayCorner_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        AppConfig.Current.InGameOverlayCorner = SettingsOverlayCornerCombo.SelectedIndex switch
+        {
+            1 => "TopLeft",
+            2 => "BottomRight",
+            3 => "BottomLeft",
+            _ => "TopRight"
+        };
+        AppConfig.Save();
     }
 
     private void SettingsBrowseGamePath_Click(object sender, RoutedEventArgs e)
@@ -2620,7 +3170,7 @@ public partial class MainWindow : Window
     private async void RunCompatTestBtn_Click(object sender, RoutedEventArgs e)
     {
         RunCompatTestBtn.IsEnabled = false;
-        UpdatesCompStatusText.Text = "Running 5-point post-update compatibility self-test...";
+        UpdatesCompStatusText.Text = "Running 6-point post-update compatibility self-test...";
         CompatTestPanel.Children.Clear();
         try
         {

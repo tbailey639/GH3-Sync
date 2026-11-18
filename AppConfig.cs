@@ -74,6 +74,9 @@ public class AppConfigData
     public bool MinimizeOnGameLaunch { get; set; } = true;
     public string HoneycombPath { get; set; } = "";
     public bool AutoCompileCreatedSongs { get; set; } = true;
+    public bool EnableInGameOverlay { get; set; } = true;
+    public string InGameOverlayCorner { get; set; } = "TopRight"; // TopRight, TopLeft, BottomRight, BottomLeft
+    public bool ConvertOpenNotesToClassicGh3 { get; set; } = false;
 }
 
 public static class AppConfig

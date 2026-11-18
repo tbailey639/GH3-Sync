@@ -1,17 +1,28 @@
 using System;
 using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
+using System.Threading;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Effects;
+using System.Windows.Shapes;
+using System.Windows.Threading;
 
 namespace GH3_Sync;
 
+/// <summary>
+/// Per-pixel alpha transparent click-through Electric Guitar HUD overlay for Guitar Hero III.
+/// Displays ONLY the sleek Electric Guitar silhouette in the chosen corner:
+/// - Electric Neon Blue strings when P2P connection is active (filling 0->100% during active sync)
+/// - Regular metallic steel strings when offline/disconnected
+/// </summary>
 public class InGameOverlay
 {
     private readonly SyncLogger _logger;
     private Thread? _overlayThread;
-    private OverlayForm? _form;
+    private GuitarHudWindow? _window;
 
     public InGameOverlay(SyncLogger logger)
     {
@@ -24,10 +35,8 @@ public class InGameOverlay
         {
             try
             {
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
-                _form = new OverlayForm(_logger);
-                Application.Run(_form);
+                _window = new GuitarHudWindow(_logger);
+                Dispatcher.Run();
             }
             catch (Exception ex)
             {
@@ -42,15 +51,24 @@ public class InGameOverlay
     }
 }
 
-public class OverlayForm : Form
+internal sealed class GuitarHudWindow : Window
 {
     private readonly SyncLogger _logger;
-    private readonly System.Windows.Forms.Timer _trackTimer;
-    private OverlayStatus _status = new();
-    private bool _gh3WasRunning = false;
+    private readonly DispatcherTimer _trackTimer;
+    private OverlayStatus _status;
+    private bool _gh3WasRunning;
+    private bool _lastConnectionActive = true;
+
+    private readonly RectangleGeometry _blueStringsClip;
+    private readonly Canvas _blueStringsLayer;
+
+    private const int GWL_EXSTYLE = -20;
+    private const int WS_EX_TRANSPARENT = 0x00000020;
+    private const int WS_EX_TOOLWINDOW = 0x00000080;
+    private const int WS_EX_NOACTIVATE = 0x08000000;
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct RECT
+    private struct RECT
     {
         public int Left;
         public int Top;
@@ -59,72 +77,270 @@ public class OverlayForm : Form
     }
 
     [DllImport("user32.dll")]
-    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
     [DllImport("user32.dll")]
-    public static extern bool IsIconic(IntPtr hWnd);
+    private static extern bool IsIconic(IntPtr hWnd);
 
     [DllImport("user32.dll")]
-    public static extern IntPtr GetForegroundWindow();
+    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
 
-    public OverlayForm(SyncLogger logger)
+    [DllImport("user32.dll")]
+    private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    public GuitarHudWindow(SyncLogger logger)
     {
         _logger = logger;
         _status = logger.CurrentStatus;
         _logger.StatusChanged += OnStatusChanged;
 
-        FormBorderStyle = FormBorderStyle.None;
+        WindowStyle = WindowStyle.None;
+        AllowsTransparency = true;
+        Background = System.Windows.Media.Brushes.Transparent;
+        Topmost = true;
         ShowInTaskbar = false;
-        TopMost = true;
-        DoubleBuffered = true;
-        Size = new Size(340, 75);
-        StartPosition = FormStartPosition.Manual;
-        Location = new Point(-2000, -2000); // Offscreen until GH3 is found
+        ShowActivated = false;
+        ResizeMode = ResizeMode.NoResize;
+        IsHitTestVisible = false;
+        Width = 224;
+        Height = 58;
+        Left = -4000;
+        Top = -4000;
 
-        BackColor = Color.FromArgb(12, 14, 20);
-        TransparencyKey = Color.Magenta;
+        (_blueStringsLayer, _blueStringsClip) = BuildGuitarVisual();
+        UpdateStringAppearance();
 
-        _trackTimer = new System.Windows.Forms.Timer { Interval = 250 };
-        _trackTimer.Tick += (s, e) => TrackGh3Window();
+        SourceInitialized += (_, _) =>
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero)
+            {
+                int exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+                SetWindowLong(hwnd, GWL_EXSTYLE, exStyle | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
+            }
+        };
+
+        _trackTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _trackTimer.Tick += (_, _) => TrackGh3Window();
         _trackTimer.Start();
     }
 
-    protected override CreateParams CreateParams
+    private (Canvas BlueLayer, RectangleGeometry ClipRect) BuildGuitarVisual()
     {
-        get
+        var bodyGrad = new LinearGradientBrush(
+            System.Windows.Media.Color.FromArgb(235, 30, 41, 59),
+            System.Windows.Media.Color.FromArgb(240, 2, 6, 23),
+            new System.Windows.Point(0, 0), new System.Windows.Point(1, 1));
+
+        var fretGrad = new LinearGradientBrush(
+            System.Windows.Media.Color.FromArgb(240, 30, 27, 46),
+            System.Windows.Media.Color.FromArgb(240, 15, 23, 42),
+            new System.Windows.Point(0, 0), new System.Windows.Point(0, 1));
+
+        var blueGrad = new LinearGradientBrush { StartPoint = new System.Windows.Point(0, 0), EndPoint = new System.Windows.Point(1, 0) };
+        blueGrad.GradientStops.Add(new GradientStop(System.Windows.Media.Color.FromRgb(29, 78, 216), 0.0));
+        blueGrad.GradientStops.Add(new GradientStop(System.Windows.Media.Color.FromRgb(14, 165, 233), 0.45));
+        blueGrad.GradientStops.Add(new GradientStop(System.Windows.Media.Color.FromRgb(56, 189, 248), 0.82));
+        blueGrad.GradientStops.Add(new GradientStop(System.Windows.Media.Color.FromRgb(186, 230, 253), 1.0));
+
+        var root = new Canvas { Width = 640, Height = 150, Background = System.Windows.Media.Brushes.Transparent };
+
+        // Double-Cutaway Electric Guitar Silhouette (matches the updater guitar 1:1!)
+        root.Children.Add(new System.Windows.Shapes.Path
         {
-            var cp = base.CreateParams;
-            // WS_EX_TRANSPARENT (0x20) + WS_EX_NOACTIVATE (0x08000000)
-            cp.ExStyle |= 0x00000020 | 0x08000000;
-            return cp;
+            Data = Geometry.Parse("M 54,18 C 22,18 14,44 14,75 C 14,106 22,132 54,132 C 82,132 100,114 118,116 C 138,118 156,138 182,132 C 202,127 212,112 204,98 C 198,90 202,88 210,88 L 210,62 C 202,62 198,60 206,50 C 216,36 202,16 178,18 C 154,20 138,34 118,34 C 100,34 82,18 54,18 Z"),
+            Fill = bodyGrad,
+            Stroke = new SolidColorBrush(System.Windows.Media.Color.FromRgb(71, 85, 105)),
+            StrokeThickness = 2.6,
+            Effect = new DropShadowEffect { Color = Colors.Black, BlurRadius = 10, ShadowDepth = 2, Opacity = 0.75 }
+        });
+
+        // Pickguard
+        root.Children.Add(new System.Windows.Shapes.Path
+        {
+            Data = Geometry.Parse("M 112,44 C 138,40 166,30 190,44 C 196,54 196,96 188,108 C 166,118 134,112 112,106 Z"),
+            Fill = new SolidColorBrush(System.Windows.Media.Color.FromRgb(22, 32, 51)),
+            Stroke = new SolidColorBrush(System.Windows.Media.Color.FromRgb(51, 65, 85)),
+            StrokeThickness = 1.2
+        });
+
+        // Bridge & Pickups
+        void AddRect(double l, double t, double w, double h, System.Windows.Media.Color fill, System.Windows.Media.Color stroke, double rx = 2.5)
+        {
+            var r = new System.Windows.Shapes.Rectangle
+            {
+                Width = w, Height = h, RadiusX = rx, RadiusY = rx,
+                Fill = new SolidColorBrush(fill),
+                Stroke = new SolidColorBrush(stroke),
+                StrokeThickness = 1.2
+            };
+            Canvas.SetLeft(r, l);
+            Canvas.SetTop(r, t);
+            root.Children.Add(r);
         }
+
+        AddRect(76, 52, 10, 46, System.Windows.Media.Color.FromRgb(71, 85, 105), System.Windows.Media.Color.FromRgb(148, 163, 184));
+        AddRect(90, 50, 16, 50, System.Windows.Media.Color.FromRgb(51, 65, 85), System.Windows.Media.Color.FromRgb(148, 163, 184));
+        AddRect(118, 50, 22, 50, System.Windows.Media.Color.FromRgb(11, 17, 32), System.Windows.Media.Color.FromRgb(100, 116, 139));
+        AddRect(160, 50, 22, 50, System.Windows.Media.Color.FromRgb(11, 17, 32), System.Windows.Media.Color.FromRgb(100, 116, 139));
+
+        // Knobs
+        foreach (var (kl, kt) in new[] { (138.0, 112.0), (158.0, 116.0) })
+        {
+            var knob = new Ellipse
+            {
+                Width = 12, Height = 12,
+                Fill = new SolidColorBrush(System.Windows.Media.Color.FromRgb(51, 65, 85)),
+                Stroke = new SolidColorBrush(System.Windows.Media.Color.FromRgb(148, 163, 184)),
+                StrokeThickness = 1.2
+            };
+            Canvas.SetLeft(knob, kl);
+            Canvas.SetTop(knob, kt);
+            root.Children.Add(knob);
+        }
+
+        // Fretboard Neck
+        var neck = new System.Windows.Shapes.Rectangle
+        {
+            Width = 322, Height = 40,
+            Fill = fretGrad,
+            Stroke = new SolidColorBrush(System.Windows.Media.Color.FromRgb(71, 85, 105)),
+            StrokeThickness = 1.6
+        };
+        Canvas.SetLeft(neck, 204);
+        Canvas.SetTop(neck, 55);
+        root.Children.Add(neck);
+
+        // Silver Frets
+        var fretBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(100, 116, 139));
+        foreach (double fx in new[] { 224, 246, 268, 291, 314, 338, 362, 386, 411, 436, 461, 486, 510 })
+        {
+            root.Children.Add(new Line { X1 = fx, Y1 = 56, X2 = fx, Y2 = 94, Stroke = fretBrush, StrokeThickness = 1.4 });
+        }
+
+        // Nut
+        AddRect(524, 54, 5, 42, System.Windows.Media.Color.FromRgb(203, 213, 225), System.Windows.Media.Color.FromRgb(203, 213, 225), 1.5);
+
+        // Headstock
+        root.Children.Add(new System.Windows.Shapes.Path
+        {
+            Data = Geometry.Parse("M 529,56 L 548,46 L 622,42 L 628,58 L 614,76 L 624,96 L 612,106 L 548,100 L 529,94 Z"),
+            Fill = bodyGrad,
+            Stroke = new SolidColorBrush(System.Windows.Media.Color.FromRgb(71, 85, 105)),
+            StrokeThickness = 2.2
+        });
+
+        // 6 Tuning Pegs
+        foreach (var (pl, pt) in new[] { (552.0, 36.0), (574.0, 34.0), (596.0, 32.0), (552.0, 102.0), (574.0, 104.0), (596.0, 106.0) })
+        {
+            var peg = new Ellipse
+            {
+                Width = 10, Height = 10,
+                Fill = new SolidColorBrush(System.Windows.Media.Color.FromRgb(100, 116, 139)),
+                Stroke = new SolidColorBrush(System.Windows.Media.Color.FromRgb(203, 213, 225)),
+                StrokeThickness = 1.2
+            };
+            Canvas.SetLeft(peg, pl);
+            Canvas.SetTop(peg, pt);
+            root.Children.Add(peg);
+        }
+
+        // Regular Metallic Steel Strings (shown when disconnected / offline)
+        var steelBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(148, 163, 184));
+        double[] stringYs = { 60, 66, 72, 78, 84, 90 };
+        double[] steelThick = { 1.6, 1.8, 2.0, 2.2, 2.5, 2.8 };
+        for (int i = 0; i < 6; i++)
+        {
+            root.Children.Add(new Line
+            {
+                X1 = 92, Y1 = stringYs[i], X2 = 526, Y2 = stringYs[i],
+                Stroke = steelBrush, StrokeThickness = steelThick[i]
+            });
+        }
+
+        // Glowing Electric Blue Strings Layer (shown when P2P connection is active; fills 0->100% during sync!)
+        var clipRect = new RectangleGeometry(new Rect(92, 48, 434, 54));
+        var blueLayer = new Canvas
+        {
+            Width = 640, Height = 150,
+            Clip = clipRect,
+            Effect = new DropShadowEffect { Color = System.Windows.Media.Color.FromRgb(0, 210, 255), BlurRadius = 14, ShadowDepth = 0, Opacity = 0.95 }
+        };
+        double[] blueThick = { 2.2, 2.4, 2.6, 2.8, 3.0, 3.3 };
+        for (int i = 0; i < 6; i++)
+        {
+            blueLayer.Children.Add(new Line
+            {
+                X1 = 92, Y1 = stringYs[i], X2 = 526, Y2 = stringYs[i],
+                Stroke = blueGrad, StrokeThickness = blueThick[i],
+                StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round
+            });
+        }
+        root.Children.Add(blueLayer);
+
+        Content = new Viewbox { Stretch = Stretch.Uniform, Child = root };
+        return (blueLayer, clipRect);
     }
 
     private void OnStatusChanged(OverlayStatus newStatus)
     {
-        if (IsDisposed) return;
         try
         {
-            BeginInvoke(new Action(() =>
+            Dispatcher.BeginInvoke(() =>
             {
                 _status = newStatus;
-                Invalidate();
-            }));
+                UpdateStringAppearance();
+            });
         }
         catch { }
     }
 
+    private void UpdateStringAppearance()
+    {
+        bool connectionActive = AppConfig.Current.P2pOnlineEnabled && _status.State != SyncState.Failed;
+        _lastConnectionActive = connectionActive;
+
+        if (!connectionActive)
+        {
+            // Disconnected / Offline: regular silver strings only
+            _blueStringsLayer.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        _blueStringsLayer.Visibility = Visibility.Visible;
+        if (_status.State == SyncState.Syncing && _status.ProgressPercent > 0 && _status.ProgressPercent < 100)
+        {
+            double fillW = 434.0 * (_status.ProgressPercent / 100.0);
+            _blueStringsClip.Rect = new Rect(92, 48, fillW, 54);
+        }
+        else
+        {
+            // Active & Connected: all 6 strings fully lit electric blue!
+            _blueStringsClip.Rect = new Rect(92, 48, 434, 54);
+        }
+    }
+
     private void TrackGh3Window()
     {
+        if (!AppConfig.Current.EnableInGameOverlay)
+        {
+            if (IsVisible) Hide();
+            return;
+        }
+
+        // Refresh string glow state if P2P Online setting changed dynamically
+        bool nowActive = AppConfig.Current.P2pOnlineEnabled && _status.State != SyncState.Failed;
+        if (nowActive != _lastConnectionActive) UpdateStringAppearance();
+
         var processes = Process.GetProcessesByName("GH3");
         if (processes.Length == 0)
         {
             if (_gh3WasRunning)
             {
-                _logger.LogInfo("GH3.exe closed. Hiding overlay.");
+                _logger.LogInfo("GH3.exe closed. Hiding guitar HUD overlay.");
                 _gh3WasRunning = false;
             }
-            if (Visible) Hide();
+            if (IsVisible) Hide();
             return;
         }
 
@@ -132,128 +348,46 @@ public class OverlayForm : Form
         var hWnd = proc.MainWindowHandle;
         if (hWnd == IntPtr.Zero || IsIconic(hWnd))
         {
-            if (Visible) Hide();
+            if (IsVisible) Hide();
             return;
         }
 
         if (!_gh3WasRunning)
         {
-            _logger.LogInfo($"GH3.exe detected (PID: {proc.Id}). In-game overlay attached.");
+            _logger.LogInfo($"GH3.exe detected (PID: {proc.Id}). Electric Guitar HUD overlay attached.");
             _gh3WasRunning = true;
         }
 
         if (GetWindowRect(hWnd, out RECT rect))
         {
-            int targetX = rect.Right - Width - 24;
-            int targetY = rect.Top + 24;
+            // Account for Windows DPI scaling so position stays exact on 100%/125%/150% displays
+            var src = PresentationSource.FromVisual(this);
+            double dpiX = src?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+            double dpiY = src?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
 
-            if (Location.X != targetX || Location.Y != targetY)
+            double gLeft = rect.Left / dpiX;
+            double gTop = rect.Top / dpiY;
+            double gRight = rect.Right / dpiX;
+            double gBottom = rect.Bottom / dpiY;
+
+            const double pad = 18.0;
+            string corner = AppConfig.Current.InGameOverlayCorner ?? "TopRight";
+
+            double targetX = corner.Contains("Left", StringComparison.OrdinalIgnoreCase)
+                ? gLeft + pad
+                : gRight - Width - pad;
+
+            double targetY = corner.Contains("Bottom", StringComparison.OrdinalIgnoreCase)
+                ? gBottom - Height - pad
+                : gTop + pad;
+
+            if (Math.Abs(Left - targetX) > 1.0 || Math.Abs(Top - targetY) > 1.0)
             {
-                Location = new Point(targetX, targetY);
+                Left = targetX;
+                Top = targetY;
             }
 
-            if (!Visible) Show();
+            if (!IsVisible) Show();
         }
-    }
-
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        base.OnPaint(e);
-        var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-
-        var bounds = new Rectangle(0, 0, Width - 1, Height - 1);
-
-        // Background Glass Card
-        using (var bgBrush = new SolidBrush(Color.FromArgb(235, 18, 22, 32)))
-        using (var borderPen = new Pen(GetStateBorderColor(_status.State), 1.5f))
-        using (var path = GetRoundedRectangle(bounds, 8))
-        {
-            g.FillPath(bgBrush, path);
-            g.DrawPath(borderPen, path);
-        }
-
-        // Header Line: Icon + Plugin Name + Pill
-        using var fontHeader = new Font("Segoe UI", 9f, FontStyle.Bold);
-        using var fontSub = new Font("Segoe UI", 8.5f, FontStyle.Regular);
-        using var brushWhite = new SolidBrush(Color.FromArgb(240, 240, 245));
-        using var brushMuted = new SolidBrush(Color.FromArgb(160, 165, 180));
-
-        g.DrawString("🎸 GH3-SYNC PLUGIN", fontHeader, brushWhite, 10, 8);
-
-        // Status Pill
-        var pillText = GetPillText(_status.State);
-        var pillColor = GetStateBorderColor(_status.State);
-        var pillSize = g.MeasureString(pillText, fontSub);
-        int pillX = Width - (int)pillSize.Width - 22;
-        int pillY = 8;
-
-        using (var pillBg = new SolidBrush(Color.FromArgb(40, pillColor)))
-        using (var pillBorder = new Pen(pillColor, 1f))
-        {
-            var pillRect = new Rectangle(pillX - 6, pillY - 2, (int)pillSize.Width + 12, (int)pillSize.Height + 4);
-            using var pillPath = GetRoundedRectangle(pillRect, 4);
-            g.FillPath(pillBg, pillPath);
-            g.DrawPath(pillBorder, pillPath);
-        }
-        using (var pillBrush = new SolidBrush(pillColor))
-        {
-            g.DrawString(pillText, fontSub, pillBrush, pillX, pillY);
-        }
-
-        // Detail / Message Line
-        g.DrawString(_status.Message, fontSub, brushWhite, 10, 30);
-
-        // Progress Bar or Subtitle
-        if (_status.State == SyncState.Syncing && _status.ProgressPercent > 0)
-        {
-            int pBarX = 10;
-            int pBarY = 52;
-            int pBarW = Width - 20;
-            int pBarH = 12;
-
-            using var pBarBg = new SolidBrush(Color.FromArgb(35, 40, 55));
-            g.FillRectangle(pBarBg, pBarX, pBarY, pBarW, pBarH);
-
-            int fillW = Math.Max(4, (int)(pBarW * (_status.ProgressPercent / 100.0f)));
-            using var fillBrush = new LinearGradientBrush(
-                new Rectangle(pBarX, pBarY, fillW, pBarH),
-                Color.FromArgb(249, 115, 22),
-                Color.FromArgb(16, 185, 129),
-                LinearGradientMode.Horizontal);
-            g.FillRectangle(fillBrush, pBarX, pBarY, fillW, pBarH);
-        }
-        else
-        {
-            g.DrawString(_status.Detail, fontSub, brushMuted, 10, 50);
-        }
-    }
-
-    private static Color GetStateBorderColor(SyncState state) => state switch
-    {
-        SyncState.Syncing => Color.FromArgb(249, 115, 22),
-        SyncState.Success => Color.FromArgb(16, 185, 129),
-        SyncState.Failed => Color.FromArgb(239, 68, 68),
-        _ => Color.FromArgb(70, 80, 105)
-    };
-
-    private static string GetPillText(SyncState state) => state switch
-    {
-        SyncState.Syncing => "SYNCING",
-        SyncState.Success => "✓ SUCCESS",
-        SyncState.Failed => "✗ FAILED",
-        _ => "LOADED"
-    };
-
-    private static GraphicsPath GetRoundedRectangle(Rectangle rect, int radius)
-    {
-        var path = new GraphicsPath();
-        int d = radius * 2;
-        path.AddArc(rect.X, rect.Y, d, d, 180, 90);
-        path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
-        path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
-        path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
-        path.CloseFigure();
-        return path;
     }
 }

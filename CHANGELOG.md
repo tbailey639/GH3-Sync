@@ -4,6 +4,33 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.5.0] - 2026-11-18
+
+### Major New Features
+* **Electric Guitar In-Game HUD Overlay:**
+  - Replaced the boxy text HUD with a per-pixel alpha transparent, click-through **Electric Guitar silhouette** overlay matching the updater guitar.
+  - All 6 guitar strings glow **electric neon blue** when P2P connection is active (filling 0% → 100% left-to-right during active song syncs) and switch to **regular metallic silver** when offline or disconnected.
+  - Added overlay toggle and corner position selector (**Top-Right / Top-Left / Bottom-Right / Bottom-Left**) in **Settings → Appearance & Overlay**.
+* **Chorus Encore `.chart` Compatibility Fix + Smart Filters + Classic 5-Fret GH3 Mode:**
+  - Fixed a Moonscraper/Clone Hero `.chart` time-signature conversion bug (`Denominator is not a power of two. Actual value was 3`, e.g. `TS 6 3` on 6/8 & 12/8 songs) by automatically normalizing Moonscraper exponent denominators (`TS <num> <exp>` → `TS <num> <2^exp>`) before compiling into GH3.
+  - Added **Full Difficulties Only (Easy–Expert)** filter, **Sort (`Best Match` / `Most Notes` / `Difficulty`)**, and an optional **Classic 5-Fret GH3 (Convert Open Notes)** toggle (`N 7` → `N 0`) right on the Chorus Encore search card.
+  - Unwrapped `TargetInvocationException.InnerException` in Clone Hero/SNG imports so real error details are always displayed clearly.
+* **Interactive Editable Batch Queue & True Multi-File Drag-and-Drop:**
+  - Replaced the single-line batch summary with full **editable queue cards** featuring **Edit** (reloads any queued song into the form to tweak BPM, Feel, Focus, or Audio Mode individually), **▲/▼ Reorder**, **▶ Audio Preview**, **✕ Remove**, and **Clear Queue**.
+  - Upgraded window-wide **Drag-and-Drop** to accept multiple dropped audio files at once (auto-parsing `Artist - Title`, detecting BPM, and populating the Batch Queue) as well as multiple dropped `.sng`, `.zip`, `.gh3song`, `.gh3pack`, and Clone Hero folders sequentially.
+* **My Customs Upgrades (Album Art, Badges, Re-Chart AI v2, Duplicate Detector & Lobby Pack Export):**
+  - Song cards now display real **Album Art thumbnails** (copied from Clone Hero/SNG packages and extracted from embedded MP3 cover art via FFmpeg), **Audio Mode badges** (`Studio Master` / `Multi-Stem` / `Hybrid Audio`), **Co-Op Bass** badges, and Expert note counts.
+  - Added a 1-click **Re-Chart AI v2** button on locally created songs to reload and re-chart older customs with the latest AI engine.
+  - Added an automatic **Duplicate Song Detector** before compiling or installing from Chorus Encore (Replace Existing / Keep Both / Cancel).
+  - Added a 1-click **Export Lobby Pack** button to bundle your active Lobby Setlist into a single `.gh3pack`.
+* **Upgraded AI Component Updater & 6-Point Compatibility Self-Test:**
+  - Expanded component update checks & safe upgrades to cover all v1.4/v1.5 tools (`demucs`, `basic-pitch`, `librosa`, `soundfile`, `scipy`, `onnxruntime`, `pkg_resources` shim, plus Chorus Encore API reachability) while pinning `"numpy<2"` and `"setuptools<81"`.
+* **UI Polish & Reorganized Settings:**
+  - Removed redundant top-right `Settings` header button (keeping the single left-sidebar `Settings` button) and removed song-name references from Audio Mix Mode dropdown labels.
+  - Split Settings into 6 clean sub-tabs: **General & Paths**, **Appearance & Overlay**, **Updates & Compatibility**, **How-To Guide** (built-in feature walkthrough), **Credits** (dedicated acknowledgments tab), and **Logs**.
+
+---
+
 ## [v1.4.0] - 2026-11-18
 
 ### Major New Features

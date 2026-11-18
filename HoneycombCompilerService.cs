@@ -415,6 +415,91 @@ public class HoneycombCompilerService
     }
 
     /// <summary>
+    /// Creates a sanitized temporary copy of a Clone Hero / Moonscraper .chart file before Honeycomb's Chart->MIDI conversion:
+    /// - Compensates for a bug in GH-Toolkit-Core.MIDI.Chart where the TS denominator is computed with C# bitwise XOR (`2 ^ den`)
+    ///   instead of exponentiation (`2^den`), which otherwise crashes DryWetMidi with "Denominator is not a power of two"
+    ///   on valid Moonscraper time signatures like `TS 1 1` (1/2), `TS 4 2` (4/4), `TS 7 4` (7/16), or `TS 6 3` (6/8).
+    /// - Optionally converts Clone Hero Open Notes (N 7) to Classic 5-fret GH3 Green notes (N 0).
+    /// Returns the path to the sanitized temporary .chart file (or the original path if no changes were needed).
+    /// </summary>
+    public static string SanitizeChartForHoneycomb(string chartPath, bool convertOpenNotesToClassic = false, Action<string>? log = null)
+    {
+        if (!File.Exists(chartPath)) return chartPath;
+        var lines = File.ReadAllLines(chartPath);
+        bool modified = false;
+        string currentSection = "";
+        int tsFixed = 0;
+        int openFixed = 0;
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var trimmed = lines[i].Trim();
+            if (trimmed.StartsWith("[") && trimmed.EndsWith("]"))
+            {
+                currentSection = trimmed;
+                continue;
+            }
+
+            if (currentSection.Equals("[SyncTrack]", StringComparison.OrdinalIgnoreCase))
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(lines[i], @"^(\s*\d+\s*=\s*TS\s+\d+)\s+(\d+)(\s*)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (m.Success && int.TryParse(m.Groups[2].Value, out int rawDen))
+                {
+                    // Moonscraper .chart spec stores TS denominator as log2 exponent (0->1, 1->2, 2->4, 3->8, 4->16, 5->32, 6->64).
+                    // GH-Toolkit-Core erroneously evaluates `2 ^ parsedDen` (bitwise XOR in C#).
+                    // Writing `actualDen ^ 2` makes GH-Toolkit-Core evaluate `2 ^ (actualDen ^ 2) == actualDen`!
+                    int actualDen = rawDen switch
+                    {
+                        0 => 1,
+                        1 => 2,
+                        2 => 4,
+                        3 => 8,
+                        4 => 16,
+                        5 => 32,
+                        6 => 64,
+                        _ => (rawDen >= 1 && (rawDen & (rawDen - 1)) == 0 && rawDen <= 64) ? rawDen : 4
+                    };
+
+                    if (actualDen == 4)
+                    {
+                        // Single-arg `TS <num>` defaults cleanly to denominator 4 inside GH-Toolkit-Core
+                        lines[i] = $"{m.Groups[1].Value}{m.Groups[3].Value}";
+                    }
+                    else
+                    {
+                        int xorCompensated = actualDen ^ 2;
+                        lines[i] = $"{m.Groups[1].Value} {xorCompensated}{m.Groups[3].Value}";
+                    }
+                    modified = true;
+                    tsFixed++;
+                }
+            }
+            else if (convertOpenNotesToClassic &&
+                     (currentSection.EndsWith("Single]", StringComparison.OrdinalIgnoreCase) ||
+                      currentSection.EndsWith("DoubleBass]", StringComparison.OrdinalIgnoreCase) ||
+                      currentSection.EndsWith("DoubleRhythm]", StringComparison.OrdinalIgnoreCase)))
+            {
+                var om = System.Text.RegularExpressions.Regex.Match(lines[i], @"^(\s*\d+\s*=\s*N\s+)7(\s+\d+\s*)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (om.Success)
+                {
+                    lines[i] = $"{om.Groups[1].Value}0{om.Groups[2].Value}";
+                    modified = true;
+                    openFixed++;
+                }
+            }
+        }
+
+        if (!modified) return chartPath;
+
+        var tempChartPath = Path.Combine(
+            Path.GetDirectoryName(chartPath)!,
+            $"{Path.GetFileNameWithoutExtension(chartPath)}_gh3tmp.chart");
+        File.WriteAllLines(tempChartPath, lines);
+        log?.Invoke($"Sanitized .chart for GH3 compatibility (TimeSignatures compensated: {tsFixed}, OpenNotes converted: {openFixed}).");
+        return tempChartPath;
+    }
+
+    /// <summary>
     /// Converts a .chart file to a standard MIDI (notes.mid) file using GH-Toolkit-Core.
     /// </summary>
     public static string ConvertChartToMid(string chartPath, string honeycombDir, Action<string>? log = null)
@@ -424,6 +509,9 @@ public class HoneycombCompilerService
 
         if (chartPath.EndsWith(".mid", StringComparison.OrdinalIgnoreCase))
             return chartPath;
+
+        var effectiveChartPath = SanitizeChartForHoneycomb(chartPath, AppConfig.Current.ConvertOpenNotesToClassicGh3, log);
+        bool createdTempChart = !string.Equals(effectiveChartPath, chartPath, StringComparison.OrdinalIgnoreCase);
 
         var coreDll = Path.Combine(honeycombDir, "GH-Toolkit-Core.dll");
         if (!File.Exists(coreDll))
@@ -436,15 +524,37 @@ public class HoneycombCompilerService
 
         log?.Invoke($"Converting '{Path.GetFileName(chartPath)}' to MIDI...");
 
-        var chartObj = Activator.CreateInstance(chartType, new object[] { chartPath });
-        chartType.GetMethod("ConvertChartToMid")?.Invoke(chartObj, null);
-        chartType.GetMethod("WriteMidToFile")?.Invoke(chartObj, null);
-
-        var outMid = Path.Combine(Path.GetDirectoryName(chartPath)!, "notes.mid");
-        if (File.Exists(outMid))
+        try
         {
-            log?.Invoke($"Converted to MIDI: {outMid} ({new FileInfo(outMid).Length} bytes)");
-            return outMid;
+            var chartObj = Activator.CreateInstance(chartType, new object[] { effectiveChartPath });
+            chartType.GetMethod("ConvertChartToMid")?.Invoke(chartObj, null);
+            chartType.GetMethod("WriteMidToFile")?.Invoke(chartObj, null);
+        }
+        catch (TargetInvocationException tie) when (tie.InnerException != null)
+        {
+            throw tie.InnerException;
+        }
+        finally
+        {
+            if (createdTempChart)
+            {
+                try { File.Delete(effectiveChartPath); } catch { }
+            }
+        }
+
+        var dir = Path.GetDirectoryName(chartPath)!;
+        var targetMid = Path.Combine(dir, "notes.mid");
+        var tempMid = Path.ChangeExtension(effectiveChartPath, ".mid");
+        if (createdTempChart && File.Exists(tempMid) && !string.Equals(tempMid, targetMid, StringComparison.OrdinalIgnoreCase))
+        {
+            File.Copy(tempMid, targetMid, overwrite: true);
+            try { File.Delete(tempMid); } catch { }
+        }
+
+        if (File.Exists(targetMid))
+        {
+            log?.Invoke($"Converted to MIDI: {targetMid} ({new FileInfo(targetMid).Length} bytes)");
+            return targetMid;
         }
 
         return chartPath;

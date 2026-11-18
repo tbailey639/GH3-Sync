@@ -44,6 +44,10 @@ public class CustomSongInfo
     public string GhprojPath { get; set; } = "";
     public bool IsFavorite { get; set; } = false;
     public bool IsInLobbySetlist { get; set; } = false;
+    public string AlbumArtPath { get; set; } = "";
+    public string AudioModeTag { get; set; } = "";
+    public bool HasCoopBass { get; set; } = false;
+    public int ExpertNoteCount { get; set; } = 0;
 }
 
 public class ImportedSongMetaRecord
@@ -436,6 +440,58 @@ public class Gh3Service
             var ghprojPath = ghprojFiles.FirstOrDefault() ?? "";
             bool hasStandalonePak = standalonePaks.Length > 0 || !string.IsNullOrWhiteSpace(compiledSongId);
 
+            // Detect album art thumbnail
+            string albumArt = "";
+            foreach (var artName in new[] { "album.png", "album.jpg", "album.jpeg", "cover.png", "cover.jpg" })
+            {
+                var ap = Path.Combine(dirPath, artName);
+                if (File.Exists(ap)) { albumArt = ap; break; }
+            }
+
+            // Detect audio mix mode tag
+            string audioModeTag = "";
+            try
+            {
+                var cfgPath = Path.Combine(dirPath, "gh3sync_audio.json");
+                if (File.Exists(cfgPath))
+                {
+                    var cfg = JsonSerializer.Deserialize<SongAudioMixConfig>(File.ReadAllText(cfgPath));
+                    audioModeTag = cfg?.AudioMixMode switch
+                    {
+                        "IsolatedStems" => "Multi-Stem",
+                        "HybridBlend" => "Hybrid Audio",
+                        "StudioMaster" => "Studio Master",
+                        _ => ""
+                    };
+                }
+            }
+            catch { }
+
+            // Fast scan notes.chart for Co-Op Bass & Expert note count
+            bool hasCoopBass = false;
+            int expertNotes = 0;
+            try
+            {
+                var chartFile = Path.Combine(dirPath, "notes.chart");
+                if (File.Exists(chartFile))
+                {
+                    bool inExpert = false;
+                    foreach (var line in File.ReadLines(chartFile))
+                    {
+                        var tr = line.Trim();
+                        if (tr.Equals("[ExpertSingle]", StringComparison.OrdinalIgnoreCase)) { inExpert = true; continue; }
+                        if (tr.StartsWith("["))
+                        {
+                            inExpert = false;
+                            if (tr.Equals("[ExpertDoubleBass]", StringComparison.OrdinalIgnoreCase)) hasCoopBass = true;
+                            continue;
+                        }
+                        if (inExpert && tr.Contains("= N ")) expertNotes++;
+                    }
+                }
+            }
+            catch { }
+
             return new CustomSongInfo
             {
                 SongId = songId,
@@ -454,7 +510,11 @@ public class Gh3Service
                 IsProject = true,
                 ProjectDirectory = dirPath,
                 IsCompiled = hasStandalonePak,
-                GhprojPath = ghprojPath
+                GhprojPath = ghprojPath,
+                AlbumArtPath = albumArt,
+                AudioModeTag = audioModeTag,
+                HasCoopBass = hasCoopBass,
+                ExpertNoteCount = expertNotes
             };
         }
         catch
@@ -769,12 +829,28 @@ public class Gh3Service
             if (!string.IsNullOrWhiteSpace(projectSong.Artist) &&
                 (string.IsNullOrWhiteSpace(existing.Artist) || existing.Artist == "Custom Artist"))
                 existing.Artist = projectSong.Artist;
+            if (!string.IsNullOrEmpty(projectSong.AlbumArtPath)) existing.AlbumArtPath = projectSong.AlbumArtPath;
+            if (!string.IsNullOrEmpty(projectSong.AudioModeTag)) existing.AudioModeTag = projectSong.AudioModeTag;
+            if (projectSong.HasCoopBass) existing.HasCoopBass = true;
+            if (projectSong.ExpertNoteCount > 0) existing.ExpertNoteCount = projectSong.ExpertNoteCount;
         }
         else
         {
             songs.Add(projectSong);
             seenSongIds.Add(projectSong.SongId);
         }
+    }
+
+    public CustomSongInfo? FindDuplicateInstalledSong(string title, string artist)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return null;
+        string fp = ComputeFingerprint(title, artist ?? "");
+        var installed = GetInstalledCustomSongs();
+        return installed.FirstOrDefault(s =>
+            s.IsCompiled &&
+            ((!string.IsNullOrEmpty(fp) && s.OnogamiFingerprint.Equals(fp, StringComparison.OrdinalIgnoreCase)) ||
+             (s.Title.Equals(title.Trim(), StringComparison.OrdinalIgnoreCase) &&
+              (string.IsNullOrWhiteSpace(artist) || s.Artist.Equals(artist.Trim(), StringComparison.OrdinalIgnoreCase)))));
     }
 
     public LibraryManifest GenerateManifest()
