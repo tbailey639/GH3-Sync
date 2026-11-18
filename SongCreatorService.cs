@@ -15,12 +15,17 @@ public class SongCreationRequest
     public string Album { get; set; } = "";
     public int Year { get; set; } = DateTime.Now.Year;
     public string Genre { get; set; } = "Rock";
-    public string Charter { get; set; } = "ONOGAMI AI Creator";
+    public string Charter { get; set; } = "Mad Scientist";
     public int DiffGuitar { get; set; } = 4;
     public int DiffRhythm { get; set; } = 3;
     public int PreviewStartMs { get; set; } = 5000;
     public double Bpm { get; set; } = 130.0;
     public bool AutoDetectBpm { get; set; } = true;
+    public bool UseVariableTempoMap { get; set; } = true;
+    public string ChartFeel { get; set; } = "Standard"; // Casual, Standard, Shredder
+    public string InstrumentFocus { get; set; } = "Guitar"; // Guitar, Bass, Vocals
+    public double GuitarVolumeDb { get; set; } = 0.0;
+    public double BandVolumeDb { get; set; } = 0.0;
     public bool SeparateStemsWithDemucs { get; set; } = false;
     public bool AutoGenerateChart { get; set; } = false;
     public bool AutoCompile { get; set; } = true;
@@ -173,17 +178,18 @@ public class SongCreatorService
                 }
             }
 
-            // 3. Optional Demucs 6-Stem Isolation + Spotify Basic Pitch AI Transcription
+            // 3. Optional Demucs 6-Stem Isolation + Spotify Basic Pitch Transcription
             bool stemsSeparated = false;
             string guitarAudioPath = audioFullPath;
             string rhythmAudioPath = "";
             string backingAudioPath = audioFullPath;
             List<TranscribedNote> bestNotes = new();
+            List<double>? bestBeats = mixAnalysis?.BeatTimestampsSeconds;
             string chartingEngine = "Uploaded Chart/MIDI";
 
             if (meta.SeparateStemsWithDemucs && _demucs != null && _demucs.GetStatus().IsInstalled)
             {
-                onProgress?.Invoke(20, "Running Demucs 6-Stem AI (isolating Guitar, Bass, Drums, Vocals, Piano)...");
+                onProgress?.Invoke(20, "Separating Guitar, Bass, Drums, Vocals & Piano stems (Demucs 6-Stem)...");
                 var stemsDir = Path.Combine(targetDir, "stems");
                 var demucsRes = await _demucs.SeparateStemsAsync(audioFullPath, stemsDir, (pct, step) =>
                 {
@@ -197,7 +203,7 @@ public class SongCreatorService
                     guitarAudioPath = demucsRes.GuitarTrackPath;
                     rhythmAudioPath = demucsRes.BassTrackPath;
 
-                    // Combine non-guitar stems (drums + vocals + piano + other if guitar.wav was separate) into backing
+                    // Combine non-guitar stems into backing
                     var backingList = new List<string>();
                     if (!string.IsNullOrEmpty(demucsRes.DrumsTrackPath)) backingList.Add(demucsRes.DrumsTrackPath);
                     if (!string.IsNullOrEmpty(demucsRes.VocalsTrackPath)) backingList.Add(demucsRes.VocalsTrackPath);
@@ -209,32 +215,48 @@ public class SongCreatorService
                     }
                     backingAudioPath = backingList.Count > 0 ? string.Join(";", backingList) : audioFullPath;
 
-                    if (demucsRes.TranscribedGuitarNotes.Count >= 15)
+                    // Prefer drums.wav for rock-solid dynamic variable beat tracking!
+                    if (meta.UseVariableTempoMap && _audioAnalysis != null && !string.IsNullOrEmpty(demucsRes.DrumsTrackPath) && File.Exists(demucsRes.DrumsTrackPath))
+                    {
+                        var drumAnalysis = _audioAnalysis.AnalyzeAudio(demucsRes.DrumsTrackPath);
+                        if (drumAnalysis.Success && drumAnalysis.BeatTimestampsSeconds.Count >= 8)
+                            bestBeats = drumAnalysis.BeatTimestampsSeconds;
+                    }
+
+                    // Select stem matching user's InstrumentFocus (Guitar / Bass / Vocals)
+                    string focusStem = (meta.InstrumentFocus ?? "Guitar").ToLowerInvariant() switch
+                    {
+                        "bass" when !string.IsNullOrEmpty(demucsRes.BassTrackPath) => demucsRes.BassTrackPath,
+                        "vocals" when !string.IsNullOrEmpty(demucsRes.VocalsTrackPath) => demucsRes.VocalsTrackPath,
+                        _ => demucsRes.GuitarTrackPath
+                    };
+
+                    if (focusStem == demucsRes.GuitarTrackPath && demucsRes.TranscribedGuitarNotes.Count >= 15)
                     {
                         bestNotes = demucsRes.TranscribedGuitarNotes;
-                        chartingEngine = "Demucs 6-Stem + Spotify Basic Pitch AI";
+                        chartingEngine = "Demucs 6-Stem + Basic Pitch";
                     }
-                    else if (_audioAnalysis != null)
+                    else if (_audioAnalysis != null && File.Exists(focusStem))
                     {
-                        onProgress?.Invoke(66, "Extracting pitch contours from isolated guitar.wav...");
-                        var stemAnalysis = _audioAnalysis.AnalyzeAudio(demucsRes.GuitarTrackPath);
+                        onProgress?.Invoke(66, $"Extracting pitch contours from isolated {Path.GetFileName(focusStem)}...");
+                        var stemAnalysis = _audioAnalysis.AnalyzeAudio(focusStem);
                         if (stemAnalysis.Success && stemAnalysis.TranscribedNotes.Count >= 10)
                         {
                             bestNotes = stemAnalysis.TranscribedNotes;
-                            chartingEngine = "Demucs 6-Stem + FFT/YIN Guitar Pitch Engine";
+                            chartingEngine = $"Demucs 6-Stem ({meta.InstrumentFocus})";
                         }
                     }
                 }
             }
 
-            // Fallback to FFT/YIN pitched notes from full mix if AI stems weren't used
+            // Fallback to built-in FFT/YIN pitched notes from full mix
             if (bestNotes.Count == 0 && mixAnalysis != null && mixAnalysis.TranscribedNotes.Count > 0)
             {
                 bestNotes = mixAnalysis.TranscribedNotes;
-                chartingEngine = "FFT Guitar-Bandpass + YIN Pitch Engine";
+                chartingEngine = "Built-in Pitch Analyzer";
             }
 
-            // 4. Handle Chart (Use uploaded OR build true pitch-mapped chart!)
+            // 4. Handle Chart (Use uploaded OR build true pitch-mapped chart with variable tempo!)
             onProgress?.Invoke(70, "Building 5-fret Guitar Hero III chart & MIDI...");
             string chartFullPath;
             string midiFullPath = Path.Combine(targetDir, "notes.mid");
@@ -259,7 +281,7 @@ public class SongCreatorService
             {
                 chartFullPath = Path.Combine(targetDir, "notes.chart");
                 var chartContent = MidiToGh3ChartMapper.BuildChartFromNotes(
-                    meta, bestNotes, exactBpm, songDuration, chartingEngine);
+                    meta, bestNotes, exactBpm, songDuration, chartingEngine, bestBeats);
                 File.WriteAllText(chartFullPath, chartContent);
                 TryConvertChart(chartFullPath);
             }
@@ -358,8 +380,8 @@ public class SongCreatorService
                 drumsCareerTier = 0,
                 vocalsCareerTier = 0,
                 bandCareerTier = 0,
-                gtrVolumeGh3 = 0.0,
-                bandVolumeGh3 = 0.0,
+                gtrVolumeGh3 = meta.GuitarVolumeDb,
+                bandVolumeGh3 = meta.BandVolumeDb,
                 vocalScrollSpeed = 1.0,
                 vocalTuningCents = 0.0,
                 sustainThreshold = 0.5,
@@ -432,6 +454,74 @@ public class SongCreatorService
                 Success = false,
                 Message = $"Failed to create song: {ex.Message}"
             };
+        }
+    }
+
+    /// <summary>
+    /// Edits Title, Artist, Album, Year, Genre, Difficulties, and Guitar/Band Volumes inside an existing
+    /// custom song's .ghproj & song.ini, then optionally recompiles directly into BetterGH3.
+    /// </summary>
+    public async Task<(bool Success, string Message)> UpdateSongMetadataAndRecompileAsync(
+        string projectDir,
+        string title,
+        string artist,
+        string album,
+        int year,
+        string genre,
+        int diffGuitar,
+        int diffRhythm,
+        double guitarVolumeDb,
+        double bandVolumeDb,
+        bool recompile)
+    {
+        if (string.IsNullOrWhiteSpace(projectDir) || !Directory.Exists(projectDir))
+            return (false, "Project folder not found.");
+
+        try
+        {
+            var ghproj = Directory.GetFiles(projectDir, "*.ghproj").FirstOrDefault();
+            if (!string.IsNullOrEmpty(ghproj) && File.Exists(ghproj))
+            {
+                var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(ghproj))?.AsObject();
+                if (node != null)
+                {
+                    node["title"] = title;
+                    node["artist"] = artist;
+                    node["album"] = album;
+                    node["guitarTier"] = diffGuitar;
+                    node["bassTier"] = diffRhythm;
+                    node["gtrVolumeGh3"] = guitarVolumeDb;
+                    node["bandVolumeGh3"] = bandVolumeDb;
+                    File.WriteAllText(ghproj, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                }
+            }
+
+            var iniPath = Path.Combine(projectDir, "song.ini");
+            var iniLines = new List<string>
+            {
+                "[song]",
+                $"name = {title}",
+                $"artist = {artist}",
+                $"album = {album}",
+                $"genre = {genre}",
+                $"year = {year}",
+                $"diff_guitar = {diffGuitar}",
+                $"diff_rhythm = {diffRhythm}",
+                "icon = onogami_creator"
+            };
+            File.WriteAllText(iniPath, string.Join(Environment.NewLine, iniLines));
+
+            if (recompile && _compiler != null && !string.IsNullOrEmpty(ghproj))
+            {
+                var comp = await _compiler.CompileSongProjectAsync(ghproj);
+                return (comp.Success, comp.Success ? $"Updated & recompiled '{title}' into Guitar Hero III!" : comp.Message);
+            }
+
+            return (true, $"Saved updated metadata for '{title}'.");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Failed updating song info: {ex.Message}");
         }
     }
 

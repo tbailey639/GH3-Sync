@@ -49,8 +49,9 @@ var gh3Service = new Gh3Service();
 var syncLogger = new SyncLogger(gh3Service.GamePath);
 var securityService = new SecurityService();
 var friendService = new FriendService(baseDir);
-var saveManager = new SaveManager(syncLogger);
+var saveManager = new SaveManager(syncLogger, gh3Service.GamePath);
 var compilerService = new HoneycombCompilerService(gh3Service, syncLogger, saveManager);
+var cloneHeroService = new CloneHeroImportService(compilerService, syncLogger);
 var audioAnalysisService = new AudioAnalysisService(syncLogger);
 var demucsService = new DemucsService(syncLogger);
 var creatorService = new SongCreatorService(compilerService, audioAnalysisService, demucsService);
@@ -62,6 +63,7 @@ builder.Services.AddSingleton(syncLogger);
 builder.Services.AddSingleton(securityService);
 builder.Services.AddSingleton(friendService);
 builder.Services.AddSingleton(compilerService);
+builder.Services.AddSingleton(cloneHeroService);
 builder.Services.AddSingleton(audioAnalysisService);
 builder.Services.AddSingleton(demucsService);
 builder.Services.AddSingleton(creatorService);
@@ -132,35 +134,51 @@ string GetLocalIpAddress()
     return "127.0.0.1";
 }
 
-bool IsAuthorized(HttpContext context, SecurityService sec, FriendService friends, SyncLogger logger)
+bool TryAuthorize(HttpContext context, SecurityService sec, FriendService friends, SyncLogger logger, out string sharedSecret)
 {
+    sharedSecret = sec.PairingPin;
     var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
-    // 1. Local loopback is always allowed for web dashboard
-    if (remoteIp == "127.0.0.1" || remoteIp == "::1") return true;
-
-    // 2. Check for Trusted Friend Token (Skips PIN & IP restrictions!)
+    // Extract token/pin if provided (even on localhost so loopback P2P tests use the exact same shared secret!)
     string? token = null;
     if (context.Request.Headers.TryGetValue("X-GH3-Trust-Token", out var headerToken))
         token = headerToken.ToString();
     else if (context.Request.Query.TryGetValue("token", out var queryToken))
         token = queryToken.ToString();
 
-    if (!string.IsNullOrEmpty(token) && friends.ValidateTrustToken(token, out var trustedFriend))
-    {
-        logger.LogInfo($"[SECURITY] Trusted Friend access granted to: {trustedFriend?.Username} from {remoteIp}");
-        return true;
-    }
-
-    // 3. Fallback: Check Pairing PIN
     string? pin = null;
     if (context.Request.Headers.TryGetValue("X-GH3-PIN", out var headerPin))
         pin = headerPin.ToString();
     else if (context.Request.Query.TryGetValue("pin", out var queryPin))
         pin = queryPin.ToString();
 
-    return sec.ValidatePin(pin, remoteIp, logger);
+    // 1. Check for Trusted Friend Token (Skips PIN & IP restrictions!)
+    if (!string.IsNullOrEmpty(token) && friends.ValidateTrustToken(token, out var trustedFriend))
+    {
+        sharedSecret = token;
+        logger.LogInfo($"[SECURITY] Trusted Friend access granted to: {trustedFriend?.Username} from {remoteIp}");
+        return true;
+    }
+
+    // 2. Local loopback is always allowed
+    if (remoteIp == "127.0.0.1" || remoteIp == "::1")
+    {
+        if (!string.IsNullOrEmpty(token)) sharedSecret = token;
+        else if (!string.IsNullOrEmpty(pin)) sharedSecret = pin;
+        return true;
+    }
+
+    // 3. Fallback: Check Pairing PIN
+    if (sec.ValidatePin(pin, remoteIp, logger))
+    {
+        sharedSecret = pin!;
+        return true;
+    }
+    return false;
 }
+
+bool IsAuthorized(HttpContext context, SecurityService sec, FriendService friends, SyncLogger logger)
+    => TryAuthorize(context, sec, friends, logger, out _);
 
 // Background Heartbeat to Admin Hub (Safe Telemetry & Broadcasts)
 _ = Task.Run(async () =>
@@ -720,14 +738,14 @@ app.MapGet("/api/manifest", (HttpContext context, Gh3Service gh3, SyncLogger log
 
 app.MapGet("/api/download/{songId}", (HttpContext context, string songId, Gh3Service gh3, SyncLogger logger, SecurityService sec, FriendService friends) =>
 {
-    if (!IsAuthorized(context, sec, friends, logger))
+    if (!TryAuthorize(context, sec, friends, logger, out var sharedSecret))
         return Results.Unauthorized();
 
     try
     {
         logger.LogInfo($"Serving encrypted song package for: {songId}");
         var packageBytes = gh3.PackageSong(songId);
-        var encryptedBytes = sec.EncryptPayload(packageBytes);
+        var encryptedBytes = sec.EncryptPayload(packageBytes, sharedSecret);
         return Results.File(encryptedBytes, "application/octet-stream", $"{songId}.gh3enc");
     }
     catch (FileNotFoundException ex)
@@ -744,7 +762,7 @@ app.MapGet("/api/download/{songId}", (HttpContext context, string songId, Gh3Ser
 
 app.MapGet("/api/download-customs-pak", (HttpContext context, Gh3Service gh3, SyncLogger logger, SecurityService sec, FriendService friends) =>
 {
-    if (!IsAuthorized(context, sec, friends, logger))
+    if (!TryAuthorize(context, sec, friends, logger, out var sharedSecret))
         return Results.Unauthorized();
 
     if (!File.Exists(gh3.CustomsPakPath))
@@ -752,7 +770,7 @@ app.MapGet("/api/download-customs-pak", (HttpContext context, Gh3Service gh3, Sy
 
     logger.LogInfo("Serving encrypted customs.pak.xen to peer.");
     var rawBytes = File.ReadAllBytes(gh3.CustomsPakPath);
-    var encryptedBytes = sec.EncryptPayload(rawBytes);
+    var encryptedBytes = sec.EncryptPayload(rawBytes, sharedSecret);
     return Results.File(encryptedBytes, "application/octet-stream", "customs.pak.xen.gh3enc");
 });
 
@@ -1289,7 +1307,7 @@ else
             {
                 var splash = new GH3_Sync.Views.SplashWindow();
                 splash.Show();
-                splash.UpdateProgress(20, "Starting background P2P sync listener...");
+                splash.UpdateProgress(20, "Starting background sync service...");
 
                 try
                 {
@@ -1299,10 +1317,10 @@ else
                 {
                     syncLogger.LogWarn($"[P2P] Background listener port {port} busy or unavailable: {srvEx.Message}");
                 }
-                splash.UpdateProgress(55, "Verifying BetterGH3 & bundled Honeycomb compiler...");
-                await Task.Delay(550);
+                splash.UpdateProgress(55, "Loading Guitar Hero III song library...");
+                await Task.Delay(450);
 
-                splash.UpdateProgress(85, "Initializing Native Windows 11 Legends of Rock UI...");
+                splash.UpdateProgress(85, "Preparing workspace...");
                 var mainWin = new GH3_Sync.Views.MainWindow(
                     gh3Service,
                     syncLogger,
@@ -1310,6 +1328,7 @@ else
                     friendService,
                     saveManager,
                     compilerService,
+                    cloneHeroService,
                     audioAnalysisService,
                     demucsService,
                     creatorService,
@@ -1317,9 +1336,9 @@ else
                     updateService,
                     port);
 
-                await Task.Delay(450);
+                await Task.Delay(350);
                 splash.UpdateProgress(100, "Ready to Rock!");
-                await Task.Delay(250);
+                await Task.Delay(200);
 
                 wpfApp.MainWindow = mainWin;
                 mainWin.Closed += (_, _) => wpfApp.Shutdown();

@@ -60,10 +60,10 @@ public class SecurityService
         }
     }
 
-    // AES-256-GCM Package Encryption & Decryption
-    public byte[] EncryptPayload(byte[] plaintext)
+    // AES-256-GCM Package Encryption & Decryption (supports shared PIN or Trusted Token across peers!)
+    public byte[] EncryptPayload(byte[] plaintext, string? sharedSecret = null)
     {
-        var key = DeriveKey(PairingPin);
+        var key = DeriveKey(string.IsNullOrWhiteSpace(sharedSecret) ? PairingPin : sharedSecret);
         var nonce = RandomNumberGenerator.GetBytes(12); // 96-bit nonce
         var tag = new byte[16]; // 128-bit authentication tag
         var ciphertext = new byte[plaintext.Length];
@@ -82,12 +82,12 @@ public class SecurityService
         return ms.ToArray();
     }
 
-    public byte[] DecryptPayload(byte[] encryptedData)
+    public byte[] DecryptPayload(byte[] encryptedData, string? sharedSecret = null)
     {
         if (encryptedData.Length < 28)
             throw new CryptographicException("Encrypted payload is corrupted or truncated.");
 
-        var key = DeriveKey(PairingPin);
+        var key = DeriveKey(string.IsNullOrWhiteSpace(sharedSecret) ? PairingPin : sharedSecret);
         using var ms = new MemoryStream(encryptedData);
         using var br = new BinaryReader(ms);
 

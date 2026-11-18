@@ -63,6 +63,10 @@ public class AppConfigData
     public List<string> CreatedSongIds { get; set; } = new() { "beatit_6ce4b6e5", "gentlyweeps_26711a91", "onogami_fa5fdfea" };
     public string CustomSongsPath { get; set; } = "";
     public List<string> CreatedSongDirectories { get; set; } = new();
+    public List<string> FavoriteSongIds { get; set; } = new();
+    public List<string> LobbySetlistIds { get; set; } = new();
+    public int MaxLobbyAutoSyncSongs { get; set; } = 10;
+    public bool MinimizeOnGameLaunch { get; set; } = true;
     public string HoneycombPath { get; set; } = "";
     public bool AutoCompileCreatedSongs { get; set; } = true;
 }
@@ -323,6 +327,44 @@ public static class AppConfig
                 if (removed > 0) changed = true;
             }
             if (changed) Save();
+        }
+    }
+
+    public static bool ToggleFavorite(string songId)
+    {
+        lock (_lock)
+        {
+            if (Current.FavoriteSongIds == null) Current.FavoriteSongIds = new();
+            bool exists = Current.FavoriteSongIds.Any(s => s.Equals(songId, StringComparison.OrdinalIgnoreCase));
+            if (exists)
+                Current.FavoriteSongIds.RemoveAll(s => s.Equals(songId, StringComparison.OrdinalIgnoreCase));
+            else
+                Current.FavoriteSongIds.Add(songId);
+            Save();
+            return !exists;
+        }
+    }
+
+    public static (bool Added, string Message) ToggleLobbySetlist(string songId)
+    {
+        lock (_lock)
+        {
+            if (Current.LobbySetlistIds == null) Current.LobbySetlistIds = new();
+            int max = Math.Clamp(Current.MaxLobbyAutoSyncSongs, 1, 25);
+            bool exists = Current.LobbySetlistIds.Any(s => s.Equals(songId, StringComparison.OrdinalIgnoreCase));
+            if (exists)
+            {
+                Current.LobbySetlistIds.RemoveAll(s => s.Equals(songId, StringComparison.OrdinalIgnoreCase));
+                Save();
+                return (false, $"Removed from Lobby Auto-Sync ({Current.LobbySetlistIds.Count}/{max}).");
+            }
+            if (Current.LobbySetlistIds.Count >= max)
+            {
+                return (false, $"Lobby Auto-Sync limit reached ({max}/{max}). Uncheck another song or raise the limit in P2P Sync.");
+            }
+            Current.LobbySetlistIds.Add(songId);
+            Save();
+            return (true, $"Added to Lobby Auto-Sync ({Current.LobbySetlistIds.Count}/{max}).");
         }
     }
 

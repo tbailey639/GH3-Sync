@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Text;
 
@@ -26,15 +25,13 @@ internal class NoteEvent
     public int DurationTicks { get; set; }
 }
 
+internal record TempoAnchor(int Tick, double TimeSec, double Bpm);
+
 /// <summary>
 /// Musical, ergonomic 5-fret Guitar Hero III chart generator.
-/// Translates real pitch-transcribed guitar notes (from Spotify Basic Pitch AI
-/// or FFT/YIN pitch analysis) into authentic .chart files where:
-/// - Repeated notes stay on the SAME fret (no ping-pong loops!)
-/// - Rising/falling melodies follow real pitch contours across Green..Orange
-/// - Polyphonic strums become playable 2-note power chords
-/// - Real note lengths produce accurate sustains
-/// - Exact millisecond-to-tick alignment prevents tempo drift even on live recordings
+/// Supports dynamic variable [SyncTrack] tempo maps (for live recordings & tempo shifts),
+/// real pitch-contour fret assignment (same pitch = same fret), power chords, sustains,
+/// Chart Feel tuning (Casual / Standard / Shredder), and automatic Star Power & Solos.
 /// </summary>
 public static class MidiToGh3ChartMapper
 {
@@ -45,14 +42,18 @@ public static class MidiToGh3ChartMapper
         List<TranscribedNote> rawNotes,
         double exactBpm,
         double durationSeconds,
-        string sourceLabel = "ONOGAMI AI Pitch Engine")
+        string sourceLabel = "Mad Scientist",
+        List<double>? beatTimestamps = null)
     {
         double safeBpm = Math.Clamp(exactBpm > 20 ? exactBpm : (meta.Bpm > 20 ? meta.Bpm : 120.0), 60.0, 240.0);
-        int bpmMicro = (int)Math.Round(safeBpm * 1000.0);
-        double ticksPerSec = Resolution * (safeBpm / 60.0);
 
-        // 1. Clean & group raw transcribed notes into simultaneous strum events
-        var allEvents = GroupIntoNoteEvents(rawNotes, ticksPerSec);
+        // 1. Build dynamic variable [SyncTrack] tempo anchors if beat timestamps are provided
+        var tempoAnchors = BuildTempoAnchors(safeBpm, meta.UseVariableTempoMap ? beatTimestamps : null);
+
+        Func<double, int> secondsToTick = sec => ConvertSecondsToTick(sec, tempoAnchors);
+
+        // 2. Clean & group raw transcribed notes into simultaneous strum events
+        var allEvents = GroupIntoNoteEvents(rawNotes, secondsToTick);
 
         double songDuration = durationSeconds > 5
             ? durationSeconds
@@ -73,8 +74,15 @@ public static class MidiToGh3ChartMapper
             }
         }
 
-        // Detect highest-density guitar solo window
-        (int soloStartTick, int soloEndTick) = DetectSoloSection(allEvents, ticksPerSec, songDuration);
+        // Apply Chart Feel spacing multiplier
+        double feelScale = (meta.ChartFeel ?? "Standard").ToLowerInvariant() switch
+        {
+            "casual" => 1.45,
+            "shredder" => 0.72,
+            _ => 1.0
+        };
+
+        (int soloStartTick, int soloEndTick) = DetectSoloSection(allEvents, secondsToTick, songDuration);
 
         var sb = new StringBuilder();
         sb.AppendLine("[Song]");
@@ -95,16 +103,29 @@ public static class MidiToGh3ChartMapper
         sb.AppendLine("  MusicStream = \"song.mp3\"");
         sb.AppendLine("}");
 
+        // Write SyncTrack (supports both constant BPM and dynamic measure-by-measure tempo map!)
         sb.AppendLine("[SyncTrack]");
         sb.AppendLine("{");
         sb.AppendLine("  0 = TS 4");
-        sb.AppendLine($"  0 = B {bpmMicro}");
+        double lastEmittedBpm = -1;
+        int lastEmittedTick = -1;
+        foreach (var anchor in tempoAnchors)
+        {
+            if (anchor.Tick == lastEmittedTick) continue;
+            if (anchor.Tick == 0 || Math.Abs(anchor.Bpm - lastEmittedBpm) >= 0.4)
+            {
+                int bpmMicro = (int)Math.Round(anchor.Bpm * 1000.0);
+                sb.AppendLine($"  {anchor.Tick} = B {bpmMicro}");
+                lastEmittedBpm = anchor.Bpm;
+                lastEmittedTick = anchor.Tick;
+            }
+        }
         sb.AppendLine("}");
 
         // Dynamic section markers scaled to actual song length
         sb.AppendLine("[Events]");
         sb.AppendLine("{");
-        int totalTicks = (int)Math.Round(songDuration * ticksPerSec);
+        int totalTicks = secondsToTick(songDuration);
         int firstTick = allEvents.Count > 0 ? Math.Max(192, allEvents[0].Tick) : 768;
         sb.AppendLine($"  {firstTick} = E \"section Intro\"");
 
@@ -127,28 +148,84 @@ public static class MidiToGh3ChartMapper
         sb.AppendLine($"  {outroTick} = E \"section Outro\"");
         sb.AppendLine("}");
 
-        // Build all 4 authentic Guitar Hero III difficulties
+        // Build all 4 Guitar Hero III difficulties
         WriteDifficultyTrack(sb, "ExpertSingle", allEvents, lowPitch, highPitch,
-            maxFrets: 5, minSpacingSec: 0.085, allowChords: true, allowSustains: true, ampFloor: 0.12f, ticksPerSec);
+            maxFrets: 5, minSpacingSec: 0.085 * feelScale, allowChords: true, allowSustains: true, ampFloor: 0.12f);
 
         WriteDifficultyTrack(sb, "HardSingle", allEvents, lowPitch, highPitch,
-            maxFrets: 4, minSpacingSec: 0.155, allowChords: true, allowSustains: true, ampFloor: 0.18f, ticksPerSec);
+            maxFrets: 4, minSpacingSec: 0.155 * feelScale, allowChords: true, allowSustains: true, ampFloor: 0.18f);
 
         WriteDifficultyTrack(sb, "MediumSingle", allEvents, lowPitch, highPitch,
-            maxFrets: 4, minSpacingSec: 0.260, allowChords: false, allowSustains: true, ampFloor: 0.25f, ticksPerSec);
+            maxFrets: 4, minSpacingSec: 0.260 * feelScale, allowChords: false, allowSustains: true, ampFloor: 0.25f);
 
         WriteDifficultyTrack(sb, "EasySingle", allEvents, lowPitch, highPitch,
-            maxFrets: 3, minSpacingSec: 0.440, allowChords: false, allowSustains: true, ampFloor: 0.32f, ticksPerSec);
+            maxFrets: 3, minSpacingSec: 0.440 * feelScale, allowChords: false, allowSustains: true, ampFloor: 0.32f);
 
         return sb.ToString();
     }
 
-    private static List<NoteEvent> GroupIntoNoteEvents(List<TranscribedNote> rawNotes, double ticksPerSec)
+    private static List<TempoAnchor> BuildTempoAnchors(double baseBpm, List<double>? beats)
+    {
+        var anchors = new List<TempoAnchor>();
+        if (beats == null || beats.Count < 8)
+        {
+            anchors.Add(new TempoAnchor(0, 0.0, baseBpm));
+            return anchors;
+        }
+
+        // First anchor at tick 0 -> time 0 using first beat lead-in
+        double firstBeat = beats[0];
+        double initialBpm = baseBpm;
+        if (firstBeat > 0.15 && firstBeat < 3.0)
+        {
+            // Align tick 192 (beat 1) to firstBeat if clean, else use baseBpm from 0
+            initialBpm = Math.Clamp(60.0 / firstBeat, baseBpm * 0.72, baseBpm * 1.32);
+        }
+        anchors.Add(new TempoAnchor(0, 0.0, initialBpm));
+
+        int curTick = firstBeat > 0.15 && firstBeat < 3.0 ? Resolution : 0;
+        double curTime = firstBeat > 0.15 && firstBeat < 3.0 ? firstBeat : 0.0;
+
+        // Measure-by-measure tempo tracking (every 4 beats = 768 ticks)
+        int stepBeats = 4;
+        for (int i = 0; i + stepBeats < beats.Count; i += stepBeats)
+        {
+            double dt = beats[i + stepBeats] - beats[i];
+            if (dt <= 0.2) continue;
+
+            double measureBpm = Math.Clamp((stepBeats * 60.0) / dt, baseBpm * 0.78, baseBpm * 1.28);
+            anchors.Add(new TempoAnchor(curTick, curTime, measureBpm));
+
+            curTick += stepBeats * Resolution;
+            curTime += dt;
+        }
+
+        return anchors;
+    }
+
+    private static int ConvertSecondsToTick(double sec, List<TempoAnchor> anchors)
+    {
+        if (sec <= 0 || anchors.Count == 0) return 0;
+
+        // Find last anchor with TimeSec <= sec
+        int idx = 0;
+        for (int i = 1; i < anchors.Count; i++)
+        {
+            if (anchors[i].TimeSec <= sec) idx = i;
+            else break;
+        }
+
+        var a = anchors[idx];
+        double dt = sec - a.TimeSec;
+        double ticksPerSec = Resolution * (a.Bpm / 60.0);
+        return a.Tick + (int)Math.Round(dt * ticksPerSec);
+    }
+
+    private static List<NoteEvent> GroupIntoNoteEvents(List<TranscribedNote> rawNotes, Func<double, int> secondsToTick)
     {
         var events = new List<NoteEvent>();
         if (rawNotes == null || rawNotes.Count == 0) return events;
 
-        // Filter out micro-glitches and out-of-guitar-range noise
         var filtered = rawNotes
             .Where(n => n.StartSec >= 0.25 && n.EndSec > n.StartSec + 0.03 && n.MidiPitch >= 28 && n.MidiPitch <= 96)
             .OrderBy(n => n.StartSec)
@@ -157,7 +234,7 @@ public static class MidiToGh3ChartMapper
 
         if (filtered.Count == 0) return events;
 
-        const double chordWindowSec = 0.042; // Notes within 42ms are treated as a single strum/chord
+        const double chordWindowSec = 0.042;
         int i = 0;
         while (i < filtered.Count)
         {
@@ -170,7 +247,6 @@ public static class MidiToGh3ChartMapper
                 j++;
             }
 
-            // Pick unique pitches sorted low-to-high, favoring strongest amplitudes
             var distinctPitches = group
                 .GroupBy(n => n.MidiPitch)
                 .Select(g => g.OrderByDescending(x => x.Amplitude).First())
@@ -183,15 +259,14 @@ public static class MidiToGh3ChartMapper
             double endSec = distinctPitches.Max(n => n.EndSec);
             float peakAmp = distinctPitches.Max(n => n.Amplitude);
 
-            // Convert exact millisecond timestamp to tick (with gentle 1/32nd snap if very close)
-            int rawTick = (int)Math.Round(startSec * ticksPerSec);
+            int rawTick = secondsToTick(startSec);
             int snapped32 = ((rawTick + 12) / 24) * 24;
             int finalTick = Math.Abs(rawTick - snapped32) <= 7 ? snapped32 : rawTick;
             if (finalTick < 192) finalTick = 192;
 
-            int durTicks = (int)Math.Round((endSec - startSec) * ticksPerSec);
+            int endTick = secondsToTick(endSec);
+            int durTicks = Math.Max(0, endTick - finalTick);
 
-            // Avoid colliding ticks
             if (events.Count > 0 && finalTick <= events[^1].Tick + 12)
             {
                 i = j;
@@ -226,13 +301,11 @@ public static class MidiToGh3ChartMapper
         double minSpacingSec,
         bool allowChords,
         bool allowSustains,
-        float ampFloor,
-        double ticksPerSec)
+        float ampFloor)
     {
         sb.AppendLine($"[{trackName}]");
         sb.AppendLine("{");
 
-        // Thin events cleanly according to difficulty spacing & salience
         var diffEvents = new List<NoteEvent>();
         double lastKeptSec = -10.0;
 
@@ -240,24 +313,13 @@ public static class MidiToGh3ChartMapper
         {
             var ev = allEvents[idx];
             double gap = ev.StartSec - lastKeptSec;
-            if (gap < minSpacingSec)
-            {
-                // If this event is significantly stronger than the one we just kept and very close, skip;
-                // otherwise enforce clean playable density
-                continue;
-            }
-
-            // Keep strong notes always; on easier modes filter weak background ghost notes
-            if (ev.PeakAmplitude < ampFloor && gap < minSpacingSec * 2.5)
-            {
-                continue;
-            }
+            if (gap < minSpacingSec) continue;
+            if (ev.PeakAmplitude < ampFloor && gap < minSpacingSec * 2.5) continue;
 
             diffEvents.Add(ev);
             lastKeptSec = ev.StartSec;
         }
 
-        // Ergonomic pitch-contour fret assignment
         int prevPitch = -1;
         int prevFret = 0;
         double lastStarPowerSec = -20.0;
@@ -266,8 +328,6 @@ public static class MidiToGh3ChartMapper
         for (int i = 0; i < diffEvents.Count; i++)
         {
             var ev = diffEvents[i];
-
-            // Compute absolute target fret from guitar register (0 .. maxFrets-1)
             double normPitch = Math.Clamp((ev.RootPitch - lowPitch) / (double)pitchSpan, 0.0, 1.0);
             int absoluteFret = (int)Math.Round(normPitch * (maxFrets - 1));
 
@@ -281,12 +341,10 @@ public static class MidiToGh3ChartMapper
                 int delta = ev.RootPitch - prevPitch;
                 if (delta == 0)
                 {
-                    // EXACT SAME PITCH -> STAY ON EXACT SAME FRET! (Authentic riff chugging!)
                     fret = prevFret;
                 }
                 else if (delta > 0)
                 {
-                    // Pitch rose: move up proportionally, anchored toward absolute register
                     int step = delta <= 3 ? 1 : (delta <= 7 ? 2 : 3);
                     int relativeTarget = Math.Min(maxFrets - 1, prevFret + step);
                     fret = (int)Math.Round((relativeTarget * 0.65) + (absoluteFret * 0.35));
@@ -294,7 +352,6 @@ public static class MidiToGh3ChartMapper
                 }
                 else
                 {
-                    // Pitch dropped: move down proportionally
                     int absDelta = -delta;
                     int step = absDelta <= 3 ? 1 : (absDelta <= 7 ? 2 : 3);
                     int relativeTarget = Math.Max(0, prevFret - step);
@@ -305,7 +362,6 @@ public static class MidiToGh3ChartMapper
 
             fret = Math.Clamp(fret, 0, maxFrets - 1);
 
-            // Compute true sustain length (clamped safely before next note)
             int sustain = 0;
             if (allowSustains && (ev.EndSec - ev.StartSec) >= 0.32 && ev.DurationTicks >= 96)
             {
@@ -315,22 +371,16 @@ public static class MidiToGh3ChartMapper
                     int gapTicks = diffEvents[i + 1].Tick - ev.Tick;
                     maxAllowed = Math.Min(maxAllowed, gapTicks - 48);
                 }
-                if (maxAllowed >= 96)
-                {
-                    sustain = maxAllowed;
-                }
+                if (maxAllowed >= 96) sustain = maxAllowed;
             }
 
-            // Polyphonic 2-note chord detection (authentic power chords!)
             int intervalSemitones = ev.TopPitch - ev.RootPitch;
             bool isChord = allowChords && ev.NoteCount >= 2 && intervalSemitones >= 2 && maxFrets >= 3;
 
             if (isChord)
             {
                 int baseFret = Math.Min(fret, maxFrets - 2);
-                int secondFret = (intervalSemitones >= 6 && baseFret + 2 < maxFrets)
-                    ? baseFret + 2
-                    : baseFret + 1;
+                int secondFret = (intervalSemitones >= 6 && baseFret + 2 < maxFrets) ? baseFret + 2 : baseFret + 1;
 
                 sb.AppendLine($"  {ev.Tick} = N {baseFret} {sustain}");
                 sb.AppendLine($"  {ev.Tick} = N {secondFret} {sustain}");
@@ -344,7 +394,6 @@ public static class MidiToGh3ChartMapper
 
             prevPitch = ev.RootPitch;
 
-            // Place Star Power phrases on energetic phrases spaced ~20+ seconds apart
             if (ev.StartSec - lastStarPowerSec >= 20.0 && i + 6 < diffEvents.Count)
             {
                 int spEndTick = diffEvents[Math.Min(i + 8, diffEvents.Count - 1)].Tick;
@@ -357,7 +406,7 @@ public static class MidiToGh3ChartMapper
         sb.AppendLine("}");
     }
 
-    private static (int StartTick, int EndTick) DetectSoloSection(List<NoteEvent> events, double ticksPerSec, double durationSec)
+    private static (int StartTick, int EndTick) DetectSoloSection(List<NoteEvent> events, Func<double, int> secondsToTick, double durationSec)
     {
         if (events.Count < 40 || durationSec < 45) return (0, 0);
 
@@ -379,7 +428,7 @@ public static class MidiToGh3ChartMapper
         }
 
         if (bestScore <= 0) return (0, 0);
-        return ((int)Math.Round(bestStart * ticksPerSec), (int)Math.Round((bestStart + windowSec) * ticksPerSec));
+        return (secondsToTick(bestStart), secondsToTick(bestStart + windowSec));
     }
 
     private static string EscapeChartStr(string s) => (s ?? "").Replace("\"", "'");

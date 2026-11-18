@@ -1,90 +1,75 @@
-# 🎸 GH3-Sync | Complete P2P Synchronizer, Friends Network & ONOGAMI Song Creator
+# GH3-Sync
 
-**GH3-Sync** is an all-in-one companion desktop application and in-game HUD overlay designed specifically for **BetterGH3 (Guitar Hero III PC)**. It enables players worldwide to synchronize custom songs and setlists in seconds, create new custom songs using the **ONOGAMI Method**, safeguard and restore career save files, manage trusted friends to skip PIN/IP entry, and prevent duplicate downloads.
+**Created by Mad Scientist ([tbailey639](https://github.com/tbailey639))**
 
----
-
-## 🌟 Key Features
-
-### 1. 🖥️ True Native Windows 11 Desktop App (Guitar Hero III: Legends of Rock Theme)
-* **100% Native Windows 11 WPF Application:** Zero browser tabs, zero HTML, zero WebView2 — built natively in .NET 10 WPF with Windows 11 rounded dark title bars, system tray minimization, and native file pickers.
-* **Custom GH3 Emblem & Animated Intro:** Includes a custom fiery metallic 5-fret emblem for the app, taskbar, installer, and desktop shortcut, plus an animated Star Power 5-fret splash intro!
-* **Automatic Startup Update Checker & 1-Click Updater:** Checks GitHub Releases automatically upon opening and includes a live **"Check Updates / Update Now"** button that downloads and installs updates seamlessly.
-
-### 2. ⚡ Bundled Honeycomb Compiler Toolkit (Zero Separate Install Required)
-* **Built-in Compilation Engine:** Bundles `GH-Toolkit-Core`, `Honeycomb-GUI.dll`, Neversoft QB byte compilers, `keys.txt`, FFmpeg, and FSB soundbank tools directly inside the installer.
-* **Individual Song Deletion:** Every song card in **My Customs** includes a **🗑️ Delete** button that safely backs up career saves, wipes `.pak.xen`, `.fsb.xen`, `.dat.xen`, previews, and optionally deletes the source ONOGAMI project folder & stems!
-
-### 3. 🤖 Demucs 6-Stem (`htdemucs_6s`) + Spotify `Basic Pitch` AI Charting
-* **1-Click In-App AI Engine Installer:** Open **AI & Tools Manager** and click **1-Click Install AI Engine** to automatically install portable Python 3.11 + PyTorch + Meta Demucs 6-Stem + Spotify Basic Pitch into `%APPDATA%\GH3-Sync\tools\ai\` — zero Python or terminal commands required!
-* **True 6-Stem Guitar Isolation:** `htdemucs_6s` extracts a dedicated **`guitar.wav`** stem (plus `bass`, `drums`, `vocals`, `piano`, `other`) for authentic **mute-on-miss** Guitar Hero III gameplay.
-* **Real Musical Pitch-Mapped Charts (No More Repeating Patterns!):** Spotify `Basic Pitch` (plus a built-in pure-C# **FFT Guitar-Bandpass + YIN Pitch** engine for zero-download use) maps real guitar pitches, repeated riffs on the same fret, 2-note power chords, Star Power phrases, and true sustain lengths!
-
-### 5. 👥 Friends, "Trusted Friend" System & Public Internet Connectivity
-* **Automatic IP Sharing (Trusted Friends):** When you mark a friend as **Trusted**, their address is automatically discovered and resolved in real time via LAN UDP beacons (port 7374), UPnP / NAT-PMP external mappings, and the Central Admin Hub. No manual IP exchange or PIN entry needed!
-* **Public IP & UPnP / NAT-PMP Port Mapping:** Automatically detects your router's public WAN IP and forwards port 7373 via UPnP IGD or NAT-PMP so peers can connect from anywhere on the internet without manual router setup.
-* **IP Privacy (Regular Friends):** Untrusted friends' IPs remain strictly private for security; manual IP exchange and session PINs are required until trust is granted.
-* **Permanent Unique Friend Code:** Every player receives a permanent unique code (e.g. `GH3-6475-71AF`) with a Show/Hide toggle to prevent spam.
-
-### 6. 🛡️ Career Save Protection & 1-Click Restore
-* **Automated Safety Backup:** GH3-Sync automatically creates a timestamped backup of `%USERPROFILE%\Documents\Aspyr\Guitar Hero III\Save` (`s000.d` and `toc.dat`) before *every* P2P sync, import, or song compilation.
-* **1-Click Restore:** Visit the **Career Saves** tab anytime and click **"Restore Latest Career Save"** to recover all career progress with customs intact!
-
-### 7. 🔍 Duplicate Song Detection & ONOGAMI Fingerprinting
-* **No More Duplicate Downloads:** Automatically compares song IDs, Titles, Artists, and audio fingerprints against peers, auto-unchecking tracks already installed on your PC.
-
-### 8. 📁 1-Click File Import (`.gh3pack`, `.gh3song`, `.sgh`, `.zip`)
-* Drag and drop any custom song archive into the **Import Songs** tab to install it straight into your game with header verification and career save protection.
-
-### 9. 🎮 In-Game HUD Overlay
-* Transparent, click-through overlay attached to `GH3.exe`.
-* Displays `[ACTIVE]`, live transfer progress (`Syncing (1/3): Beat It (45%) [||||....]`), and `[✓ SUCCESS]` notifications during matches.
+**GH3-Sync** is an all-in-one companion application, custom song creator, Clone Hero converter, and P2P setlist synchronizer for **Guitar Hero III PC / BetterGH3**.
 
 ---
 
-## ⚠️ Feature Evolution & Known Limitations by Version
+## Features
 
-| Version | Status / Highlights | ⚠️ Known Limitations (What Doesn't Work) |
-| :--- | :--- | :--- |
-| **Beta 1** | Initial P2P sync, save protection, basic ONOGAMI project creator. | • Local LAN only (no external WAN / router traversal).<br>• No automated compilation (required manual Honeycomb GUI steps).<br>• No peer song file downloads. |
-| **Beta 2** | Direct peer song downloads (`.gh3song` / standalone packages). | • Still required external manual Honeycomb compilation.<br>• External connections required manual port forwarding.<br>• Created songs were not automatically verified in-game. |
-| **Beta 3** | Automated UPnP / NAT-PMP port mapping, public IP resolution, DDNS support. | • ONOGAMI custom songs still generated uncompiled project folders.<br>• Required clicking into Honeycomb to build `.pak.xen` and `.fsb.xen`. |
-| **Beta 4** | Automated headless Honeycomb compilation directly into GH3 (`.pak.xen` + `.fsb.xen`), 1-click in-game ready status, action button fix. | • **No Automatic BPM Detection**: Users had to enter the BPM manually.<br>• **Procedural Repeating Chart**: Auto-generated charts used a fixed rhythmic pattern rather than listening to actual guitar transients.<br>• **Single Mix Audio**: Required multi-track stems uploaded manually to mute guitar on miss.<br>• **Constant BPM Only**: Variable tempo maps / time signature changes not yet detected. |
-| **Beta 5** *(Current)* | **True Native Windows 11 WPF App** (zero browser/HTML), **GH3 Legends of Rock Theme**, **Custom Logo & Animated Intro**, **Bundled Compiler**, **1-Click Demucs 6-Stem + Spotify Basic Pitch AI Installer**, **Real Pitch-Mapped Charts**, **Individual Song Deletion**, and **Auto-Updater (checks on open)**. | • First-time AI Engine download requires ~700 MB – 1.2 GB disk space (optional; built-in FFT/YIN pitch charting works out of the box).<br>• Variable mid-song tempo drift map is planned for future updates. |
+### 1. P2P Song Sync & Lobby Setlist (10-Song Auto-Sync Cap)
+* **Active Lobby Setlist:** Tag up to **10** custom songs (configurable 1–25) in **My Customs** for automatic sync with friends. Prevents large song libraries from overflowing your friend's storage while still letting them browse and download individual extra tracks on demand.
+* **Lobby Readiness Check:** Displays a live **100% Lobby Setlist Matched** indicator before launching an online BetterGH3 match.
+* **Friends & Trusted Network:** Permanent unique Friend Codes (`GH3-XXXX-XXXX`), Trusted Friend automatic IP/token sharing, and PIN-protected connections for regular friends.
+* **UPnP / NAT-PMP & Public IP Support:** Automatically forwards port `7373` and detects public WAN addresses for playing outside your local LAN.
+* **End-to-End Encryption:** All song packages and `customs.pak.xen` transfers use AES-256-GCM authenticated encryption with duplicate detection and path-traversal protection.
 
----
+### 2. ONOGAMI Song Creator & Bundled Compiler
+* **Built-In Compilation:** Bundles Honeycomb/GH-Toolkit-Core and FFmpeg directly into GH3-Sync so `.pak.xen` charts and `.fsb.xen` / `.dat.xen` soundbanks compile directly into BetterGH3 with no separate setup.
+* **Dynamic Variable Tempo Maps:** Uses dynamic beat tracking to write measure-by-measure `[SyncTrack]` BPM markers so fretboard beat lines, lighting, and band animations stay locked even on live recordings.
+* **Pitch-Mapped Auto-Charting:** Generates 4-difficulty charts (`Easy`, `Medium`, `Hard`, `Expert`) from real detected guitar pitches, power chords, sustains, Star Power phrases, and solo markers. Supports **Casual / Standard / Shredder** chart feel and **Guitar / Bass / Vocals** instrument focus.
+* **Optional 6-Stem Separation (Demucs `htdemucs_6s` + Basic Pitch):** 1-click installer under **Tools & Stems** isolates `guitar.wav`, `bass.wav`, `drums.wav`, `vocals.wav`, and `piano.wav` for authentic mute-on-miss gameplay and MIDI transcription.
+* **Batch Song Queue:** Queue multiple songs and compile them in a single run.
 
-## 📜 Credits & Acknowledgments
+### 3. 1-Click Clone Hero / YARG Converter
+* Import any **Clone Hero / YARG** song folder or `.zip` (`song.ini`, `notes.chart` / `notes.mid`, and isolated `.ogg` / `.mp3` / `.wav` stems) — GH3-Sync maps all stems, converts `.chart` to `.mid`, and compiles straight into Guitar Hero III.
+* Supports **drag-and-drop** anywhere on the window for audio files, charts, `.gh3song`/`.gh3pack` archives, and Clone Hero songs.
 
-GH3-Sync is built with immense gratitude to the open-source community, reverse engineers, and developers whose work powers custom rhythm gaming:
+### 4. Library Management & QoL
+* **Launch GH3 Button:** Start `GH3.exe` directly from the header bar (with optional auto-minimize to tray).
+* **Built-In Audio & Guitar Stem Preview Player:** Audition tracks or solo isolated `guitar.wav` stems and set the 30-second menu preview start time directly from the scrubber.
+* **Edit Song Info & Volume Mixer:** Update Title, Artist, Genre, and Guitar/Band dB volumes on existing projects and recompile in 1 click.
+* **Individual Song Deletion:** Safely removes `.pak.xen`, `.fsb.xen`, `.dat.xen`, previews, config entries, and optionally the source project folder & stems while protecting vanilla GH3 tracks.
+* **Favorites, Sorting & Selective Pack Export:** Star favorites, sort by Title/Artist/Date/Size, and export either selected songs or your entire library as a `.gh3pack`.
+* **Automatic Updates:** Checks GitHub Releases on startup and installs new versions via the **Check Updates / Update Now** button.
 
-* **[Honeycomb-GUI & GH-Toolkit-Core](https://github.com/AddyMills/Honeycomb-GUI):** Created by **AddyMills** & Neversoft reverse engineers. Powers the headless `.pak.xen` chart compiler, QB bytecode serialization, and CRC checksum tables (`keys.txt`).
-* **[Demucs (`htdemucs_6s`)](https://github.com/facebookresearch/demucs):** Created by **Alexandre Défossez et al. (Meta AI Research)**. Powers state-of-the-art 6-stem deep learning stem separation (`guitar.wav`, `bass`, `drums`, `vocals`, `piano`, `other`).
-* **[Basic Pitch](https://github.com/spotify/basic-pitch):** Created by **Spotify Audio Intelligence Lab**. Lightweight neural pitch-to-MIDI guitar transcription engine.
-* **[BetterGH3](https://github.com/marchellodev/BetterGH3):** Developed by the **BetterGH3 Modding Team**. The premier quality-of-life mod for Guitar Hero III PC.
-* **[FFmpeg](https://ffmpeg.org/):** Industry-standard audio downmixing, stem extraction, and raw PCM transient analysis.
-* **[FMOD Sound System](https://www.fmod.com/):** FMOD sound engine and FSB3 soundbank assembly utilities.
-* **[python-build-standalone](https://github.com/astral-sh/python-build-standalone):** Maintained by **Astral**, powering the 1-click zero-setup portable Python 3.11 AI runtime.
-* **[NAudio](https://github.com/naudio/NAudio) & [DryWetMidi](https://github.com/melanchall/drywetmidi):** .NET audio transcoding and MIDI note track serialization.
-* **Moonscraper & Reaper Community:** For standardizing `.chart` and `.mid` custom rhythm game formats.
-
-For full license notices, visit **[CREDITS.md](CREDITS.md)**.
-
----
-
-## 🚀 How to Run & Distribute
-
-### Option A: 1-Click Windows Installer (Recommended)
-* Download and run **`GH3-Sync-Setup.exe`** from the [Latest Release](https://github.com/tbailey639/GH3-Sync/releases/latest).
-* Automatically installs desktop & start menu shortcuts, BetterGH3 components, and an uninstaller.
-
-### Option B: Standalone Portable (.exe)
-* Run `GH3-Sync.exe` in `dist/`.
-* Automatically launches the native Windows 11 desktop application window.
+### 5. Paired Career Save Profiles
+* Saves named snapshots pairing your GH3 career save (`s000.d`, `toc.dat`) **together with its matching `DATA\customs.pak.xen`** so restoring a profile works cleanly without corrupt-save errors.
 
 ---
 
-## ⚖️ License & Terms of Use
-This software is licensed under the **PolyForm Noncommercial License 1.0.0**.
-* **Allowed:** Free for personal, community, and noncommercial gaming use.
-* **Prohibited:** Any commercial use, monetized distribution, or selling of this software in whole or in part without explicit written permission is strictly prohibited.
+## Important: Guitar Hero III Career Save Warning
+Guitar Hero III ties your career save (`s000.d`) to your exact `DATA\customs.pak.xen` song list. Whenever you add, sync, or delete custom songs, `customs.pak.xen` changes and GH3 will prompt you to delete/recreate your save file on next launch.
+* **Restoring a Paired Snapshot** in **Career Saves** restores *both* your old career progress and its matching `customs.pak.xen` cleanly (rolling your setlist back to that snapshot).
+* **Tip:** Save a named `"Main Career"` snapshot first, compile/sync new songs in a single batch, and use BetterGH3's in-game **Unlock All** option after recreating a fresh profile.
+
+---
+
+## Known Limitations
+* Modifying custom songs triggers GH3's built-in save reset prompt when keeping newly added tracks (see Career Save Warning above).
+* Optional Demucs 6-Stem + Basic Pitch stem separation tools require ~700 MB – 1.2 GB of disk space when installed.
+
+---
+
+## Installation
+Download and run **`GH3-Sync-Setup.exe`** from the [Latest Release](https://github.com/tbailey639/GH3-Sync/releases/latest).
+
+---
+
+## Credits & Acknowledgments
+Developed by **Mad Scientist** ([github.com/tbailey639](https://github.com/tbailey639)).
+
+Built with gratitude to the open-source projects and Guitar Hero modding community:
+* **[Honeycomb-GUI & GH-Toolkit-Core](https://github.com/AddyMills/Honeycomb-GUI)** — AddyMills & Neversoft modding community
+* **[Demucs (`htdemucs_6s`)](https://github.com/facebookresearch/demucs)** — Alexandre Défossez et al. (Meta AI Research)
+* **[Basic Pitch](https://github.com/spotify/basic-pitch)** — Spotify Audio Intelligence Lab
+* **[BetterGH3](https://github.com/marchellodev/BetterGH3)** — Marchello & the BetterGH3 Team
+* **[FFmpeg](https://ffmpeg.org/)**, **[FMOD](https://www.fmod.com/)**, **[NAudio](https://github.com/naudio/NAudio)**, **[DryWetMidi](https://github.com/melanchall/drywetmidi)**, **[python-build-standalone](https://github.com/astral-sh/python-build-standalone)**
+
+See [CREDITS.md](CREDITS.md) for full notices.
+
+---
+
+## License
+Licensed under the **PolyForm Noncommercial License 1.0.0**. Free for personal and community gaming use. Commercial use is prohibited.

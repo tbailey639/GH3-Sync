@@ -1,6 +1,29 @@
-# 🎸 GH3-Sync Changelog
+# GH3-Sync Changelog
 
-All notable changes to the GH3-Sync project are documented in this file.
+Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All notable changes are documented below.
+
+---
+
+## [v1.0.0] - 2026-11-18 (First Official Release)
+
+### New Features
+* **Active Lobby Setlist (10-Song Auto-Sync Cap):** Tag up to 10 songs (customizable 1–25) in **My Customs** to auto-sync with friends on connect without overflowing storage, plus a **Browse Full Library** toggle and **100% Lobby Matched** readiness indicator.
+* **1-Click Clone Hero / YARG Converter:** Import any Clone Hero song folder or `.zip` (`song.ini`, `notes.chart`/`.mid`, and multi-track `.ogg`/`.mp3`/`.wav` stems) directly into BetterGH3.
+* **Dynamic Variable Tempo Maps:** Measure-by-measure beat tracking in `[SyncTrack]` keeps fretboard beat lines, lighting, and band animations synced even on live recordings.
+* **Built-In Audio & Guitar Stem Preview Player:** Audition songs or solo isolated `guitar.wav` stems in-app and click **Set Preview Start Here** to pick the 30-second menu preview.
+* **Chart Feel & Instrument Focus:** Choose **Casual / Standard / Shredder** chart density and **Guitar / Bass / Vocals** focus when stems are separated.
+* **Batch Song Queue:** Queue multiple songs in Song Creator and compile them together in one pass.
+* **Edit Song Info & Volume Mixer:** Edit Title, Artist, Genre, and Guitar/Band dB volumes on existing custom songs and recompile with 1 click.
+* **Launch GH3 Button, Drag-and-Drop, Favorites, Sorting & Selective Pack Export:** Full library management quality-of-life upgrades.
+* **Paired Career Save Profiles:** Snapshots now pair `s000.d` / `toc.dat` with their matching `DATA\customs.pak.xen` so restoring named profiles works without corrupt-save errors, along with clear GH3 save warnings.
+
+### Bug Fixes
+* **Fixed Two-PC P2P Sync Encryption:** Resolved AES-256-GCM key derivation mismatch between host and client (`EncryptPayload` / `DecryptPayload` now share the validated session PIN or Trust Token cleanly across machines) and ensured `customs.pak.xen` is decrypted and deployed on sync.
+* **Fixed Program Files Startup Permissions:** Routed runtime paths and debug logs to `%APPDATA%\GH3-Sync\`.
+
+### Known Limitations
+* Adding/syncing new custom songs modifies `DATA\customs.pak.xen`, causing Guitar Hero III to prompt for a save reset on next launch when keeping newly added tracks (use Paired Career Save Profiles to switch cleanly, or use BetterGH3's in-game Unlock All).
+* Optional Demucs 6-Stem + Basic Pitch stem tools require ~700 MB – 1.2 GB when installed.
 
 ---
 

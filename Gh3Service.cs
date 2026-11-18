@@ -37,6 +37,8 @@ public class CustomSongInfo
     public string ProjectDirectory { get; set; } = "";
     public bool IsCompiled { get; set; } = true;
     public string GhprojPath { get; set; } = "";
+    public bool IsFavorite { get; set; } = false;
+    public bool IsInLobbySetlist { get; set; } = false;
 }
 
 public class LibraryManifest
@@ -45,6 +47,8 @@ public class LibraryManifest
     public DateTime GeneratedAt { get; set; } = DateTime.UtcNow;
     public string CustomsPakHash { get; set; } = "";
     public long CustomsPakSize { get; set; }
+    public int MaxLobbyAutoSyncSongs { get; set; } = 10;
+    public List<string> LobbySetlistIds { get; set; } = new();
     public List<CustomSongInfo> Songs { get; set; } = new();
 }
 
@@ -519,7 +523,40 @@ public class Gh3Service
             }
         }
 
+        var favs = AppConfig.Current.FavoriteSongIds ?? new List<string>();
+        var lobby = AppConfig.Current.LobbySetlistIds ?? new List<string>();
+        foreach (var s in songs)
+        {
+            s.IsFavorite = favs.Any(f => f.Equals(s.SongId, StringComparison.OrdinalIgnoreCase));
+            s.IsInLobbySetlist = lobby.Any(l => l.Equals(s.SongId, StringComparison.OrdinalIgnoreCase));
+        }
+
         return songs;
+    }
+
+    public static string? FindSongAudioPath(CustomSongInfo song, bool preferGuitarStem = false)
+    {
+        if (song == null || string.IsNullOrWhiteSpace(song.ProjectDirectory) || !Directory.Exists(song.ProjectDirectory))
+            return null;
+
+        if (preferGuitarStem)
+        {
+            var guitarStem = Directory.GetFiles(song.ProjectDirectory, "guitar.wav", SearchOption.AllDirectories).FirstOrDefault()
+                          ?? Directory.GetFiles(song.ProjectDirectory, "guitar.ogg", SearchOption.AllDirectories).FirstOrDefault()
+                          ?? Directory.GetFiles(song.ProjectDirectory, "other.wav", SearchOption.AllDirectories).FirstOrDefault();
+            if (!string.IsNullOrEmpty(guitarStem)) return guitarStem;
+        }
+
+        foreach (var name in new[] { "song.mp3", "song.wav", "song.ogg", "guitar.mp3", "guitar.ogg", "guitar.wav" })
+        {
+            var p = Path.Combine(song.ProjectDirectory, name);
+            if (File.Exists(p)) return p;
+        }
+
+        return Directory.GetFiles(song.ProjectDirectory)
+            .FirstOrDefault(f => f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) ||
+                                 f.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) ||
+                                 f.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase));
     }
 
     private static void AddOrMergeSong(CustomSongInfo projectSong, List<CustomSongInfo> songs, HashSet<string> seenSongIds)
@@ -548,7 +585,11 @@ public class Gh3Service
 
     public LibraryManifest GenerateManifest()
     {
-        var manifest = new LibraryManifest();
+        var manifest = new LibraryManifest
+        {
+            MaxLobbyAutoSyncSongs = Math.Clamp(AppConfig.Current.MaxLobbyAutoSyncSongs, 1, 25),
+            LobbySetlistIds = (AppConfig.Current.LobbySetlistIds ?? new List<string>()).ToList()
+        };
         if (File.Exists(CustomsPakPath))
         {
             var fi = new FileInfo(CustomsPakPath);

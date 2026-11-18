@@ -2,8 +2,8 @@
 ; GH3-Sync: Native Windows 11 P2P Song Synchronizer, Friends Network & ONOGAMI AI Song Creator for BetterGH3
 
 #define MyAppName "GH3-Sync"
-#define MyAppVersion "1.5.0-beta.5"
-#define MyAppPublisher "Antigravity & ONOGAMI"
+#define MyAppVersion "1.0.0"
+#define MyAppPublisher "Mad Scientist (tbailey639)"
 #define MyAppURL "https://github.com/tbailey639/GH3-Sync"
 #define MyAppExeName "GH3-Sync.exe"
 

@@ -13,6 +13,7 @@ public class AudioAnalysisResult
     public double DurationSeconds { get; set; } = 0.0;
     public List<double> OnsetTimestampsSeconds { get; set; } = new();
     public List<float> OnsetEnergies { get; set; } = new();
+    public List<double> BeatTimestampsSeconds { get; set; } = new();
     public List<TranscribedNote> TranscribedNotes { get; set; } = new();
     public bool Success { get; set; }
     public string Message { get; set; } = "";
@@ -81,10 +82,11 @@ public class AudioAnalysisService
                 return result;
             }
 
-            // 2. Autocorrelate flux for accurate BPM
+            // 2. Autocorrelate flux for accurate BPM & run Ellis Dynamic Programming Beat Tracker
             result.Bpm = Math.Round(DetectBpmFromAutocorrelation(flux, fps), 1);
             double beatIntervalSec = 60.0 / result.Bpm;
             result.DownbeatOffsetMs = Math.Round(DetectDownbeatOffsetMs(flux, fps, beatIntervalSec), 1);
+            result.BeatTimestampsSeconds = TrackDynamicBeats(flux, fps, result.Bpm);
 
             // 3. Adaptive local peak picking for guitar transients
             var peakFrames = PickAdaptiveOnsets(flux, fps);
@@ -433,6 +435,83 @@ public class AudioAnalysisService
             }
         }
         return (peakFrame / fps) * 1000.0;
+    }
+
+    /// <summary>
+    /// Ellis Dynamic Programming Beat Tracker: recovers exact timestamp of every beat
+    /// across the song, naturally tracking tempo drift on unquantized live recordings.
+    /// </summary>
+    private static List<double> TrackDynamicBeats(float[] flux, double fps, double avgBpm)
+    {
+        var beats = new List<double>();
+        if (flux.Length < 100 || avgBpm <= 30) return beats;
+
+        double period = fps * 60.0 / avgBpm;
+        int minStep = Math.Max(4, (int)Math.Round(period * 0.65));
+        int maxStep = Math.Min(flux.Length - 1, (int)Math.Round(period * 1.55));
+        if (minStep >= maxStep) return beats;
+
+        int n = flux.Length;
+        var cumScore = new double[n];
+        var backlink = new int[n];
+        Array.Fill(backlink, -1);
+
+        // Precompute Gaussian log-tempo transition penalty (tightness = 100)
+        const double tightness = 100.0;
+        var penalty = new double[maxStep + 1];
+        for (int tau = minStep; tau <= maxStep; tau++)
+        {
+            double logRatio = Math.Log2(tau / period);
+            penalty[tau] = tightness * logRatio * logRatio;
+        }
+
+        for (int t = 0; t < n; t++)
+        {
+            double bestPrev = 0.0;
+            int bestIdx = -1;
+
+            int lo = Math.Max(0, t - maxStep);
+            int hi = t - minStep;
+            for (int prev = lo; prev <= hi; prev++)
+            {
+                double cand = cumScore[prev] - penalty[t - prev];
+                if (bestIdx < 0 || cand > bestPrev)
+                {
+                    bestPrev = cand;
+                    bestIdx = prev;
+                }
+            }
+
+            cumScore[t] = flux[t] + (bestIdx >= 0 ? bestPrev : 0.0);
+            backlink[t] = bestIdx;
+        }
+
+        // Backtrack from strongest beat near the end of the track
+        int tailStart = Math.Max(0, n - maxStep * 2);
+        int endFrame = tailStart;
+        double bestEndScore = double.NegativeInfinity;
+        for (int t = tailStart; t < n; t++)
+        {
+            if (cumScore[t] > bestEndScore)
+            {
+                bestEndScore = cumScore[t];
+                endFrame = t;
+            }
+        }
+
+        var frames = new List<int>();
+        int cur = endFrame;
+        while (cur >= 0)
+        {
+            frames.Add(cur);
+            cur = backlink[cur];
+        }
+        frames.Reverse();
+
+        foreach (var f in frames)
+            beats.Add(f / fps);
+
+        return beats;
     }
 
     private static void FftInPlace(float[] re, float[] im)

@@ -59,7 +59,7 @@
                     <TextBlock Text="-SYNC" FontSize="34" FontWeight="Black" Foreground="{StaticResource FlameGradient}" FontFamily="Segoe UI"/>
                 </StackPanel>
 
-                <TextBlock Text="LEGENDS OF ROCK EDITION  •  BETA 5"
+                <TextBlock Text="v1.0.0  •  BY MAD SCIENTIST"
                            FontSize="12" FontWeight="Bold" Foreground="#F59E0B"
                            HorizontalAlignment="Center" Margin="0,0,0,18"/>
 

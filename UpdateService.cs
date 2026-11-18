@@ -29,7 +29,7 @@ public class UpdateCheckResult
 /// </summary>
 public class UpdateService
 {
-    public const string CurrentAppVersion = "1.5.0-beta.5";
+    public const string CurrentAppVersion = "1.0.0";
     private const string RepoOwner = "tbailey639";
     private const string RepoName = "GH3-Sync";
     private static readonly string LatestReleaseApiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
@@ -211,6 +211,11 @@ public class UpdateService
 
         var cParts = ParseVersion(current);
         var rParts = ParseVersion(remote);
+
+        // Never offer a beta/prerelease tag as an update to a stable official release
+        if (string.IsNullOrEmpty(cParts.PreLabel) && !string.IsNullOrEmpty(rParts.PreLabel)) return false;
+        // Always offer a stable release as an upgrade over any beta/prerelease build!
+        if (!string.IsNullOrEmpty(cParts.PreLabel) && string.IsNullOrEmpty(rParts.PreLabel)) return true;
 
         if (rParts.Major != cParts.Major) return rParts.Major > cParts.Major;
         if (rParts.Minor != cParts.Minor) return rParts.Minor > cParts.Minor;
