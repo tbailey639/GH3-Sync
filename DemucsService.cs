@@ -524,6 +524,12 @@ except Exception as e:
 
         psi.Environment["PYTHONIOENCODING"] = "utf-8";
 
+        // Consolidate PyTorch / Demucs model weights inside %APPDATA%\GH3-Sync\tools\ai\models
+        // so keeping or uninstalling Stem Tools manages 100% of disk space cleanly!
+        var modelsDir = Path.Combine(AiToolsRoot, "models");
+        Directory.CreateDirectory(modelsDir);
+        psi.Environment["TORCH_HOME"] = modelsDir;
+
         using var proc = Process.Start(psi);
         if (proc == null) return (false, "Could not start process.");
 

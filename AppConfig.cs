@@ -42,7 +42,7 @@ public class FeedbackItem
     public string Message { get; set; } = "";
     public string UserFriendCode { get; set; } = "";
     public string Username { get; set; } = "";
-    public string AppVersion { get; set; } = "1.4.0-beta.4";
+    public string AppVersion { get; set; } = UpdateService.CurrentAppVersion;
     public bool IsBetterGh3 { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string Status { get; set; } = "Open"; // Open, Investigating, Resolved
@@ -58,6 +58,11 @@ public class AppConfigData
     public string AdminHubUrl { get; set; } = "http://localhost:7575";
     public string CustomPublicAddress { get; set; } = ""; // DDNS or manually configured Public IP/Port
     public bool AutoPortMap { get; set; } = true;         // UPnP / NAT-PMP enabled
+    public bool P2pOnlineEnabled { get; set; } = true;    // Online/Offline P2P switch
+    public string ThemeMode { get; set; } = "Dark";       // Dark or Light custom GH3 theme
+    public bool AutoCheckUpdates { get; set; } = true;
+    public bool AutoRollbackOnFailedUpdate { get; set; } = true;
+    public bool HasAcknowledgedFirstTimeSaveNotice { get; set; } = false;
     public FeatureUsageStats Usage { get; set; } = new();
     public List<FriendEntry> Friends { get; set; } = new();
     public List<string> CreatedSongIds { get; set; } = new() { "beatit_6ce4b6e5", "gentlyweeps_26711a91", "onogami_fa5fdfea" };
@@ -101,6 +106,12 @@ public static class AppConfig
                     if (data != null)
                     {
                         Current = data;
+                        // Decrypt DPAPI-protected Trust Tokens in memory
+                        if (Current.Friends != null)
+                        {
+                            foreach (var f in Current.Friends)
+                                f.TrustToken = UnprotectToken(f.TrustToken);
+                        }
                         if (string.IsNullOrEmpty(Current.FriendCode))
                         {
                             Current.FriendCode = GenerateFriendCode();
@@ -131,14 +142,59 @@ public static class AppConfig
             try
             {
                 if (!Directory.Exists(ConfigDir)) Directory.CreateDirectory(ConfigDir);
-                var json = JsonSerializer.Serialize(Current, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(ConfigPath, json);
+
+                // Protect Trust Tokens on disk via Windows DPAPI while keeping plaintext in memory
+                var originals = Current.Friends?.Select(f => f.TrustToken).ToList();
+                try
+                {
+                    if (Current.Friends != null)
+                    {
+                        foreach (var f in Current.Friends)
+                            f.TrustToken = ProtectToken(f.TrustToken);
+                    }
+                    var json = JsonSerializer.Serialize(Current, new JsonSerializerOptions { WriteIndented = true });
+                    File.WriteAllText(ConfigPath, json);
+                }
+                finally
+                {
+                    if (Current.Friends != null && originals != null)
+                    {
+                        for (int i = 0; i < Current.Friends.Count && i < originals.Count; i++)
+                            Current.Friends[i].TrustToken = originals[i];
+                    }
+                }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[CONFIG ERROR] Could not save config: {ex.Message}");
             }
         }
+    }
+
+    private static readonly byte[] DpapiEntropy = System.Text.Encoding.UTF8.GetBytes("GH3-SYNC-TRUST-DPAPI-v1");
+
+    private static string ProtectToken(string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token) || token.StartsWith("dpapi:", StringComparison.Ordinal)) return token ?? "";
+        try
+        {
+            var raw = System.Text.Encoding.UTF8.GetBytes(token);
+            var enc = ProtectedData.Protect(raw, DpapiEntropy, DataProtectionScope.CurrentUser);
+            return "dpapi:" + Convert.ToBase64String(enc);
+        }
+        catch { return token; }
+    }
+
+    private static string UnprotectToken(string? stored)
+    {
+        if (string.IsNullOrWhiteSpace(stored) || !stored.StartsWith("dpapi:", StringComparison.Ordinal)) return stored ?? "";
+        try
+        {
+            var enc = Convert.FromBase64String(stored.Substring(6));
+            var raw = ProtectedData.Unprotect(enc, DpapiEntropy, DataProtectionScope.CurrentUser);
+            return System.Text.Encoding.UTF8.GetString(raw);
+        }
+        catch { return ""; }
     }
 
     public static void UpdateUsername(string newName)

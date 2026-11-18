@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using System.IO.Pipes;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
@@ -11,6 +12,28 @@ var baseDir = AppDomain.CurrentDomain.BaseDirectory;
 var appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GH3-Sync");
 var writableWebRoot = Path.Combine(appDataDir, "p2p_root");
 Directory.CreateDirectory(writableWebRoot);
+
+bool isHeadlessArg = args.Contains("--headless") || args.Contains("--no-gui") || args.Contains("--server");
+bool hasCustomPortArg = args.Any(a => a.StartsWith("--port="));
+Mutex? singleInstanceMutex = null;
+
+if (!isHeadlessArg && !hasCustomPortArg)
+{
+    singleInstanceMutex = new Mutex(true, @"Global\GH3_Sync_SingleInstance_v1", out bool createdNew);
+    if (!createdNew)
+    {
+        try
+        {
+            using var pipeClient = new NamedPipeClientStream(".", "GH3_Sync_RestorePipe", PipeDirection.Out);
+            pipeClient.Connect(1200);
+            using var sw = new StreamWriter(pipeClient);
+            sw.WriteLine("RESTORE");
+            sw.Flush();
+        }
+        catch { }
+        return;
+    }
+}
 
 AppDomain.CurrentDomain.UnhandledException += (_, exArgs) =>
 {
@@ -57,6 +80,8 @@ var demucsService = new DemucsService(syncLogger);
 var creatorService = new SongCreatorService(compilerService, audioAnalysisService, demucsService);
 var natService = new NatPortMappingService(port, syncLogger);
 var updateService = new UpdateService(syncLogger);
+var tempSessionService = new TemporarySessionService(gh3Service, saveManager, syncLogger);
+var componentUpdater = new ComponentUpdaterService(gh3Service, updateService, demucsService, syncLogger);
 
 builder.Services.AddSingleton(gh3Service);
 builder.Services.AddSingleton(syncLogger);
@@ -70,11 +95,34 @@ builder.Services.AddSingleton(creatorService);
 builder.Services.AddSingleton(saveManager);
 builder.Services.AddSingleton(natService);
 builder.Services.AddSingleton(updateService);
+builder.Services.AddSingleton(tempSessionService);
+builder.Services.AddSingleton(componentUpdater);
 builder.Services.AddHttpClient();
 
 var app = builder.Build();
 
-// Native Windows 11 WPF app uses direct C# services; Kestrel serves P2P sync /api/* endpoints only.
+// Online/Offline P2P Mode & Per-IP Rate Limit Middleware
+app.Use(async (context, next) =>
+{
+    var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    bool isLoopback = remoteIp == "127.0.0.1" || remoteIp == "::1" || remoteIp == "::ffff:127.0.0.1";
+
+    if (!isLoopback && !AppConfig.Current.P2pOnlineEnabled)
+    {
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        await context.Response.WriteAsJsonAsync(new { error = "Peer P2P sharing is currently in Offline Mode." });
+        return;
+    }
+
+    if (!securityService.CheckRequestRateLimit(remoteIp, syncLogger))
+    {
+        context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await context.Response.WriteAsJsonAsync(new { error = "Rate limit exceeded. Please wait a moment and try again." });
+        return;
+    }
+
+    await next();
+});
 
 // Start In-Game Overlay
 var overlay = new InGameOverlay(syncLogger);
@@ -134,12 +182,14 @@ string GetLocalIpAddress()
     return "127.0.0.1";
 }
 
-bool TryAuthorize(HttpContext context, SecurityService sec, FriendService friends, SyncLogger logger, out string sharedSecret)
+bool TryAuthorize(HttpContext context, SecurityService sec, FriendService friends, SyncLogger logger, out string sharedSecret, out bool isTrustedFriend)
 {
     sharedSecret = sec.PairingPin;
+    isTrustedFriend = false;
     var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    bool isLoopback = remoteIp == "127.0.0.1" || remoteIp == "::1" || remoteIp == "::ffff:127.0.0.1";
 
-    // Extract token/pin if provided (even on localhost so loopback P2P tests use the exact same shared secret!)
+    // Prefer HTTP headers (no secrets in query strings); retain query fallback only for backwards compatibility
     string? token = null;
     if (context.Request.Headers.TryGetValue("X-GH3-Trust-Token", out var headerToken))
         token = headerToken.ToString();
@@ -152,33 +202,44 @@ bool TryAuthorize(HttpContext context, SecurityService sec, FriendService friend
     else if (context.Request.Query.TryGetValue("pin", out var queryPin))
         pin = queryPin.ToString();
 
-    // 1. Check for Trusted Friend Token (Skips PIN & IP restrictions!)
-    if (!string.IsNullOrEmpty(token) && friends.ValidateTrustToken(token, out var trustedFriend))
+    // 1. Verified Trusted Friend Token (grants full access including song downloads)
+    if (!string.IsNullOrEmpty(token))
     {
-        sharedSecret = token;
-        logger.LogInfo($"[SECURITY] Trusted Friend access granted to: {trustedFriend?.Username} from {remoteIp}");
+        if (friends.ValidateTrustToken(token, out var trustedFriend))
+        {
+            sharedSecret = token;
+            isTrustedFriend = true;
+            logger.LogInfo($"[SECURITY] Trusted Friend access granted to: {trustedFriend?.Username} from {remoteIp}");
+            return true;
+        }
+        logger.LogWarn($"[SECURITY] Rejected invalid/revoked Trust Token from {remoteIp}");
+        return false;
+    }
+
+    // 2. Pairing PIN (grants view-only manifest access; downloads remain locked to Trusted Friends)
+    if (!string.IsNullOrEmpty(pin))
+    {
+        if (sec.ValidatePin(pin, remoteIp, logger))
+        {
+            sharedSecret = pin;
+            isTrustedFriend = false;
+            return true;
+        }
+        return false;
+    }
+
+    // 3. Unauthenticated local loopback (owner self-diagnostics only)
+    if (isLoopback)
+    {
+        isTrustedFriend = true;
         return true;
     }
 
-    // 2. Local loopback is always allowed
-    if (remoteIp == "127.0.0.1" || remoteIp == "::1")
-    {
-        if (!string.IsNullOrEmpty(token)) sharedSecret = token;
-        else if (!string.IsNullOrEmpty(pin)) sharedSecret = pin;
-        return true;
-    }
-
-    // 3. Fallback: Check Pairing PIN
-    if (sec.ValidatePin(pin, remoteIp, logger))
-    {
-        sharedSecret = pin!;
-        return true;
-    }
     return false;
 }
 
 bool IsAuthorized(HttpContext context, SecurityService sec, FriendService friends, SyncLogger logger)
-    => TryAuthorize(context, sec, friends, logger, out _);
+    => TryAuthorize(context, sec, friends, logger, out _, out _);
 
 // Background Heartbeat to Admin Hub (Safe Telemetry & Broadcasts)
 _ = Task.Run(async () =>
@@ -736,10 +797,22 @@ app.MapGet("/api/manifest", (HttpContext context, Gh3Service gh3, SyncLogger log
     return Results.Ok(gh3.GenerateManifest());
 });
 
-app.MapGet("/api/download/{songId}", (HttpContext context, string songId, Gh3Service gh3, SyncLogger logger, SecurityService sec, FriendService friends) =>
+app.MapGet("/api/download/{songId}", async (HttpContext context, string songId, Gh3Service gh3, SyncLogger logger, SecurityService sec, FriendService friends) =>
 {
-    if (!TryAuthorize(context, sec, friends, logger, out var sharedSecret))
+    if (!TryAuthorize(context, sec, friends, logger, out var sharedSecret, out var isTrustedFriend))
         return Results.Unauthorized();
+
+    if (!isTrustedFriend)
+    {
+        logger.LogWarn($"[SECURITY] Blocked untrusted PIN download attempt for '{songId}' (Trusted Friend Token required).");
+        return Results.Json(
+            new { error = "Trusted Friend Token required to download songs. Ask the host to mark you as a Trusted Friend." },
+            statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    bool acquired = await sec.DownloadConcurrencyGuard.WaitAsync(TimeSpan.FromSeconds(30));
+    if (!acquired)
+        return Results.Json(new { error = "Server busy handling concurrent song transfers. Please retry shortly." }, statusCode: StatusCodes.Status429TooManyRequests);
 
     try
     {
@@ -758,17 +831,29 @@ app.MapGet("/api/download/{songId}", (HttpContext context, string songId, Gh3Ser
         logger.LogError($"Error packaging song {songId}", ex);
         return Results.BadRequest(new { error = ex.Message });
     }
+    finally
+    {
+        sec.DownloadConcurrencyGuard.Release();
+    }
 });
 
 app.MapGet("/api/download-customs-pak", (HttpContext context, Gh3Service gh3, SyncLogger logger, SecurityService sec, FriendService friends) =>
 {
-    if (!TryAuthorize(context, sec, friends, logger, out var sharedSecret))
+    if (!TryAuthorize(context, sec, friends, logger, out var sharedSecret, out var isTrustedFriend))
         return Results.Unauthorized();
+
+    if (!isTrustedFriend)
+    {
+        logger.LogWarn("[SECURITY] Blocked untrusted PIN request for customs.pak.xen (Trusted Friend Token required).");
+        return Results.Json(
+            new { error = "Trusted Friend Token required to download songlist data." },
+            statusCode: StatusCodes.Status403Forbidden);
+    }
 
     if (!File.Exists(gh3.CustomsPakPath))
         return Results.NotFound(new { error = "customs.pak.xen not found." });
 
-    logger.LogInfo("Serving encrypted customs.pak.xen to peer.");
+    logger.LogInfo("Serving encrypted customs.pak.xen to trusted peer.");
     var rawBytes = File.ReadAllBytes(gh3.CustomsPakPath);
     var encryptedBytes = sec.EncryptPayload(rawBytes, sharedSecret);
     return Results.File(encryptedBytes, "application/octet-stream", "customs.pak.xen.gh3enc");
@@ -804,8 +889,7 @@ app.MapPost("/api/peer/compare", async (HttpContext context, IHttpClientFactory 
         if (!string.IsNullOrEmpty(pin)) client.DefaultRequestHeaders.Add("X-GH3-PIN", pin);
         if (!string.IsNullOrEmpty(token)) client.DefaultRequestHeaders.Add("X-GH3-Trust-Token", token);
 
-        var manifestUrl = $"{baseUrl}/api/manifest" + 
-            (!string.IsNullOrEmpty(token) ? $"?token={token}" : (!string.IsNullOrEmpty(pin) ? $"?pin={pin}" : ""));
+        var manifestUrl = $"{baseUrl}/api/manifest";
         var remoteManifest = await client.GetFromJsonAsync<LibraryManifest>(manifestUrl);
 
         if (remoteManifest == null)
@@ -928,8 +1012,7 @@ app.MapPost("/api/peer/sync-all", async (HttpContext context, IHttpClientFactory
         if (!string.IsNullOrEmpty(pin)) client.DefaultRequestHeaders.Add("X-GH3-PIN", pin);
         if (!string.IsNullOrEmpty(token)) client.DefaultRequestHeaders.Add("X-GH3-Trust-Token", token);
 
-        var manifestUrl = $"{baseUrl}/api/manifest" + 
-            (!string.IsNullOrEmpty(token) ? $"?token={token}" : (!string.IsNullOrEmpty(pin) ? $"?pin={pin}" : ""));
+        var manifestUrl = $"{baseUrl}/api/manifest";
         var remoteManifest = await client.GetFromJsonAsync<LibraryManifest>(manifestUrl);
         if (remoteManifest == null) throw new InvalidOperationException("Could not fetch remote manifest.");
 
@@ -948,6 +1031,7 @@ app.MapPost("/api/peer/sync-all", async (HttpContext context, IHttpClientFactory
         int totalToSync = missingSongs.Count;
         int installedCount = 0;
 
+        var sharedSecret = !string.IsNullOrEmpty(token) ? token : (!string.IsNullOrEmpty(pin) ? pin : sec.PairingPin);
         for (int i = 0; i < missingSongs.Count; i++)
         {
             var song = missingSongs[i];
@@ -955,30 +1039,31 @@ app.MapPost("/api/peer/sync-all", async (HttpContext context, IHttpClientFactory
 
             logger.SetStatus(SyncState.Syncing, $"Syncing ({i + 1}/{totalToSync})", song.Title, percent);
 
-            var downloadUrl = $"{baseUrl}/api/download/{Uri.EscapeDataString(song.SongId)}" + 
-                (!string.IsNullOrEmpty(token) ? $"?token={token}" : (!string.IsNullOrEmpty(pin) ? $"?pin={pin}" : ""));
+            var downloadUrl = $"{baseUrl}/api/download/{Uri.EscapeDataString(song.SongId)}";
             var encryptedBytes = await client.GetByteArrayAsync(downloadUrl);
-            var zipBytes = sec.DecryptPayload(encryptedBytes);
+            var zipBytes = sec.DecryptPayload(encryptedBytes, sharedSecret);
 
-            gh3.InstallSongPackage(zipBytes, logger);
+            gh3.InstallSongPackage(zipBytes, logger, song.PakHash, song.FsbHash, mergeIntoCustomsPak: true);
             installedCount++;
         }
 
-        // Pull updated customs.pak.xen
-        logger.SetStatus(SyncState.Syncing, "Finalizing Setlist", "customs.pak.xen", 95);
-        try
+        // Only pull full customs.pak.xen if recipient does not have one yet; otherwise individual songs were merged cleanly!
+        if (!File.Exists(gh3.CustomsPakPath))
         {
-            var customsUrl = $"{baseUrl}/api/download-customs-pak" + 
-                (!string.IsNullOrEmpty(token) ? $"?token={token}" : (!string.IsNullOrEmpty(pin) ? $"?pin={pin}" : ""));
-            var encryptedCustomsBytes = await client.GetByteArrayAsync(customsUrl);
-            var customsPakBytes = sec.DecryptPayload(encryptedCustomsBytes);
+            logger.SetStatus(SyncState.Syncing, "Finalizing Setlist", "customs.pak.xen", 95);
+            try
+            {
+                var customsUrl = $"{baseUrl}/api/download-customs-pak";
+                var encryptedCustomsBytes = await client.GetByteArrayAsync(customsUrl);
+                var customsPakBytes = sec.DecryptPayload(encryptedCustomsBytes, sharedSecret);
 
-            gh3.BackupAndDeployCustomsPak(customsPakBytes);
-            logger.LogInfo("customs.pak.xen verified and deployed successfully.");
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarn($"Failed to sync customs.pak.xen: {ex.Message}");
+                gh3.BackupAndDeployCustomsPak(customsPakBytes);
+                logger.LogInfo("customs.pak.xen verified and deployed successfully.");
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarn($"Failed to sync customs.pak.xen: {ex.Message}");
+            }
         }
 
         AppConfig.IncrementUsage("sync");
@@ -1027,11 +1112,11 @@ app.MapGet("/api/peer/download-file", async (string remoteUrl, string songId, IH
         if (!string.IsNullOrEmpty(pin)) client.DefaultRequestHeaders.Add("X-GH3-PIN", pin);
         if (!string.IsNullOrEmpty(token)) client.DefaultRequestHeaders.Add("X-GH3-Trust-Token", token);
 
-        var downloadUrl = $"{baseUrl}/api/download/{Uri.EscapeDataString(cleanSongId)}" +
-            (!string.IsNullOrEmpty(token) ? $"?token={token}" : (!string.IsNullOrEmpty(pin) ? $"?pin={pin}" : ""));
+        var sharedSecret = !string.IsNullOrEmpty(token) ? token : (!string.IsNullOrEmpty(pin) ? pin : sec.PairingPin);
+        var downloadUrl = $"{baseUrl}/api/download/{Uri.EscapeDataString(cleanSongId)}";
 
         var encryptedBytes = await client.GetByteArrayAsync(downloadUrl);
-        var zipBytes = sec.DecryptPayload(encryptedBytes);
+        var zipBytes = sec.DecryptPayload(encryptedBytes, sharedSecret);
 
         logger.LogInfo($"Successfully downloaded '{cleanSongId}' ({zipBytes.Length:N0} bytes) from connected user.");
         return Results.File(zipBytes, "application/zip", $"{cleanSongId}.gh3song");
@@ -1263,7 +1348,7 @@ app.MapGet("/api/export-pack", (Gh3Service gh3, SyncLogger logger) =>
 });
 
 Console.WriteLine("=================================================");
-Console.WriteLine("  🎸 GH3-Sync Beta 5 | Native Windows 11 Desktop App");
+Console.WriteLine($"  GH3-Sync v{UpdateService.CurrentAppVersion}");
 Console.WriteLine($"  P2P Sync Listener:   http://localhost:{port}");
 Console.WriteLine($"  LAN Address:         http://{GetLocalIpAddress()}:{port}");
 Console.WriteLine($"  Public / NAT Address: {GetBestPublicOrLanAddress()}");
@@ -1271,7 +1356,7 @@ Console.WriteLine($"  Active Profile:      {friendService.Profile.Username} [{fr
 Console.WriteLine($"  Session PIN:         {securityService.PairingPin}");
 Console.WriteLine("=================================================");
 
-bool isHeadless = args.Contains("--headless") || args.Contains("--no-gui") || args.Contains("--server");
+bool isHeadless = isHeadlessArg;
 
 if (isHeadless)
 {
@@ -1280,6 +1365,7 @@ if (isHeadless)
 else
 {
     var uiDone = new TaskCompletionSource<bool>();
+    using var pipeCts = new CancellationTokenSource();
 
     var uiThread = new Thread(() =>
     {
@@ -1334,7 +1420,33 @@ else
                     creatorService,
                     natService,
                     updateService,
+                    tempSessionService,
+                    componentUpdater,
                     port);
+
+                // Single-instance restore listener (brings minimized/tray window to front if user launches GH3-Sync again)
+                if (!hasCustomPortArg)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        while (!pipeCts.IsCancellationRequested)
+                        {
+                            try
+                            {
+                                using var server = new NamedPipeServerStream("GH3_Sync_RestorePipe", PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                                await server.WaitForConnectionAsync(pipeCts.Token);
+                                using var sr = new StreamReader(server);
+                                var msg = await sr.ReadLineAsync();
+                                if (msg == "RESTORE")
+                                {
+                                    mainWin.Dispatcher.Invoke(() => mainWin.RestoreFromTrayOrActivate());
+                                }
+                            }
+                            catch (OperationCanceledException) { break; }
+                            catch { await Task.Delay(500); }
+                        }
+                    });
+                }
 
                 await Task.Delay(350);
                 splash.UpdateProgress(100, "Ready to Rock!");
@@ -1350,7 +1462,7 @@ else
         }
         catch (Exception ex)
         {
-            syncLogger.LogError("Native WPF startup failed", ex);
+            syncLogger.LogError("WPF startup failed", ex);
         }
         finally
         {
@@ -1363,5 +1475,10 @@ else
     uiThread.Start();
 
     await uiDone.Task;
+    pipeCts.Cancel();
+    tempSessionService.Stop();
+    await natService.RemoveMappingAsync();
     await app.StopAsync();
+    singleInstanceMutex?.ReleaseMutex();
+    singleInstanceMutex?.Dispose();
 }

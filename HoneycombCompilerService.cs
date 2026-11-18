@@ -455,7 +455,7 @@ public class HoneycombCompilerService
         var ghCorePath = Path.Combine(honeycombDir, "GH-Toolkit-Core.dll");
         var ghCore = Assembly.LoadFrom(ghCorePath);
         var gvType = ghCore.GetType("GH_Toolkit_Core.Methods.GlobalVariables");
-        gvType?.GetProperty("ExeRootFolder")?.SetValue(null, honeycombDir);
+        gvType?.GetProperty("ExeRootFolder")?.SetValue(null, CustomsPakService.GetWritableToolkitRoot(honeycombDir));
         var blankWav = Path.Combine(honeycombDir, "Audio", "Blank Audio", "blankWav.wav");
         if (File.Exists(blankWav)) gvType?.GetProperty("BlankWav")?.SetValue(null, blankWav);
 
@@ -754,10 +754,14 @@ public class HoneycombCompilerService
             File.Copy(outFsb, gameFsb, true);
             File.Copy(outDat, gameDat, true);
             log($"Soundbanks deployed to game MUSIC folder: {Path.GetFileName(gameFsb)} ({new FileInfo(gameFsb).Length:N0} bytes)");
+
+            // Remove intermediate .fsb / .dat from project folder so we don't duplicate 30+ MB audio banks
+            try { if (File.Exists(outFsb)) File.Delete(outFsb); } catch { }
+            try { if (File.Exists(outDat)) File.Delete(outDat); } catch { }
         }
         finally
         {
-            // Clean up temporary stem files
+            // Clean up all temporary intermediate conversion files
             foreach (var f in tempFiles)
             {
                 if (File.Exists(f))
@@ -765,6 +769,17 @@ public class HoneycombCompilerService
                     try { File.Delete(f); } catch { }
                 }
             }
+            try
+            {
+                foreach (var pat in new[] { "*_conv.mp3", "*_mix.mp3", "temp_*.mp3", "*_guitar.mp3", "*_rhythm.mp3", "*_song.mp3", "*_preview.mp3" })
+                {
+                    foreach (var leftover in Directory.GetFiles(projectDir, pat))
+                    {
+                        try { File.Delete(leftover); } catch { }
+                    }
+                }
+            }
+            catch { }
         }
     }
 
@@ -936,32 +951,49 @@ public class HoneycombCompilerService
             if (File.Exists(fsbPath)) log($" - FSB: {fsbName} ({new FileInfo(fsbPath).Length:N0} bytes)");
             if (File.Exists(datPath)) log($" - DAT: {datName}");
 
-            // Copy standalone compiled files to project directory
+            // Link compiled song ID directly in song.ini without duplicating 30+ MB .pak/.fsb/.dat files into projectDir
             try
             {
-                var standalonePak = Path.Combine(projectDir, Path.GetFileName(matchedPak));
-                File.Copy(matchedPak, standalonePak, true);
+                WriteCompiledSongIdToIni(projectDir, songBaseName);
 
-                if (File.Exists(fsbPath))
+                // Clean any legacy duplicate compiled binaries inside projectDir
+                foreach (var pat in new[] { "*.pak.xen", "*.fsb.xen", "*.dat.xen", "*.fsb", "*.dat" })
                 {
-                    var standaloneFsb = Path.Combine(projectDir, fsbName);
-                    File.Copy(fsbPath, standaloneFsb, true);
+                    foreach (var dup in Directory.GetFiles(projectDir, pat))
+                    {
+                        try { File.Delete(dup); } catch { }
+                    }
                 }
 
-                if (File.Exists(datPath))
-                {
-                    var standaloneDat = Path.Combine(projectDir, datName);
-                    File.Copy(datPath, standaloneDat, true);
-                }
-
-                // Register song as created locally
                 AppConfig.RegisterCreatedSong(songBaseName, projectDir);
-                log($"Standalone compilation package archived in song directory for P2P sync.");
+                log($"Linked compiled song ID '{songBaseName}' to project metadata (zero duplicate binaries kept).");
             }
             catch (Exception ex)
             {
-                log($"Note: Could not copy standalone package to song folder: {ex.Message}");
+                log($"Note: Could not update project metadata link: {ex.Message}");
             }
         }
+    }
+
+    private static void WriteCompiledSongIdToIni(string projectDir, string songId)
+    {
+        if (string.IsNullOrWhiteSpace(projectDir) || string.IsNullOrWhiteSpace(songId)) return;
+        var iniPath = Path.Combine(projectDir, "song.ini");
+        var lines = File.Exists(iniPath) ? File.ReadAllLines(iniPath).ToList() : new List<string> { "[song]" };
+        bool replaced = false;
+        for (int i = 0; i < lines.Count; i++)
+        {
+            if (lines[i].TrimStart().StartsWith("compiled_song_id", StringComparison.OrdinalIgnoreCase))
+            {
+                lines[i] = $"compiled_song_id = {songId}";
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced)
+        {
+            lines.Add($"compiled_song_id = {songId}");
+        }
+        File.WriteAllLines(iniPath, lines);
     }
 }

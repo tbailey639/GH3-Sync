@@ -57,10 +57,9 @@ public class CloneHeroImportService
 
             if (File.Exists(sourcePath) && sourcePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             {
-                onProgress?.Invoke(10, "Extracting Clone Hero archive...");
+                onProgress?.Invoke(10, "Scanning & extracting Clone Hero archive safely...");
                 tempExtractDir = Path.Combine(Path.GetTempPath(), $"gh3_ch_import_{Guid.NewGuid():N}");
-                Directory.CreateDirectory(tempExtractDir);
-                ZipFile.ExtractToDirectory(sourcePath, tempExtractDir, overwriteFiles: true);
+                SecurityService.ExtractCloneHeroZipSafely(sourcePath, tempExtractDir, _logger);
 
                 // Find folder containing notes.chart, notes.mid, or song.ini
                 var foundChart = Directory.GetFiles(tempExtractDir, "notes.chart", SearchOption.AllDirectories).FirstOrDefault()
@@ -209,7 +208,7 @@ public class CloneHeroImportService
                 songScriptPath = "",
                 compilePath = targetDir,
                 projectPath = ghprojPath,
-                gameIcon = "onogami_creator",
+                gameIcon = "clone_hero_import",
                 gameCategory = "",
                 ghprojFromLoad = ghprojPath,
                 bandWtde = "",
@@ -262,7 +261,17 @@ public class CloneHeroImportService
             };
 
             File.WriteAllText(ghprojPath, JsonSerializer.Serialize(projData, new JsonSerializerOptions { WriteIndented = true }));
-            AppConfig.RegisterCreatedSong(cleanId, targetDir);
+
+            // Mark song.ini cleanly as a Clone Hero import (not authored by Song Creator)
+            var targetIni = Path.Combine(targetDir, "song.ini");
+            try
+            {
+                var iniLines = File.Exists(targetIni) ? File.ReadAllLines(targetIni).ToList() : new List<string> { "[song]", $"name = {title}", $"artist = {artist}", $"charter = {charter}" };
+                if (!iniLines.Any(l => l.TrimStart().StartsWith("import_source", StringComparison.OrdinalIgnoreCase)))
+                    iniLines.Add("import_source = clone_hero");
+                File.WriteAllLines(targetIni, iniLines);
+            }
+            catch { }
 
             var result = new CloneHeroImportResult
             {

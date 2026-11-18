@@ -38,6 +38,8 @@ public partial class MainWindow : Window
     private readonly SongCreatorService _creator;
     private readonly NatPortMappingService _nat;
     private readonly UpdateService _updater;
+    private readonly TemporarySessionService _tempSession;
+    private readonly ComponentUpdaterService _compUpdater;
     private readonly int _port;
 
     private List<CustomSongInfo> _allSongs = new();
@@ -79,6 +81,8 @@ public partial class MainWindow : Window
         SongCreatorService creator,
         NatPortMappingService nat,
         UpdateService updater,
+        TemporarySessionService tempSession,
+        ComponentUpdaterService compUpdater,
         int port)
     {
         _gh3 = gh3;
@@ -93,9 +97,19 @@ public partial class MainWindow : Window
         _creator = creator;
         _nat = nat;
         _updater = updater;
+        _tempSession = tempSession;
+        _compUpdater = compUpdater;
         _port = port;
 
         InitializeComponent();
+        ApplyTheme(AppConfig.Current.ThemeMode, save: false);
+
+        _tempSession.SessionCleanedUp += msg => Dispatcher.Invoke(() =>
+        {
+            RefreshSongsList();
+            RefreshTempSessionBanner();
+            _trayIcon?.ShowBalloonTip(3000, "Temporary Lobby Session Cleaned", msg, WinForms.ToolTipIcon.Info);
+        });
 
         _playerTimer.Tick += PlayerTimer_Tick;
         _player.MediaEnded += (_, _) => { _isPlayerPlaying = false; PlayerPlayPauseBtn.Content = "▶"; };
@@ -109,10 +123,16 @@ public partial class MainWindow : Window
 
     private void MainWindow_SourceInitialized(object? sender, EventArgs e)
     {
+        ApplyWindowChromeTheme();
+    }
+
+    private void ApplyWindowChromeTheme()
+    {
         try
         {
             var hwnd = new WindowInteropHelper(this).Handle;
-            int dark = 1;
+            if (hwnd == IntPtr.Zero) return;
+            int dark = string.Equals(AppConfig.Current.ThemeMode, "Light", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
             DwmSetWindowAttribute(hwnd, 20, ref dark, sizeof(int));
             int cornerPref = 2;
             DwmSetWindowAttribute(hwnd, 33, ref cornerPref, sizeof(int));
@@ -123,7 +143,48 @@ public partial class MainWindow : Window
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         RefreshAllUiState();
-        await RunUpdateCheckAsync(silentIfUpToDate: true);
+
+        // First-time custom song save setup check (only prompts if Honeycomb}{Honeycomb save doesn't exist yet!)
+        if (!AppConfig.Current.HasAcknowledgedFirstTimeSaveNotice && _gh3.IsDetected && _gh3.IsFirstTimeCustomSetupNeeded())
+        {
+            var choice = WpfMessageBox.Show(
+                "First-Time Custom Songs Save Notice\n\n" +
+                "GH3-Sync detected that this Guitar Hero III installation has not yet completed the one-time custom songs save setup.\n\n" +
+                "The first time you add a custom song, Guitar Hero III will prompt you to reset your save file to create your custom profile. " +
+                "After that one-time reset, all future custom songs, imports, and P2P synced songs merge cleanly without resetting your saves again.\n\n" +
+                "Would you like GH3-Sync to back up your current vanilla career save right now?",
+                "GH3-Sync — First-Time Save Protection",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information);
+
+            if (choice == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    var snap = _saves.BackupCurrentSaves("Vanilla Career Backup (First Launch)", "Vanilla Career Backup", _gh3.GamePath);
+                    RefreshSaveBackups();
+                    WpfMessageBox.Show($"Backed up your vanilla career save ('{snap.ProfileName}', {snap.FileCount} files) to Career Saves!",
+                        "Backup Created", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch { }
+            }
+
+            AppConfig.Current.HasAcknowledgedFirstTimeSaveNotice = true;
+            AppConfig.Save();
+        }
+
+        if (AppConfig.Current.AutoCheckUpdates)
+        {
+            await RunUpdateCheckAsync(silentIfUpToDate: true);
+        }
+    }
+
+    public void RestoreFromTrayOrActivate()
+    {
+        RestoreWindow();
+        Topmost = true;
+        Topmost = false;
+        Focus();
     }
 
     private void InitializeTrayIcon()
@@ -151,7 +212,7 @@ public partial class MainWindow : Window
 
             _trayIcon = new WinForms.NotifyIcon
             {
-                Text = "GH3-Sync v1.0.0",
+                Text = $"GH3-Sync v{UpdateService.CurrentAppVersion}",
                 Icon = trayIco ?? System.Drawing.SystemIcons.Application,
                 ContextMenuStrip = menu,
                 Visible = true
@@ -313,14 +374,14 @@ public partial class MainWindow : Window
         PageP2P.Visibility = NavP2P.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageImport.Visibility = NavImport.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageSaves.Visibility = NavSaves.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-        PageAbout.Visibility = NavAbout.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        PageSettings.Visibility = NavSettings.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
 
         if (NavCustoms.IsChecked == true) RefreshSongsList();
         if (NavCreator.IsChecked == true || NavAiTools.IsChecked == true) RefreshToolsAndAiStatus();
         if (NavFriends.IsChecked == true) RefreshFriendsList();
-        if (NavP2P.IsChecked == true) RefreshNetworkSummary();
+        if (NavP2P.IsChecked == true) { RefreshNetworkSummary(); RefreshTrustedFriendDropdown(); RefreshTempSessionBanner(); }
         if (NavSaves.IsChecked == true) RefreshSaveBackups();
-        if (NavAbout.IsChecked == true) RefreshLogs();
+        if (NavSettings.IsChecked == true) { LoadSettingsForm(); RefreshLogs(); }
     }
 
     private void GoToAiManager_Click(object sender, RoutedEventArgs e) => NavAiTools.IsChecked = true;
@@ -351,13 +412,18 @@ public partial class MainWindow : Window
 
         SidebarProfileName.Text = _friends.Profile.Username;
         SidebarFriendCode.Text = _friends.Profile.FriendCode;
+        SidebarP2pModeText.Text = AppConfig.Current.P2pOnlineEnabled ? "P2P Sharing: Online" : "P2P Sharing: Offline Mode";
+        SidebarP2pModeText.Foreground = (WpfBrush)FindResource(AppConfig.Current.P2pOnlineEnabled ? "CardSuccessTitle" : "CardWarnTitle");
         ProfileUsernameBox.Text = _friends.Profile.Username;
         LobbyCapBox.Text = AppConfig.Current.MaxLobbyAutoSyncSongs.ToString();
         UpdateFriendCodeDisplay();
+        LoadSettingsForm();
 
         RefreshSongsList();
         RefreshToolsAndAiStatus();
         RefreshFriendsList();
+        RefreshTrustedFriendDropdown();
+        RefreshTempSessionBanner();
         RefreshNetworkSummary();
         RefreshSaveBackups();
         RefreshLogs();
@@ -681,8 +747,10 @@ public partial class MainWindow : Window
 
         var card = new Border
         {
-            Background = new SolidColorBrush(WpfColor.FromRgb(20, 23, 34)),
-            BorderBrush = new SolidColorBrush(song.IsInLobbySetlist ? WpfColor.FromRgb(234, 88, 12) : WpfColor.FromRgb(38, 43, 61)),
+            Background = (WpfBrush)FindResource("BgCard"),
+            BorderBrush = song.IsTemporarySessionSong
+                ? (WpfBrush)FindResource("CardInfoBorder")
+                : (song.IsInLobbySetlist ? (WpfBrush)FindResource("AccentFlame") : (WpfBrush)FindResource("BorderSubtle")),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             Padding = new Thickness(14, 11, 14, 11),
@@ -730,21 +798,29 @@ public partial class MainWindow : Window
             Text = string.IsNullOrWhiteSpace(song.Title) ? song.SongId : song.Title,
             FontSize = 14.5,
             FontWeight = FontWeights.Bold,
-            Foreground = System.Windows.Media.Brushes.White
+            Foreground = (WpfBrush)FindResource("TextPrimary")
         });
         infoStack.Children.Add(new TextBlock
         {
             Text = $"{(string.IsNullOrWhiteSpace(song.Artist) ? "Unknown Artist" : song.Artist)}  •  {song.SongId}  •  {sizeMb:F1} MB",
             FontSize = 11.5,
-            Foreground = new SolidColorBrush(WpfColor.FromRgb(148, 163, 184)),
+            Foreground = (WpfBrush)FindResource("TextMuted"),
             Margin = new Thickness(0, 2, 0, 5)
         });
 
         var badgeRow = new WrapPanel();
-        badgeRow.Children.Add(MakeBadge(isOnogami ? "Created Locally" : "Synced / Imported", isOnogami ? "#2E1065" : "#172554", isOnogami ? "#C4B5FD" : "#93C5FD"));
+        if (song.IsCloneHeroImport)
+            badgeRow.Children.Add(MakeBadge("Imported (Clone Hero)", "#1E3A8A", "#BFDBFE"));
+        else if (isOnogami)
+            badgeRow.Children.Add(MakeBadge("Made with GH3-Sync", "#2E1065", "#DDD6FE"));
+        else
+            badgeRow.Children.Add(MakeBadge("Synced / Imported", "#172554", "#93C5FD"));
+
         badgeRow.Children.Add(MakeBadge(song.IsProject ? "Project Only" : "In-Game Ready", song.IsProject ? "#422006" : "#064E3B", song.IsProject ? "#FDE047" : "#6EE7B7"));
         if (song.IsInLobbySetlist)
             badgeRow.Children.Add(MakeBadge("Lobby Auto-Sync", "#431407", "#FDBA74"));
+        if (song.IsTemporarySessionSong)
+            badgeRow.Children.Add(MakeBadge("Temporary Session", "#1E3A8A", "#93C5FD"));
 
         infoStack.Children.Add(badgeRow);
         Grid.SetColumn(infoStack, 1);
@@ -752,6 +828,25 @@ public partial class MainWindow : Window
 
         // Action Buttons
         var btnRow = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+        if (song.IsTemporarySessionSong)
+        {
+            var keepBtn = new System.Windows.Controls.Button
+            {
+                Content = "Keep Song",
+                Style = (Style)FindResource("GreenButton"),
+                Padding = new Thickness(9, 5, 9, 5),
+                Margin = new Thickness(0, 0, 5, 0),
+                ToolTip = "Keep this temporary lobby song permanently in your library"
+            };
+            keepBtn.Click += (_, _) =>
+            {
+                _tempSession.KeepSongPermanently(song.SongId);
+                RefreshSongsList();
+                RefreshTempSessionBanner();
+            };
+            btnRow.Children.Add(keepBtn);
+        }
 
         // Lobby Sync Toggle (10-song cap!)
         var lobbyBtn = new System.Windows.Controls.Button
@@ -1452,26 +1547,42 @@ public partial class MainWindow : Window
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var left = new StackPanel();
-            left.Children.Add(new TextBlock { Text = $"{f.Username}  ({f.FriendCode})", FontSize = 14, FontWeight = FontWeights.Bold, Foreground = System.Windows.Media.Brushes.White });
+            left.Children.Add(new TextBlock { Text = $"{f.Username}  ({f.FriendCode})", FontSize = 14, FontWeight = FontWeights.Bold, Foreground = (WpfBrush)FindResource("TextPrimary") });
             left.Children.Add(new TextBlock
             {
-                Text = f.IsTrusted ? "Trusted Friend (Automatic IP & Token Sync)" : "Regular Friend (Session PIN Required)",
+                Text = f.IsTrusted ? "Trusted Friend (Can Download Songs & Auto-Sync)" : "Regular Friend (PIN View-Only — Downloads Blocked)",
                 FontSize = 12,
-                Foreground = new SolidColorBrush(f.IsTrusted ? WpfColor.FromRgb(52, 211, 153) : WpfColor.FromRgb(148, 163, 184))
+                Foreground = (WpfBrush)FindResource(f.IsTrusted ? "CardSuccessTitle" : "TextMuted")
             });
             Grid.SetColumn(left, 0);
             grid.Children.Add(left);
 
             var right = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            if (f.IsTrusted && !string.IsNullOrWhiteSpace(f.TrustToken))
+            {
+                var copyTokBtn = new System.Windows.Controls.Button
+                {
+                    Content = "Copy Trust Token",
+                    Style = (Style)FindResource("OutlineButton"),
+                    Margin = new Thickness(0, 0, 8, 0),
+                    ToolTip = "Copy this friend's Trust Token so they can sync songs from you"
+                };
+                copyTokBtn.Click += (_, _) =>
+                {
+                    System.Windows.Clipboard.SetText(f.TrustToken);
+                    WpfMessageBox.Show($"Copied Trust Token for {f.Username}. Share it privately so they can download your customs.", "Trust Token Copied", MessageBoxButton.OK, MessageBoxImage.Information);
+                };
+                right.Children.Add(copyTokBtn);
+            }
             var trustBtn = new System.Windows.Controls.Button
             {
                 Content = f.IsTrusted ? "Revoke Trust" : "Allow Trusted",
                 Style = (Style)FindResource(f.IsTrusted ? "OutlineButton" : "GreenButton"),
                 Margin = new Thickness(0, 0, 8, 0)
             };
-            trustBtn.Click += (_, _) => { _friends.ToggleTrust(f.FriendCode, !f.IsTrusted); RefreshFriendsList(); };
+            trustBtn.Click += (_, _) => { _friends.ToggleTrust(f.FriendCode, !f.IsTrusted); RefreshFriendsList(); RefreshTrustedFriendDropdown(); };
             var delBtn = new System.Windows.Controls.Button { Content = "Unfriend", Style = (Style)FindResource("DangerButton") };
-            delBtn.Click += (_, _) => { _friends.RemoveFriend(f.FriendCode); RefreshFriendsList(); };
+            delBtn.Click += (_, _) => { _friends.RemoveFriend(f.FriendCode); RefreshFriendsList(); RefreshTrustedFriendDropdown(); };
 
             right.Children.Add(trustBtn);
             right.Children.Add(delBtn);
@@ -1483,12 +1594,81 @@ public partial class MainWindow : Window
         }
     }
 
-    // ==================== PAGE 5: P2P SYNC & 10-SONG LOBBY SETLIST ====================
+    // ==================== PAGE 5: P2P SYNC, TRUSTED QUICK-SELECT & TEMPORARY SESSION ====================
+    private List<FriendEntry> _trustedDropdownEntries = new();
+
+    private void RefreshTrustedFriendDropdown()
+    {
+        _trustedDropdownEntries = _friends.Friends.Where(f => f.IsTrusted).ToList();
+        TrustedFriendQuickCombo.Items.Clear();
+        TrustedFriendQuickCombo.Items.Add("-- Select Trusted Friend --");
+        foreach (var f in _trustedDropdownEntries)
+        {
+            var addrHint = string.IsNullOrWhiteSpace(f.LastAddress) ? "No IP saved yet" : f.LastAddress;
+            TrustedFriendQuickCombo.Items.Add($"{f.Username} ({addrHint})");
+        }
+        TrustedFriendQuickCombo.SelectedIndex = 0;
+    }
+
+    private void TrustedFriendQuickCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        int idx = TrustedFriendQuickCombo.SelectedIndex - 1;
+        if (idx < 0 || idx >= _trustedDropdownEntries.Count) return;
+        var friend = _trustedDropdownEntries[idx];
+        if (!string.IsNullOrWhiteSpace(friend.LastAddress))
+            PeerAddressBox.Text = friend.LastAddress.Replace("http://", "", StringComparison.OrdinalIgnoreCase).Replace("https://", "", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(friend.TrustToken))
+            PeerPinBox.Text = friend.TrustToken;
+    }
+
+    private void RefreshTempSessionBanner()
+    {
+        var st = _tempSession.CurrentState;
+        int tempCount = st.Active ? st.Songs.Count(s => !s.Kept) : 0;
+        if (st.Active && tempCount > 0)
+        {
+            TempSessionBanner.Visibility = Visibility.Visible;
+            CustomsTempSessionBanner.Visibility = Visibility.Visible;
+            TempSessionTitle.Text = $"Temporary Lobby Session Active ({tempCount} temp song(s))";
+            TempSessionSubtitle.Text = $"Synced from {st.PeerAddress}. Temporary songs auto-clean when GH3 exits — click 'Keep Song' in My Customs to save any track permanently.";
+            CustomsTempSessionText.Text = $"Temporary Lobby Session active ({tempCount} temporary song(s) will auto-clean when GH3 exits).";
+        }
+        else
+        {
+            TempSessionBanner.Visibility = Visibility.Collapsed;
+            CustomsTempSessionBanner.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void EndTempSessionBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var (_, _, msg) = _tempSession.EndSessionAndCleanup();
+        RefreshSongsList();
+        RefreshTempSessionBanner();
+        if (_lastPeerManifest != null) RenderPeerLibrary();
+        WpfMessageBox.Show(msg, "Temporary Session Cleaned", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private static HttpClient CreateAuthenticatedPeerClient(string secret, TimeSpan timeout)
+    {
+        var http = new HttpClient { Timeout = timeout };
+        if (!string.IsNullOrWhiteSpace(secret))
+        {
+            // Headers-only auth: never expose secrets in query strings or URL logs
+            if (secret.Length > 10)
+                http.DefaultRequestHeaders.Add("X-GH3-Trust-Token", secret);
+            else
+                http.DefaultRequestHeaders.Add("X-GH3-PIN", secret);
+        }
+        return http;
+    }
+
     private void RefreshNetworkSummary()
     {
         var pub = string.IsNullOrEmpty(_nat.PublicIp) ? "Detecting..." : $"{_nat.PublicIp}:{_nat.ExternalPort ?? _port}";
-        P2pNetworkSummary.Text = $"Public / NAT Address: {pub}  •  UPnP / NAT-PMP: {(_nat.IsMapped ? $"Port Forwarded ({_nat.MappingMethod})" : _nat.MappingMethod)}";
-        P2pPinSummary.Text = $"Your Session Pairing PIN: {_security.PairingPin}";
+        var mode = AppConfig.Current.P2pOnlineEnabled ? "Online" : "OFFLINE MODE";
+        P2pNetworkSummary.Text = $"[{mode}] Public / NAT Address: {pub}  •  UPnP / NAT-PMP: {(_nat.IsMapped ? $"Port Forwarded ({_nat.MappingMethod})" : _nat.MappingMethod)}";
+        P2pPinSummary.Text = $"Your Session Pairing PIN (View-Only): {_security.PairingPin}  •  Song Downloads: Trusted Friends Only";
         UpdateLobbyCounters();
     }
 
@@ -1499,6 +1679,7 @@ public partial class MainWindow : Window
             AppConfig.Current.MaxLobbyAutoSyncSongs = Math.Clamp(cap, 1, 25);
             AppConfig.Save();
             LobbyCapBox.Text = AppConfig.Current.MaxLobbyAutoSyncSongs.ToString();
+            SettingsLobbyCapBox.Text = AppConfig.Current.MaxLobbyAutoSyncSongs.ToString();
             UpdateLobbyCounters();
             WpfMessageBox.Show($"Lobby Auto-Sync cap updated to {AppConfig.Current.MaxLobbyAutoSyncSongs} songs.", "Lobby Cap Saved", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -1524,9 +1705,8 @@ public partial class MainWindow : Window
 
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-            string authQuery = BuildAuthQuery(secret);
-            var json = await http.GetStringAsync($"{baseUrl}/api/manifest{authQuery}");
+            using var http = CreateAuthenticatedPeerClient(secret, TimeSpan.FromSeconds(15));
+            var json = await http.GetStringAsync($"{baseUrl}/api/manifest");
             var remote = JsonSerializer.Deserialize<LibraryManifest>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             if (remote == null || remote.Songs == null)
@@ -1556,7 +1736,6 @@ public partial class MainWindow : Window
     {
         int cap = Math.Clamp(remote.MaxLobbyAutoSyncSongs > 0 ? remote.MaxLobbyAutoSyncSongs : 10, 1, 25);
         var tagged = remote.Songs.Where(s => s.IsInLobbySetlist || (remote.LobbySetlistIds?.Contains(s.SongId, StringComparer.OrdinalIgnoreCase) == true)).Take(cap).ToList();
-        // If friend hasn't tagged specific Lobby songs yet, cap auto-sync cleanly at their top N songs (default 10)
         return tagged.Count > 0 ? tagged : remote.Songs.Take(cap).ToList();
     }
 
@@ -1572,23 +1751,25 @@ public partial class MainWindow : Window
         LobbyMatchBanner.Visibility = Visibility.Visible;
         if (missingLobby.Count == 0)
         {
-            LobbyMatchBanner.Background = new SolidColorBrush(WpfColor.FromRgb(13, 34, 26));
-            LobbyMatchBanner.BorderBrush = new SolidColorBrush(WpfColor.FromRgb(16, 185, 129));
+            LobbyMatchBanner.Background = (WpfBrush)FindResource("CardSuccessBg");
+            LobbyMatchBanner.BorderBrush = (WpfBrush)FindResource("CardSuccessBorder");
             LobbyMatchTitle.Text = $"100% Lobby Setlist Matched ({lobbySongs.Count} songs) — Ready for BetterGH3 Online!";
-            LobbyMatchTitle.Foreground = new SolidColorBrush(WpfColor.FromRgb(52, 211, 153));
+            LobbyMatchTitle.Foreground = (WpfBrush)FindResource("CardSuccessTitle");
             LobbyMatchSub.Text = $"Connected to {_lastPeerManifest.MachineName} ({_lastPeerManifest.Songs.Count} total songs in their library).";
             AutoSyncLobbyBtn.Visibility = Visibility.Collapsed;
         }
         else
         {
             double missingMb = missingLobby.Sum(s => s.TotalSizeBytes) / (1024.0 * 1024.0);
-            LobbyMatchBanner.Background = new SolidColorBrush(WpfColor.FromRgb(36, 26, 11));
-            LobbyMatchBanner.BorderBrush = new SolidColorBrush(WpfColor.FromRgb(245, 158, 11));
+            LobbyMatchBanner.Background = (WpfBrush)FindResource("CardWarnBg");
+            LobbyMatchBanner.BorderBrush = (WpfBrush)FindResource("CardWarnBorder");
             LobbyMatchTitle.Text = $"{missingLobby.Count} Lobby Song(s) Missing ({missingMb:F1} MB)";
-            LobbyMatchTitle.Foreground = new SolidColorBrush(WpfColor.FromRgb(252, 211, 77));
+            LobbyMatchTitle.Foreground = (WpfBrush)FindResource("CardWarnTitle");
             LobbyMatchSub.Text = $"Auto-Sync only transfers {_lastPeerManifest.MachineName}'s active Lobby Setlist (capped at {lobbySongs.Count} songs — skipping {_lastPeerManifest.Songs.Count - lobbySongs.Count} other tracks).";
             AutoSyncLobbyBtn.Visibility = Visibility.Visible;
-            AutoSyncLobbyBtn.Content = $"Auto-Sync {missingLobby.Count} Lobby Song(s)";
+            AutoSyncLobbyBtn.Content = TempSessionModeChk.IsChecked == true
+                ? $"Temp-Sync {missingLobby.Count} Lobby Song(s)"
+                : $"Auto-Sync {missingLobby.Count} Lobby Song(s)";
         }
 
         var displayList = ShowFullPeerLibChk.IsChecked == true ? _lastPeerManifest.Songs : lobbySongs;
@@ -1605,30 +1786,32 @@ public partial class MainWindow : Window
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var info = new StackPanel();
-            info.Children.Add(new TextBlock { Text = $"{s.Title} — {s.Artist}", FontSize = 14, FontWeight = FontWeights.Bold, Foreground = System.Windows.Media.Brushes.White });
+            info.Children.Add(new TextBlock { Text = $"{s.Title} — {s.Artist}", FontSize = 14, FontWeight = FontWeights.Bold, Foreground = (WpfBrush)FindResource("TextPrimary") });
             info.Children.Add(new TextBlock
             {
                 Text = alreadyOwned ? $"Already Installed ({s.SongId})" : $"Missing Locally • {s.TotalSizeBytes / (1024.0 * 1024.0):F1} MB",
                 FontSize = 11.5,
-                Foreground = new SolidColorBrush(alreadyOwned ? WpfColor.FromRgb(148, 163, 184) : WpfColor.FromRgb(52, 211, 153))
+                Foreground = (WpfBrush)FindResource(alreadyOwned ? "TextMuted" : "CardSuccessTitle")
             });
             Grid.SetColumn(info, 0);
             grid.Children.Add(info);
 
             var dlBtn = new System.Windows.Controls.Button
             {
-                Content = alreadyOwned ? "Re-Download" : "Sync Song",
+                Content = alreadyOwned ? "Re-Download" : (TempSessionModeChk.IsChecked == true ? "Temp Sync" : "Sync Song"),
                 Style = (Style)FindResource(alreadyOwned ? "OutlineButton" : "GreenButton")
             };
             dlBtn.Click += async (_, _) =>
             {
                 dlBtn.IsEnabled = false;
                 dlBtn.Content = "Syncing...";
-                var (ok, err) = await DownloadAndInstallPeerSongAsync(s.SongId, pullCustomsPak: true);
+                bool tempMode = TempSessionModeChk.IsChecked == true;
+                var (ok, err) = await DownloadAndInstallPeerSongAsync(s, tempMode);
                 if (ok)
                 {
-                    dlBtn.Content = "Installed";
+                    dlBtn.Content = tempMode ? "Temp Installed" : "Installed";
                     RefreshSongsList();
+                    RefreshTempSessionBanner();
                     RenderPeerLibrary();
                 }
                 else
@@ -1653,42 +1836,71 @@ public partial class MainWindow : Window
         var missing = GetPeerLobbySongs(_lastPeerManifest).Where(s => !localIds.Contains(s.SongId)).ToList();
         if (missing.Count == 0) return;
 
+        bool tempMode = TempSessionModeChk.IsChecked == true;
         AutoSyncLobbyBtn.IsEnabled = false;
-        _saves.BackupCurrentSaves($"Before-Lobby-Sync-{_lastPeerManifest.MachineName}");
+        if (tempMode)
+            _tempSession.BeginSessionIfNeeded(_lastPeerBaseUrl, autoCleanOnGameExit: true);
+        else
+            _saves.BackupCurrentSaves($"Before-Lobby-Sync-{_lastPeerManifest.MachineName}");
 
         int installed = 0;
+        string lastErr = "";
         foreach (var s in missing)
         {
             PeerCompareStatus.Text = $"Syncing ({installed + 1}/{missing.Count}): {s.Title}...";
-            var (ok, _) = await DownloadAndInstallPeerSongAsync(s.SongId, pullCustomsPak: false);
+            var (ok, err) = await DownloadAndInstallPeerSongAsync(s, tempMode);
             if (ok) installed++;
+            else lastErr = err;
         }
 
-        await PullPeerCustomsPakAsync();
         AutoSyncLobbyBtn.IsEnabled = true;
         RefreshSongsList();
+        RefreshTempSessionBanner();
         RenderPeerLibrary();
-        WpfMessageBox.Show($"Synced {installed} / {missing.Count} Lobby Setlist song(s) from {_lastPeerManifest.MachineName}!", "Lobby Sync Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+        if (installed > 0)
+        {
+            WpfMessageBox.Show(
+                tempMode
+                    ? $"Temporary-synced {installed} / {missing.Count} Lobby song(s) from {_lastPeerManifest.MachineName}!\n\nThese songs will auto-clean when GH3 exits unless you click 'Keep Song'."
+                    : $"Synced {installed} / {missing.Count} Lobby Setlist song(s) cleanly into your customs.pak.xen!",
+                "Lobby Sync Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        else if (!string.IsNullOrEmpty(lastErr))
+        {
+            WpfMessageBox.Show($"Sync could not complete: {lastErr}", "Lobby Sync", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
-    private async Task<(bool Ok, string Error)> DownloadAndInstallPeerSongAsync(string songId, bool pullCustomsPak)
+    private async Task<(bool Ok, string Error)> DownloadAndInstallPeerSongAsync(CustomSongInfo song, bool temporaryMode)
     {
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
-            string authQuery = BuildAuthQuery(_lastPeerSecret);
-            var encBytes = await http.GetByteArrayAsync($"{_lastPeerBaseUrl}/api/download/{Uri.EscapeDataString(songId)}{authQuery}");
-            var zipBytes = _security.DecryptPayload(encBytes, _lastPeerSecret);
-            _gh3.InstallSongPackage(zipBytes, _logger);
+            if (temporaryMode)
+                _tempSession.BeginSessionIfNeeded(_lastPeerBaseUrl, autoCleanOnGameExit: true);
 
-            if (pullCustomsPak)
+            using var http = CreateAuthenticatedPeerClient(_lastPeerSecret, TimeSpan.FromMinutes(5));
+            using var resp = await http.GetAsync($"{_lastPeerBaseUrl}/api/download/{Uri.EscapeDataString(song.SongId)}");
+            if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                return (false, "Access Denied (403): Only Trusted Friends can download songs. Ask the host to mark you as Trusted and share your Trust Token.");
+            resp.EnsureSuccessStatusCode();
+
+            var encBytes = await resp.Content.ReadAsByteArrayAsync();
+            var zipBytes = _security.DecryptPayload(encBytes, _lastPeerSecret);
+
+            // If recipient doesn't have DATA\customs.pak.xen yet, pull initial template before merging
+            if (!File.Exists(_gh3.CustomsPakPath))
                 await PullPeerCustomsPakAsync();
+
+            _gh3.InstallSongPackage(zipBytes, _logger, song.PakHash, song.FsbHash, mergeIntoCustomsPak: true);
+
+            if (temporaryMode)
+                _tempSession.RegisterTempSong(song);
 
             return (true, "");
         }
         catch (Exception ex)
         {
-            _logger.LogWarn($"[P2P SYNC] Song download failed ({songId}): {ex.Message}");
+            _logger.LogWarn($"[P2P SYNC] Song download failed ({song.SongId}): {ex.Message}");
             return (false, ex.Message);
         }
     }
@@ -1697,25 +1909,15 @@ public partial class MainWindow : Window
     {
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-            string authQuery = BuildAuthQuery(_lastPeerSecret);
-            var encPak = await http.GetByteArrayAsync($"{_lastPeerBaseUrl}/api/download-customs-pak{authQuery}");
+            using var http = CreateAuthenticatedPeerClient(_lastPeerSecret, TimeSpan.FromSeconds(30));
+            var encPak = await http.GetByteArrayAsync($"{_lastPeerBaseUrl}/api/download-customs-pak");
             var rawPak = _security.DecryptPayload(encPak, _lastPeerSecret);
             _gh3.BackupAndDeployCustomsPak(rawPak);
         }
         catch (Exception ex)
         {
-            _logger.LogWarn($"[P2P SYNC] Could not pull customs.pak.xen: {ex.Message}");
+            _logger.LogWarn($"[P2P SYNC] Could not pull initial customs.pak.xen: {ex.Message}");
         }
-    }
-
-    private static string BuildAuthQuery(string secret)
-    {
-        if (string.IsNullOrWhiteSpace(secret)) return "";
-        // Trust tokens are long hex/alphanumeric (>12 chars), PINs are 6 digits
-        return secret.Length > 10
-            ? $"?token={Uri.EscapeDataString(secret)}"
-            : $"?pin={Uri.EscapeDataString(secret)}";
     }
 
     // ==================== PAGE 6: IMPORT & CLONE HERO CONVERTER ====================
@@ -1804,12 +2006,12 @@ public partial class MainWindow : Window
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var stack = new StackPanel();
-            stack.Children.Add(new TextBlock { Text = b.ProfileName, FontSize = 14, FontWeight = FontWeights.Bold, Foreground = System.Windows.Media.Brushes.White });
+            stack.Children.Add(new TextBlock { Text = b.ProfileName, FontSize = 14, FontWeight = FontWeights.Bold, Foreground = (WpfBrush)FindResource("TextPrimary") });
             stack.Children.Add(new TextBlock
             {
                 Text = $"{b.Timestamp}  •  {b.FileCount} file(s)  •  {(b.IncludesCustomsPak ? "Paired with customs.pak.xen (Safe Restore)" : "Legacy save-only backup")}",
                 FontSize = 11.5,
-                Foreground = new SolidColorBrush(b.IncludesCustomsPak ? WpfColor.FromRgb(52, 211, 153) : WpfColor.FromRgb(253, 224, 71))
+                Foreground = (WpfBrush)FindResource(b.IncludesCustomsPak ? "CardSuccessTitle" : "CardWarnTitle")
             });
             Grid.SetColumn(stack, 0);
             grid.Children.Add(stack);
@@ -1861,7 +2063,7 @@ public partial class MainWindow : Window
             WpfMessageBox.Show("No snapshots available to restore.", "Restore", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
-    // ==================== PAGE 8: LOGS & SETTINGS ====================
+    // ==================== PAGE 8: SETTINGS, THEMES, UPDATES & ABOUT ====================
     private void RefreshLogsBtn_Click(object sender, RoutedEventArgs e) => RefreshLogs();
     private void RefreshLogs()
     {
@@ -1875,59 +2077,262 @@ public partial class MainWindow : Window
 
     private void GameConfigBtn_Click(object sender, RoutedEventArgs e)
     {
-        var dlg = new Window
+        NavSettings.IsChecked = true;
+    }
+
+    private void SettingsSubTab_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button btn || btn.Tag is not string tag) return;
+        SettingsSubGeneral.Visibility = tag == "general" ? Visibility.Visible : Visibility.Collapsed;
+        SettingsSubAppearance.Visibility = tag == "appearance" ? Visibility.Visible : Visibility.Collapsed;
+        SettingsSubUpdates.Visibility = tag == "updates" ? Visibility.Visible : Visibility.Collapsed;
+        SettingsSubAbout.Visibility = tag == "about" ? Visibility.Visible : Visibility.Collapsed;
+
+        TabSetGeneralBtn.Style = (Style)FindResource(tag == "general" ? "FlameButton" : "OutlineButton");
+        TabSetAppearanceBtn.Style = (Style)FindResource(tag == "appearance" ? "FlameButton" : "OutlineButton");
+        TabSetUpdatesBtn.Style = (Style)FindResource(tag == "updates" ? "FlameButton" : "OutlineButton");
+        TabSetAboutBtn.Style = (Style)FindResource(tag == "about" ? "FlameButton" : "OutlineButton");
+
+        if (tag == "about") RefreshLogs();
+    }
+
+    private void LoadSettingsForm()
+    {
+        SettingsGamePathBox.Text = _gh3.GamePath;
+        SettingsSongsPathBox.Text = SongCreatorService.ResolveSongsDirectory();
+        SettingsHoneycombPathBox.Text = AppConfig.Current.HoneycombPath;
+        SettingsDirectInstallChk.IsChecked = AppConfig.Current.DirectInstallToGame;
+        SettingsMinLaunchChk.IsChecked = AppConfig.Current.MinimizeOnGameLaunch;
+        SettingsP2pOnlineChk.IsChecked = AppConfig.Current.P2pOnlineEnabled;
+        SettingsLobbyCapBox.Text = AppConfig.Current.MaxLobbyAutoSyncSongs.ToString();
+        SettingsAutoRollbackChk.IsChecked = AppConfig.Current.AutoRollbackOnFailedUpdate;
+        UpdateThemeCardSelection();
+    }
+
+    private void SettingsBrowseGamePath_Click(object sender, RoutedEventArgs e)
+    {
+        using var fbd = new WinForms.FolderBrowserDialog { SelectedPath = SettingsGamePathBox.Text, Description = "Select Guitar Hero III Game Directory" };
+        if (fbd.ShowDialog() == WinForms.DialogResult.OK) SettingsGamePathBox.Text = fbd.SelectedPath;
+    }
+
+    private void SettingsBrowseSongsPath_Click(object sender, RoutedEventArgs e)
+    {
+        using var fbd = new WinForms.FolderBrowserDialog { SelectedPath = SettingsSongsPathBox.Text, Description = "Select Custom Songs Directory" };
+        if (fbd.ShowDialog() == WinForms.DialogResult.OK) SettingsSongsPathBox.Text = fbd.SelectedPath;
+    }
+
+    private async void SettingsSaveGeneral_Click(object sender, RoutedEventArgs e)
+    {
+        bool wasOnline = AppConfig.Current.P2pOnlineEnabled;
+        AppConfig.Current.GamePath = SettingsGamePathBox.Text.Trim();
+        AppConfig.Current.CustomSongsPath = SettingsSongsPathBox.Text.Trim();
+        AppConfig.Current.HoneycombPath = SettingsHoneycombPathBox.Text.Trim();
+        AppConfig.Current.DirectInstallToGame = SettingsDirectInstallChk.IsChecked == true;
+        AppConfig.Current.MinimizeOnGameLaunch = SettingsMinLaunchChk.IsChecked == true;
+        AppConfig.Current.P2pOnlineEnabled = SettingsP2pOnlineChk.IsChecked == true;
+        if (int.TryParse(SettingsLobbyCapBox.Text, out var cap))
+            AppConfig.Current.MaxLobbyAutoSyncSongs = Math.Clamp(cap, 1, 25);
+        AppConfig.Save();
+
+        // If user switched to Offline Mode, immediately close UPnP port 7373!
+        if (wasOnline && !AppConfig.Current.P2pOnlineEnabled)
         {
-            Title = "Settings",
-            Width = 560,
-            Height = 340,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = this,
-            ResizeMode = ResizeMode.NoResize,
-            Background = new SolidColorBrush(WpfColor.FromRgb(17, 19, 27)),
-            Foreground = System.Windows.Media.Brushes.White
-        };
-
-        var stack = new StackPanel { Margin = new Thickness(20) };
-        stack.Children.Add(new TextBlock { Text = "Guitar Hero III Directory", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 5) });
-
-        var gamePathRow = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
-        var gamePathBox = new System.Windows.Controls.TextBox { Text = _gh3.GamePath };
-        var browseGameBtn = new System.Windows.Controls.Button { Content = "Browse", Style = (Style)FindResource("OutlineButton"), Margin = new Thickness(8, 0, 0, 0) };
-        browseGameBtn.Click += (_, _) =>
+            await _nat.RemoveMappingAsync();
+        }
+        else if (!wasOnline && AppConfig.Current.P2pOnlineEnabled && AppConfig.Current.AutoPortMap)
         {
-            using var fbd = new WinForms.FolderBrowserDialog { SelectedPath = gamePathBox.Text };
-            if (fbd.ShowDialog() == WinForms.DialogResult.OK) gamePathBox.Text = fbd.SelectedPath;
-        };
-        DockPanel.SetDock(browseGameBtn, Dock.Right);
-        gamePathRow.Children.Add(browseGameBtn);
-        gamePathRow.Children.Add(gamePathBox);
-        stack.Children.Add(gamePathRow);
+            _ = Task.Run(async () => await _nat.InitializeAsync());
+        }
 
-        stack.Children.Add(new TextBlock { Text = "Custom Compiler Path (Optional)", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 5) });
-        var hcBox = new System.Windows.Controls.TextBox { Text = AppConfig.Current.HoneycombPath, Margin = new Thickness(0, 0, 0, 12) };
-        stack.Children.Add(hcBox);
+        SettingsSaveStatus.Text = "Settings saved!";
+        RefreshAllUiState();
+    }
 
-        var directChk = new System.Windows.Controls.CheckBox { Content = "Install songs directly into Guitar Hero III", IsChecked = AppConfig.Current.DirectInstallToGame, Margin = new Thickness(0, 0, 0, 8) };
-        var minLaunchChk = new System.Windows.Controls.CheckBox { Content = "Minimize to tray when launching GH3", IsChecked = AppConfig.Current.MinimizeOnGameLaunch, Margin = new Thickness(0, 0, 0, 16) };
-        stack.Children.Add(directChk);
-        stack.Children.Add(minLaunchChk);
-
-        var btns = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
-        var saveBtn = new System.Windows.Controls.Button { Content = "Save Settings", Style = (Style)FindResource("FlameButton") };
-        saveBtn.Click += (_, _) =>
+    private void CleanTempFilesBtn_Click(object sender, RoutedEventArgs e)
+    {
+        CleanTempFilesBtn.IsEnabled = false;
+        try
         {
-            AppConfig.Current.GamePath = gamePathBox.Text.Trim();
-            AppConfig.Current.HoneycombPath = hcBox.Text.Trim();
-            AppConfig.Current.DirectInstallToGame = directChk.IsChecked == true;
-            AppConfig.Current.MinimizeOnGameLaunch = minLaunchChk.IsChecked == true;
+            var (filesRemoved, bytesFreed, summary) = _gh3.CleanDuplicateAndTempFiles(_logger);
+            double mb = bytesFreed / (1024.0 * 1024.0);
+            CleanTempResultText.Text = filesRemoved > 0
+                ? $"Cleaned {filesRemoved} item(s), freed {mb:F1} MB."
+                : "Already clean — no unnecessary duplicates or temp files found.";
+            RefreshSongsList();
+            if (filesRemoved > 0)
+            {
+                var detail = string.Join("\n• ", summary.Take(12));
+                WpfMessageBox.Show($"Cleanup complete!\nRemoved {filesRemoved} redundant/temp item(s) ({mb:F1} MB freed):\n\n• {detail}",
+                    "Storage Cleanup Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        finally
+        {
+            CleanTempFilesBtn.IsEnabled = true;
+        }
+    }
+
+    // ==================== CUSTOM LIGHT & DARK GH3 THEME SWITCHER ====================
+    private void SelectDarkThemeBtn_Click(object sender, RoutedEventArgs e) => ApplyTheme("Dark", save: true);
+    private void SelectLightThemeBtn_Click(object sender, RoutedEventArgs e) => ApplyTheme("Light", save: true);
+
+    private void ApplyTheme(string mode, bool save)
+    {
+        bool isLight = string.Equals(mode, "Light", StringComparison.OrdinalIgnoreCase);
+        string normalized = isLight ? "Light" : "Dark";
+
+        try
+        {
+            var themeUri = new Uri(isLight ? "Views/LightTheme.xaml" : "Views/DarkTheme.xaml", UriKind.Relative);
+            var newThemeDict = new ResourceDictionary { Source = themeUri };
+            if (Resources.MergedDictionaries.Count > 0)
+                Resources.MergedDictionaries[0] = newThemeDict;
+            else
+                Resources.MergedDictionaries.Add(newThemeDict);
+        }
+        catch { }
+
+        if (save)
+        {
+            AppConfig.Current.ThemeMode = normalized;
             AppConfig.Save();
-            dlg.Close();
-            RefreshAllUiState();
-        };
-        btns.Children.Add(saveBtn);
-        stack.Children.Add(btns);
+        }
 
-        dlg.Content = stack;
-        dlg.ShowDialog();
+        ApplyWindowChromeTheme();
+        UpdateThemeCardSelection();
+
+        if (IsLoaded)
+        {
+            RenderSongs();
+            RefreshFriendsList();
+            RefreshSaveBackups();
+            if (_lastPeerManifest != null) RenderPeerLibrary();
+        }
+    }
+
+    private void UpdateThemeCardSelection()
+    {
+        if (ThemeDarkCard == null || ThemeLightCard == null) return;
+        bool isLight = string.Equals(AppConfig.Current.ThemeMode, "Light", StringComparison.OrdinalIgnoreCase);
+
+        ThemeDarkCard.BorderBrush = new SolidColorBrush(isLight ? WpfColor.FromRgb(51, 65, 85) : WpfColor.FromRgb(249, 115, 22));
+        ThemeLightCard.BorderBrush = new SolidColorBrush(isLight ? WpfColor.FromRgb(220, 38, 38) : WpfColor.FromRgb(203, 213, 225));
+
+        SelectDarkThemeBtn.Content = isLight ? "Switch to Dark GH3 Theme" : "✓ Active Theme (Dark GH3)";
+        SelectDarkThemeBtn.Style = (Style)FindResource(isLight ? "OutlineButton" : "FlameButton");
+
+        SelectLightThemeBtn.Content = isLight ? "✓ Active Theme (Light GH3)" : "Switch to Light GH3 Theme";
+        SelectLightThemeBtn.Style = (Style)FindResource(isLight ? "FlameButton" : "OutlineButton");
+    }
+
+    // ==================== COMPONENT UPDATES & 5-POINT COMPATIBILITY SELF-TEST ====================
+    private void SettingsAutoRollbackChk_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        AppConfig.Current.AutoRollbackOnFailedUpdate = SettingsAutoRollbackChk.IsChecked == true;
+        AppConfig.Save();
+    }
+
+    private async void CheckAllComponentsBtn_Click(object sender, RoutedEventArgs e)
+    {
+        CheckAllComponentsBtn.IsEnabled = false;
+        UpdatesCompStatusText.Text = "Checking GH3-Sync, Honeycomb, BetterGH3, FFmpeg, and Stem Tools...";
+        ComponentsStatusPanel.Children.Clear();
+        try
+        {
+            var items = await _compUpdater.CheckAllComponentsAsync();
+            foreach (var item in items)
+            {
+                var card = new Border { Style = (Style)FindResource("GhCard"), Padding = new Thickness(13), Margin = new Thickness(0, 0, 0, 8) };
+                var grid = new Grid();
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var left = new StackPanel();
+                left.Children.Add(new TextBlock { Text = item.Name, FontSize = 14, FontWeight = FontWeights.Bold, Foreground = (WpfBrush)FindResource("TextPrimary") });
+                left.Children.Add(new TextBlock { Text = $"Installed: {item.InstalledVersion}  •  {item.Status}", FontSize = 12, Foreground = (WpfBrush)FindResource("TextMuted"), Margin = new Thickness(0, 2, 0, 0) });
+                Grid.SetColumn(left, 0);
+                grid.Children.Add(left);
+
+                var badge = MakeBadge(
+                    item.UpdateAvailable ? "Update Available" : (item.IsInstalled ? "Ready" : "Optional"),
+                    item.UpdateAvailable ? "#422006" : (item.IsInstalled ? "#064E3B" : "#1E293B"),
+                    item.UpdateAvailable ? "#FDE047" : (item.IsInstalled ? "#6EE7B7" : "#CBD5E1"));
+                badge.VerticalAlignment = VerticalAlignment.Center;
+                Grid.SetColumn(badge, 1);
+                grid.Children.Add(badge);
+
+                card.Child = grid;
+                ComponentsStatusPanel.Children.Add(card);
+            }
+            UpdatesCompStatusText.Text = $"Checked {items.Count} components at {DateTime.Now:HH:mm:ss}.";
+        }
+        finally
+        {
+            CheckAllComponentsBtn.IsEnabled = true;
+        }
+    }
+
+    private async void RunCompatTestBtn_Click(object sender, RoutedEventArgs e)
+    {
+        RunCompatTestBtn.IsEnabled = false;
+        UpdatesCompStatusText.Text = "Running 5-point post-update compatibility self-test...";
+        CompatTestPanel.Children.Clear();
+        try
+        {
+            var report = await _compUpdater.RunCompatibilitySelfTestAsync();
+            foreach (var chk in report.Checks)
+            {
+                var card = new Border
+                {
+                    Style = (Style)FindResource("GhCard"),
+                    Background = (WpfBrush)FindResource(chk.Passed ? "CardSuccessBg" : "CardDangerBg"),
+                    BorderBrush = (WpfBrush)FindResource(chk.Passed ? "CardSuccessBorder" : "CardDangerBorder"),
+                    Padding = new Thickness(12),
+                    Margin = new Thickness(0, 0, 0, 8)
+                };
+                var sp = new StackPanel();
+                sp.Children.Add(new TextBlock
+                {
+                    Text = $"{(chk.Passed ? "✓ PASS" : "✕ FAIL")} — {chk.Component}",
+                    FontSize = 13.5,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = (WpfBrush)FindResource(chk.Passed ? "CardSuccessTitle" : "CardDangerTitle")
+                });
+                sp.Children.Add(new TextBlock
+                {
+                    Text = chk.Details,
+                    FontSize = 12,
+                    Foreground = (WpfBrush)FindResource(chk.Passed ? "CardSuccessFg" : "CardDangerFg"),
+                    Margin = new Thickness(0, 2, 0, 0),
+                    TextWrapping = TextWrapping.Wrap
+                });
+                card.Child = sp;
+                CompatTestPanel.Children.Add(card);
+            }
+            UpdatesCompStatusText.Text = report.AllPassed
+                ? $"All {report.Checks.Count} compatibility checks passed!"
+                : $"{report.Checks.Count(c => c.Passed)}/{report.Checks.Count} compatibility checks passed. Review flagged items below.";
+        }
+        finally
+        {
+            RunCompatTestBtn.IsEnabled = true;
+        }
+    }
+
+    private async void UpdateStemToolsBtn_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateStemToolsBtn.IsEnabled = false;
+        try
+        {
+            var (ok, msg) = await _compUpdater.UpdateStemToolsWithRollbackAsync(status =>
+                Dispatcher.Invoke(() => UpdatesCompStatusText.Text = status));
+            UpdatesCompStatusText.Text = msg;
+            WpfMessageBox.Show(msg, ok ? "Stem Tools Updated" : "Update Status", MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+        finally
+        {
+            UpdateStemToolsBtn.IsEnabled = true;
+        }
     }
 }

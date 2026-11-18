@@ -11,12 +11,60 @@ namespace GH3_Sync;
 public class SecurityService
 {
     public string PairingPin { get; private set; }
+    public SemaphoreSlim DownloadConcurrencyGuard { get; } = new(2, 2);
     private readonly Dictionary<string, (int attempts, DateTime lastAttempt)> _failedAttempts = new();
+    private readonly Dictionary<string, List<DateTime>> _ipRequestTimestamps = new();
     private readonly object _lock = new();
 
     public SecurityService()
     {
         PairingPin = GenerateSecurePin();
+    }
+
+    public static bool FixedTimeEquals(string? a, string? b)
+    {
+        if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
+        var ba = Encoding.UTF8.GetBytes(a);
+        var bb = Encoding.UTF8.GetBytes(b);
+        return ba.Length == bb.Length && CryptographicOperations.FixedTimeEquals(ba, bb);
+    }
+
+    public bool CheckRequestRateLimit(string clientIp, SyncLogger logger, int maxPerMinute = 40)
+    {
+        if (clientIp == "127.0.0.1" || clientIp == "::1") return true;
+        lock (_lock)
+        {
+            var now = DateTime.UtcNow;
+            if (!_ipRequestTimestamps.TryGetValue(clientIp, out var list))
+            {
+                list = new List<DateTime>();
+                _ipRequestTimestamps[clientIp] = list;
+            }
+            list.RemoveAll(t => (now - t).TotalSeconds > 60);
+            if (list.Count >= maxPerMinute)
+            {
+                logger.LogWarn($"[SECURITY] Rate-limited IP {clientIp} ({list.Count} req/min).");
+                return false;
+            }
+            list.Add(now);
+            return true;
+        }
+    }
+
+    public static string ComputeSha256Hex(byte[] data)
+    {
+        using var sha = SHA256.Create();
+        return Convert.ToHexString(sha.ComputeHash(data)).ToLowerInvariant();
+    }
+
+    public static bool VerifyFileSha256(string filePath, string? expectedHex)
+    {
+        if (string.IsNullOrWhiteSpace(expectedHex) || !File.Exists(filePath)) return true;
+        var cleanExpected = expectedHex.Trim().Replace("sha256:", "", StringComparison.OrdinalIgnoreCase).ToLowerInvariant();
+        using var sha = SHA256.Create();
+        using var fs = File.OpenRead(filePath);
+        var actual = Convert.ToHexString(sha.ComputeHash(fs)).ToLowerInvariant();
+        return FixedTimeEquals(actual, cleanExpected);
     }
 
     private static string GenerateSecurePin()
@@ -45,7 +93,7 @@ public class SecurityService
                 }
             }
 
-            if (string.Equals(clientPin?.Trim(), PairingPin, StringComparison.Ordinal))
+            if (FixedTimeEquals(clientPin?.Trim(), PairingPin))
             {
                 if (_failedAttempts.ContainsKey(clientIp)) _failedAttempts.Remove(clientIp);
                 logger.LogInfo($"[SECURITY] Successful peer authentication from: {clientIp}");
@@ -226,6 +274,60 @@ public class SecurityService
 
             entry.ExtractToFile(destinationPath, overwrite: true);
             logger.LogDebug($"Extracted project file: {fileName} -> {destinationPath}");
+        }
+    }
+
+    /// <summary>
+    /// Safely extracts a Clone Hero / YARG .zip archive with strict Zip-Bomb limits,
+    /// max file count cap, path-traversal defense, and strict media/chart extension allowlist.
+    /// Hard-blocks .exe, .dll, .bat, .ps1, .cmd, .vbs, .msi, .scr, etc.
+    /// </summary>
+    public static void ExtractCloneHeroZipSafely(string zipPath, string targetDir, SyncLogger logger)
+    {
+        const long MaxEntryBytes = 200L * 1024 * 1024;
+        const long MaxTotalBytes = 450L * 1024 * 1024;
+        const int MaxFileCount = 80;
+        string[] allowedExts = new[] { ".chart", ".mid", ".midi", ".ini", ".ogg", ".mp3", ".wav", ".opus", ".flac", ".png", ".jpg", ".jpeg", ".json", ".txt" };
+
+        var fullTarget = Path.GetFullPath(targetDir);
+        Directory.CreateDirectory(fullTarget);
+
+        long totalUncompressed = 0;
+        int fileCount = 0;
+
+        using var archive = ZipFile.OpenRead(zipPath);
+        foreach (var entry in archive.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name)) continue; // Directory entry
+
+            fileCount++;
+            if (fileCount > MaxFileCount)
+                throw new SecurityException($"Archive exceeds maximum file limit ({MaxFileCount}).");
+
+            var ext = Path.GetExtension(entry.Name).ToLowerInvariant();
+            if (!allowedExts.Contains(ext))
+            {
+                logger.LogWarn($"[SECURITY BLOCK] Skipped disallowed file in Clone Hero ZIP: {entry.FullName}");
+                continue;
+            }
+
+            if (entry.Length > MaxEntryBytes)
+                throw new SecurityException($"File '{entry.Name}' exceeds safety size cap.");
+
+            totalUncompressed += entry.Length;
+            if (totalUncompressed > MaxTotalBytes)
+                throw new SecurityException("Archive exceeds total uncompressed size safety limit (possible zip bomb).");
+
+            var destPath = Path.GetFullPath(Path.Combine(fullTarget, entry.FullName.Replace('/', Path.DirectorySeparatorChar)));
+            if (!destPath.StartsWith(fullTarget + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                logger.LogWarn($"[SECURITY BLOCK] Zip-Slip path traversal blocked: {entry.FullName}");
+                throw new SecurityException($"Path traversal blocked: {entry.FullName}");
+            }
+
+            var destDir = Path.GetDirectoryName(destPath);
+            if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
+            entry.ExtractToFile(destPath, overwrite: true);
         }
     }
 }

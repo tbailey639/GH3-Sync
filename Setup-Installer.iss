@@ -1,8 +1,8 @@
 ; Script generated for Inno Setup 7
-; GH3-Sync: Native Windows 11 P2P Song Synchronizer, Friends Network & ONOGAMI AI Song Creator for BetterGH3
+; GH3-Sync: Guitar Hero III Custom Song Creator, Clone Hero Converter & P2P Synchronizer
 
 #define MyAppName "GH3-Sync"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.1"
 #define MyAppPublisher "Mad Scientist (tbailey639)"
 #define MyAppURL "https://github.com/tbailey639/GH3-Sync"
 #define MyAppExeName "GH3-Sync.exe"
@@ -52,3 +52,57 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilen
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  AppDataRoot: string;
+  AiToolsDir: string;
+  KeepAi: Boolean;
+begin
+  if (CurUninstallStep = usPostUninstall) and (not UninstallSilent) then
+  begin
+    AppDataRoot := ExpandConstant('{userappdata}\GH3-Sync');
+    AiToolsDir := AppDataRoot + '\tools\ai';
+    KeepAi := True;
+
+    if DirExists(AiToolsDir) then
+    begin
+      if MsgBox('Do you want to KEEP the downloaded Stem Separator & Portable Python tools (~1 GB) in:' + #13#10 +
+                AiToolsDir + #13#10#13#10 +
+                'Click YES to keep them (recommended if you plan to reinstall or update later).' + #13#10 +
+                'Click NO to delete them and free disk space.',
+                mbConfirmation, MB_YESNO) = IDNO then
+      begin
+        KeepAi := False;
+        DelTree(AiToolsDir, True, True, True);
+      end;
+    end;
+
+    if DirExists(AppDataRoot) then
+    begin
+      if MsgBox('Do you want to KEEP your GH3-Sync settings, Trusted Friends list, and Career Save backups in:' + #13#10 +
+                AppDataRoot + #13#10#13#10 +
+                'Click YES to preserve your settings and save backups.' + #13#10 +
+                'Click NO to remove them.',
+                mbConfirmation, MB_YESNO) = IDNO then
+      begin
+        if not KeepAi then
+        begin
+          DelTree(AppDataRoot, True, True, True);
+        end
+        else
+        begin
+          DeleteFile(AppDataRoot + '\config.json');
+          DeleteFile(AppDataRoot + '\debug.log');
+          DeleteFile(AppDataRoot + '\song_meta_cache.json');
+          DeleteFile(AppDataRoot + '\temp_session.json');
+          DeleteFile(AppDataRoot + '\temp_session_customs.pak.xen');
+          DelTree(AppDataRoot + '\SaveBackups', True, True, True);
+          DelTree(AppDataRoot + '\p2p_root', True, True, True);
+          DelTree(AppDataRoot + '\compiler_work', True, True, True);
+        end;
+      end;
+    end;
+  end;
+end;

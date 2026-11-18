@@ -19,17 +19,18 @@ public class UpdateCheckResult
     public string ReleaseNotes { get; set; } = "";
     public string ReleaseUrl { get; set; } = "";
     public string InstallerDownloadUrl { get; set; } = "";
+    public string InstallerSha256 { get; set; } = "";
     public long InstallerSizeBytes { get; set; }
     public string Message { get; set; } = "";
 }
 
 /// <summary>
 /// Checks GitHub Releases for newer versions of GH3-Sync, downloads GH3-Sync-Setup.exe
-/// with live progress reporting, and launches the installer cleanly.
+/// with live progress reporting & SHA-256 verification, and launches the installer cleanly.
 /// </summary>
 public class UpdateService
 {
-    public const string CurrentAppVersion = "1.0.0";
+    public const string CurrentAppVersion = "1.0.1";
     private const string RepoOwner = "tbailey639";
     private const string RepoName = "GH3-Sync";
     private static readonly string LatestReleaseApiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
@@ -71,6 +72,7 @@ public class UpdateService
             var htmlUrl = root.TryGetProperty("html_url", out var h) ? (h.GetString() ?? "") : "";
 
             string installerUrl = "";
+            string installerDigest = "";
             long installerSize = 0;
 
             if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
@@ -81,6 +83,7 @@ public class UpdateService
                     if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                     {
                         installerUrl = asset.TryGetProperty("browser_download_url", out var dl) ? (dl.GetString() ?? "") : "";
+                        installerDigest = asset.TryGetProperty("digest", out var dg) ? (dg.GetString() ?? "") : "";
                         installerSize = asset.TryGetProperty("size", out var sz) ? sz.GetInt64() : 0;
                         break;
                     }
@@ -93,6 +96,7 @@ public class UpdateService
             result.ReleaseNotes = body;
             result.ReleaseUrl = htmlUrl;
             result.InstallerDownloadUrl = installerUrl;
+            result.InstallerSha256 = installerDigest;
             result.InstallerSizeBytes = installerSize;
 
             result.UpdateAvailable = IsRemoteNewer(CurrentAppVersion, result.LatestVersion);
@@ -169,7 +173,19 @@ public class UpdateService
                 return (false, "", "Downloaded installer appears incomplete or corrupted.");
             }
 
-            onProgress?.Invoke(100, "Download complete! Launching installer...");
+            if (!string.IsNullOrWhiteSpace(updateInfo.InstallerSha256))
+            {
+                onProgress?.Invoke(99, "Verifying installer SHA-256 checksum...");
+                if (!SecurityService.VerifyFileSha256(targetFile, updateInfo.InstallerSha256))
+                {
+                    try { File.Delete(targetFile); } catch { }
+                    _logger?.LogWarn($"[UPDATER] SECURITY BLOCK: SHA-256 mismatch on downloaded installer {targetFile}");
+                    return (false, "", "Security check failed: Downloaded installer SHA-256 checksum did not match the official GitHub release.");
+                }
+                _logger?.LogInfo("[UPDATER] Installer SHA-256 integrity verified.");
+            }
+
+            onProgress?.Invoke(100, "Download verified! Launching installer...");
             _logger?.LogInfo($"[UPDATER] Downloaded installer ({info.Length:N0} bytes) to {targetFile}");
             return (true, targetFile, "");
         }

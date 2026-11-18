@@ -4,6 +4,35 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.0.1] - 2026-11-18
+
+### New Features
+* **Dedicated Tabbed Settings Page:** Replaced the settings popup with a full sidebar **Settings & About** page organized into **General & Paths**, **Appearance**, **Updates & Compatibility**, and **About, Credits & Logs**.
+* **Custom Light & Dark Guitar Hero Themes:** Added instant live theme switching between **Dark GH3 (Legends of Rock Stage)** and **Light GH3 (Backstage Amp & Steel)** with synchronized window chrome and saved preference.
+* **Temporary Lobby Session Mode:** Sync friends' custom songs temporarily for an online session, promote favorites permanently with **Keep Song**, and auto-remove temporary files + restore `customs.pak.xen` when `GH3.exe` exits or on **End Session & Clean Up**.
+* **Smart `customs.pak.xen` Merging & Auto-Strip:** Imported (`.gh3song` / `.gh3pack`) and P2P synced songs now merge directly into the user's existing `DATA\customs.pak.xen` without overwriting existing customs or breaking an active custom save; deleting a song automatically strips its entry from `customs.pak.xen`.
+* **Component Update Checker, 5-Point Compatibility Self-Test & Safe Rollback:** Verify GH3-Sync, Honeycomb, BetterGH3, FFmpeg, and Demucs/Basic Pitch versions, run a 5-point post-update compatibility check, and roll back stem package updates automatically if a check fails.
+* **First-Time Save Detection on Startup:** Automatically detects if the one-time `Honeycomb}{Honeycomb` custom save setup has not been completed yet and offers a 1-click vanilla save backup.
+* **Trusted Friend Quick-Select Dropdown:** 1-click dropdown in **P2P Sync & Lobby** auto-fills a trusted friend's saved address and Trust Token.
+* **1-Click Storage Cleanup & Single-Instance Restore:** Added **Clean Duplicate & Temp Files** in Settings and single-instance IPC so relaunching restores the window from the system tray cleanly.
+* **Uninstall Component Choices & `TORCH_HOME` Consolidation:** The uninstaller now asks whether to keep or remove downloaded Stem Tools (`%APPDATA%\GH3-Sync\tools\ai`) and user settings/backups (upgrades silently preserve everything); Demucs model weights now store cleanly inside `%APPDATA%\GH3-Sync\tools\ai\models`.
+
+### Security Hardening
+* **Trusted-Friends-Only Song Downloads:** Locked `/api/download/{songId}` and `/api/download-customs-pak` strictly to verified Trusted Friend Tokens (`403 Forbidden` to untrusted PIN peers; PIN peers retain view-only manifest access).
+* **Headers-Only Auth & Constant-Time Comparison:** Moved P2P tokens/PINs to `X-GH3-Trust-Token` / `X-GH3-PIN` HTTP headers with `CryptographicOperations.FixedTimeEquals`.
+* **SHA-256 Integrity Verification:** Verifies downloaded `GH3-Sync-Setup.exe` installers against GitHub Release SHA-256 digests and validates synced `.pak.xen` / `.fsb.xen` file hashes on install.
+* **DPAPI Token Encryption at Rest:** Encrypts stored friend Trust Tokens in `config.json` using Windows DPAPI (`CurrentUser`).
+* **Clone Hero ZIP Security Guard:** Enforces uncompressed size limits, file-count caps, Zip-Slip defense, and a strict allowlist blocking executables/scripts.
+* **Rate Limiting, Concurrency Caps & Offline P2P Mode:** Added 40 req/min per-IP rate limiting, max 2 concurrent song transfers, an **Online/Offline P2P** toggle, and automatic UPnP port `7373` cleanup on exit or Offline Mode.
+
+### Bug Fixes
+* **Fixed Duplicate Song Cards & `"Song"` Title Bug:** Library scanning now reads real Titles, Artists, and Charters directly from `DATA\customs.pak.xen`, links `compiled_song_id` in `song.ini`, and deduplicates normalized titles (such as `Ain't` vs `Aint`) so `song_xxxxxxxx` customs display cleanly with zero duplicates.
+* **Eliminated Unnecessary Temp & Duplicate Files:** Stopped copying duplicate 30+ MB `.fsb.xen` / `.pak.xen` / `.dat.xen` files into `Custom_Songs` project folders and auto-cleaned intermediate conversion MP3s after compilation.
+* **Accurate Source Attribution:** Preserved `createdWithCreator` metadata on export/import and tagged Clone Hero imports as **Imported (Clone Hero)** instead of **Created Locally**.
+* **Program Files Compiler Compatibility:** Routed `GH-Toolkit-Core` `QBDebug` workspace to a writable `%APPDATA%\GH3-Sync\compiler_work` directory when installed in `C:\Program Files\`.
+
+---
+
 ## [v1.0.0] - 2026-11-18 (First Official Release)
 
 ### New Features

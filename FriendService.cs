@@ -139,9 +139,9 @@ public class FriendService
 
         lock (_lock)
         {
-            trustedFriend = AppConfig.Current.Friends.FirstOrDefault(f => 
-                f.IsTrusted && !string.IsNullOrEmpty(f.TrustToken) && 
-                f.TrustToken.Equals(token.Trim(), StringComparison.Ordinal));
+            trustedFriend = AppConfig.Current.Friends.FirstOrDefault(f =>
+                f.IsTrusted && !string.IsNullOrEmpty(f.TrustToken) &&
+                SecurityService.FixedTimeEquals(f.TrustToken, token.Trim()));
             return trustedFriend != null;
         }
     }

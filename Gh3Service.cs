@@ -22,6 +22,9 @@ public class CustomSongInfo
     public string SongId { get; set; } = "";
     public string Title { get; set; } = "";
     public string Artist { get; set; } = "";
+    public string Charter { get; set; } = "";
+    public string Year { get; set; } = "";
+    public string Album { get; set; } = "";
     public long PakSizeBytes { get; set; }
     public long FsbSizeBytes { get; set; }
     public long TotalSizeBytes => PakSizeBytes + FsbSizeBytes;
@@ -30,6 +33,8 @@ public class CustomSongInfo
     public DateTime LastModified { get; set; }
     public bool IsCreatedLocally { get; set; } = false;
     public bool CreatedWithOnogamiCreator { get; set; } = false;
+    public bool IsCloneHeroImport { get; set; } = false;
+    public bool IsTemporarySessionSong { get; set; } = false;
     public string OnogamiFingerprint { get; set; } = "";
     public bool IsDuplicate { get; set; } = false;
     public string DuplicateReason { get; set; } = "";
@@ -39,6 +44,18 @@ public class CustomSongInfo
     public string GhprojPath { get; set; } = "";
     public bool IsFavorite { get; set; } = false;
     public bool IsInLobbySetlist { get; set; } = false;
+}
+
+public class ImportedSongMetaRecord
+{
+    public string SongId { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Artist { get; set; } = "";
+    public string Charter { get; set; } = "";
+    public string Year { get; set; } = "";
+    public string Album { get; set; } = "";
+    public bool CreatedWithCreator { get; set; }
+    public bool IsCloneHeroImport { get; set; }
 }
 
 public class LibraryManifest
@@ -278,8 +295,12 @@ public class Gh3Service
             string title = "";
             string artist = "";
             string songId = "";
+            string compiledSongId = "";
             string charter = "";
+            string year = "";
+            string album = "";
             bool isOnogami = false;
+            bool isCloneHero = false;
 
             // 1. Try reading song.ini
             if (File.Exists(iniFile))
@@ -288,18 +309,31 @@ public class Gh3Service
                 foreach (var line in lines)
                 {
                     var trimmed = line.Trim();
-                    if (trimmed.StartsWith("name", StringComparison.OrdinalIgnoreCase) && trimmed.Contains('='))
-                        title = trimmed.Substring(trimmed.IndexOf('=') + 1).Trim();
-                    else if (trimmed.StartsWith("title", StringComparison.OrdinalIgnoreCase) && trimmed.Contains('='))
-                        title = trimmed.Substring(trimmed.IndexOf('=') + 1).Trim();
-                    else if (trimmed.StartsWith("artist", StringComparison.OrdinalIgnoreCase) && trimmed.Contains('='))
-                        artist = trimmed.Substring(trimmed.IndexOf('=') + 1).Trim();
-                    else if (trimmed.StartsWith("charter", StringComparison.OrdinalIgnoreCase) && trimmed.Contains('='))
-                        charter = trimmed.Substring(trimmed.IndexOf('=') + 1).Trim();
-                    else if (trimmed.StartsWith("icon", StringComparison.OrdinalIgnoreCase) && trimmed.Contains('='))
+                    if (!trimmed.Contains('=')) continue;
+                    var eq = trimmed.IndexOf('=');
+                    var key = trimmed.Substring(0, eq).Trim();
+                    var val = trimmed.Substring(eq + 1).Trim();
+
+                    if (key.Equals("name", StringComparison.OrdinalIgnoreCase) || key.Equals("title", StringComparison.OrdinalIgnoreCase))
+                        title = val;
+                    else if (key.Equals("artist", StringComparison.OrdinalIgnoreCase))
+                        artist = val;
+                    else if (key.Equals("charter", StringComparison.OrdinalIgnoreCase))
+                        charter = val;
+                    else if (key.Equals("year", StringComparison.OrdinalIgnoreCase))
+                        year = val;
+                    else if (key.Equals("album", StringComparison.OrdinalIgnoreCase))
+                        album = val;
+                    else if (key.Equals("compiled_song_id", StringComparison.OrdinalIgnoreCase))
+                        compiledSongId = val;
+                    else if (key.Equals("import_source", StringComparison.OrdinalIgnoreCase) && val.Equals("clone_hero", StringComparison.OrdinalIgnoreCase))
+                        isCloneHero = true;
+                    else if (key.Equals("icon", StringComparison.OrdinalIgnoreCase))
                     {
-                        var icon = trimmed.Substring(trimmed.IndexOf('=') + 1).Trim();
-                        if (icon.Equals("onogami_creator", StringComparison.OrdinalIgnoreCase)) isOnogami = true;
+                        if (val.Equals("onogami_creator", StringComparison.OrdinalIgnoreCase) || val.Equals("gh3sync_creator", StringComparison.OrdinalIgnoreCase))
+                            isOnogami = true;
+                        else if (val.Equals("clone_hero_import", StringComparison.OrdinalIgnoreCase))
+                            isCloneHero = true;
                     }
                 }
             }
@@ -307,7 +341,6 @@ public class Gh3Service
             // 2. Try reading .ghproj
             if (ghprojFiles.Length > 0)
             {
-                isOnogami = true;
                 try
                 {
                     var json = File.ReadAllText(ghprojFiles[0]);
@@ -321,8 +354,30 @@ public class Gh3Service
                         songId = sProp.GetString() ?? "";
                     if (string.IsNullOrEmpty(charter) && root.TryGetProperty("chartAuthor", out var cProp))
                         charter = cProp.GetString() ?? "";
+                    if (string.IsNullOrEmpty(album) && root.TryGetProperty("album", out var alProp))
+                        album = alProp.GetString() ?? "";
+                    if (root.TryGetProperty("gameIcon", out var giProp))
+                    {
+                        var gi = giProp.GetString() ?? "";
+                        if (gi.Equals("clone_hero_import", StringComparison.OrdinalIgnoreCase))
+                            isCloneHero = true;
+                        else if (gi.Equals("onogami_creator", StringComparison.OrdinalIgnoreCase) || gi.Equals("gh3sync_creator", StringComparison.OrdinalIgnoreCase))
+                            isOnogami = true;
+                    }
                 }
                 catch { }
+            }
+
+            // 3. Detect legacy standalone *_song.pak.xen inside folder to resolve actual compiled checksum ID
+            var standalonePaks = Directory.GetFiles(dirPath, "*_song.pak.xen");
+            if (string.IsNullOrWhiteSpace(compiledSongId) && standalonePaks.Length > 0)
+            {
+                var pName = Path.GetFileName(standalonePaks[0]);
+                compiledSongId = pName.Substring(0, pName.Length - "_song.pak.xen".Length);
+            }
+            if (!string.IsNullOrWhiteSpace(compiledSongId))
+            {
+                songId = compiledSongId;
             }
 
             var dirName = Path.GetFileName(dirPath);
@@ -351,11 +406,19 @@ public class Gh3Service
                 songId = sb.Length > 0 ? sb.ToString() : SanitizeFileName(title).ToLowerInvariant();
             }
 
-            if (charter.Contains("ONOGAMI", StringComparison.OrdinalIgnoreCase) ||
-                AppConfig.Current.CreatedSongIds.Any(id => songId.Contains(id, StringComparison.OrdinalIgnoreCase) || id.Contains(songId, StringComparison.OrdinalIgnoreCase)))
+            if (charter.Contains("Clone Hero", StringComparison.OrdinalIgnoreCase))
+            {
+                isCloneHero = true;
+            }
+
+            if (!isCloneHero &&
+                (charter.Contains("ONOGAMI", StringComparison.OrdinalIgnoreCase) ||
+                 charter.Contains("GH3-Sync", StringComparison.OrdinalIgnoreCase) ||
+                 AppConfig.Current.CreatedSongIds.Any(id => songId.Equals(id, StringComparison.OrdinalIgnoreCase))))
             {
                 isOnogami = true;
             }
+            if (isCloneHero) isOnogami = false;
 
             long totalBytes = 0;
             DateTime lastWrite = Directory.GetLastWriteTimeUtc(dirPath);
@@ -371,18 +434,22 @@ public class Gh3Service
             catch { }
 
             var ghprojPath = ghprojFiles.FirstOrDefault() ?? "";
-            bool hasStandalonePak = Directory.GetFiles(dirPath, "*_song.pak.xen").Length > 0;
+            bool hasStandalonePak = standalonePaks.Length > 0 || !string.IsNullOrWhiteSpace(compiledSongId);
 
             return new CustomSongInfo
             {
                 SongId = songId,
                 Title = title,
                 Artist = artist,
+                Charter = charter,
+                Year = year,
+                Album = album,
                 PakSizeBytes = totalBytes,
                 FsbSizeBytes = 0,
                 LastModified = lastWrite,
-                IsCreatedLocally = true,
+                IsCreatedLocally = !isCloneHero,
                 CreatedWithOnogamiCreator = isOnogami,
+                IsCloneHeroImport = isCloneHero,
                 OnogamiFingerprint = ComputeFingerprint(title, artist),
                 IsProject = true,
                 ProjectDirectory = dirPath,
@@ -438,10 +505,69 @@ public class Gh3Service
         return null;
     }
 
+    private static readonly string SongMetaCachePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "GH3-Sync", "song_meta_cache.json");
+
+    private static Dictionary<string, ImportedSongMetaRecord> LoadSongMetaCache()
+    {
+        try
+        {
+            if (File.Exists(SongMetaCachePath))
+            {
+                var json = File.ReadAllText(SongMetaCachePath);
+                var loaded = JsonSerializer.Deserialize<Dictionary<string, ImportedSongMetaRecord>>(json);
+                if (loaded != null)
+                    return new Dictionary<string, ImportedSongMetaRecord>(loaded, StringComparer.OrdinalIgnoreCase);
+            }
+        }
+        catch { }
+        return new Dictionary<string, ImportedSongMetaRecord>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static void SaveSongMetaCacheRecord(ImportedSongMetaRecord rec)
+    {
+        if (string.IsNullOrWhiteSpace(rec.SongId)) return;
+        try
+        {
+            var cache = LoadSongMetaCache();
+            cache[rec.SongId] = rec;
+            var dir = Path.GetDirectoryName(SongMetaCachePath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            File.WriteAllText(SongMetaCachePath, JsonSerializer.Serialize(cache, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// Detects whether the user has completed the one-time custom save setup in GH3.
+    /// Returns true if Documents\Aspyr\Guitar Hero III\Save\Honeycomb}{Honeycomb\s000.d does not exist yet.
+    /// </summary>
+    public bool IsFirstTimeCustomSetupNeeded()
+    {
+        try
+        {
+            var docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            var customSaveFile = Path.Combine(docs, "Aspyr", "Guitar Hero III", "Save", "Honeycomb}{Honeycomb", "s000.d");
+            if (File.Exists(customSaveFile)) return false;
+
+            // Also check if DATA\customs.pak.xen already has custom songs beyond vanilla DLC
+            var pakMap = CustomsPakService.ReadSongMetadataMap(GamePath);
+            bool hasNonDlc = pakMap.Keys.Any(k => !IsVanillaSong(k));
+            return !hasNonDlc;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public List<CustomSongInfo> GetInstalledCustomSongs()
     {
         var songs = new List<CustomSongInfo>();
         var seenSongIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var pakMetaMap = IsDetected ? CustomsPakService.ReadSongMetadataMap(GamePath) : new Dictionary<string, CustomsPakSongEntry>(StringComparer.OrdinalIgnoreCase);
+        var metaCache = LoadSongMetaCache();
 
         // 1. Scan compiled game customs in DATA/SONGS
         if (IsDetected && Directory.Exists(SongsPath))
@@ -460,21 +586,67 @@ public class Gh3Service
                     var fsbFile = Path.Combine(MusicPath, $"{songId}.fsb.xen");
                     var fsbInfo = File.Exists(fsbFile) ? new FileInfo(fsbFile) : null;
 
-                    var (title, artist, isLocal) = ResolveSongMetadata(songId);
-                    bool isOnogami = isLocal || AppConfig.Current.CreatedSongIds.Any(id => songId.Contains(id, StringComparison.OrdinalIgnoreCase));
+                    var (fallbackTitle, fallbackArtist, isLocalFallback) = ResolveSongMetadata(songId);
+                    string title = fallbackTitle;
+                    string artist = fallbackArtist;
+                    string charter = "";
+                    string year = "";
+                    string album = "";
+                    bool isCreator = isLocalFallback;
+                    bool isCloneHero = false;
+
+                    if (pakMetaMap.TryGetValue(songId, out var pm))
+                    {
+                        if (!string.IsNullOrWhiteSpace(pm.Title)) title = pm.Title;
+                        if (!string.IsNullOrWhiteSpace(pm.Artist)) artist = pm.Artist;
+                        charter = pm.Charter;
+                        year = pm.Year;
+                        album = pm.Album;
+                        if (charter.Contains("ONOGAMI", StringComparison.OrdinalIgnoreCase) ||
+                            charter.Contains("GH3-Sync", StringComparison.OrdinalIgnoreCase))
+                            isCreator = true;
+                        if (charter.Contains("Clone Hero", StringComparison.OrdinalIgnoreCase))
+                        {
+                            isCloneHero = true;
+                            isCreator = false;
+                        }
+                    }
+
+                    if (metaCache.TryGetValue(songId, out var cached))
+                    {
+                        if (!string.IsNullOrWhiteSpace(cached.Title) && (title == fallbackTitle || title.Equals("song", StringComparison.OrdinalIgnoreCase)))
+                            title = cached.Title;
+                        if (!string.IsNullOrWhiteSpace(cached.Artist) && artist == "Custom Artist")
+                            artist = cached.Artist;
+                        if (string.IsNullOrWhiteSpace(charter)) charter = cached.Charter;
+                        if (string.IsNullOrWhiteSpace(year)) year = cached.Year;
+                        if (string.IsNullOrWhiteSpace(album)) album = cached.Album;
+                        if (cached.CreatedWithCreator) isCreator = true;
+                        if (cached.IsCloneHeroImport) { isCloneHero = true; isCreator = false; }
+                    }
+
+                    if (!isCloneHero && AppConfig.Current.CreatedSongIds.Any(id => songId.Equals(id, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        isCreator = true;
+                    }
 
                     songs.Add(new CustomSongInfo
                     {
                         SongId = songId,
                         Title = title,
                         Artist = artist,
+                        Charter = charter,
+                        Year = year,
+                        Album = album,
                         PakSizeBytes = pakInfo.Length,
                         FsbSizeBytes = fsbInfo?.Length ?? 0,
                         LastModified = pakInfo.LastWriteTimeUtc,
-                        IsCreatedLocally = isOnogami,
-                        CreatedWithOnogamiCreator = isOnogami,
+                        IsCreatedLocally = isCreator,
+                        CreatedWithOnogamiCreator = isCreator,
+                        IsCloneHeroImport = isCloneHero,
                         OnogamiFingerprint = ComputeFingerprint(title, artist),
-                        IsProject = false
+                        IsProject = false,
+                        IsCompiled = true
                     });
                     seenSongIds.Add(songId);
                 }
@@ -482,7 +654,7 @@ public class Gh3Service
             catch { }
         }
 
-        // 2. Scan created/project songs across all songs directories
+        // 2. Scan created/project songs across all songs directories and merge cleanly (zero duplicates!)
         var rootDirs = GetCreatedSongsRootDirectories();
         foreach (var root in rootDirs)
         {
@@ -525,10 +697,12 @@ public class Gh3Service
 
         var favs = AppConfig.Current.FavoriteSongIds ?? new List<string>();
         var lobby = AppConfig.Current.LobbySetlistIds ?? new List<string>();
+        var tempIds = TemporarySessionService.GetActiveTempSongIds();
         foreach (var s in songs)
         {
             s.IsFavorite = favs.Any(f => f.Equals(s.SongId, StringComparison.OrdinalIgnoreCase));
             s.IsInLobbySetlist = lobby.Any(l => l.Equals(s.SongId, StringComparison.OrdinalIgnoreCase));
+            s.IsTemporarySessionSong = tempIds.Contains(s.SongId);
         }
 
         return songs;
@@ -561,20 +735,40 @@ public class Gh3Service
 
     private static void AddOrMergeSong(CustomSongInfo projectSong, List<CustomSongInfo> songs, HashSet<string> seenSongIds)
     {
-        if (seenSongIds.Contains(projectSong.SongId))
+        var existing = songs.FirstOrDefault(s =>
+            s.SongId.Equals(projectSong.SongId, StringComparison.OrdinalIgnoreCase) ||
+            (!string.IsNullOrWhiteSpace(projectSong.OnogamiFingerprint) &&
+             s.OnogamiFingerprint.Equals(projectSong.OnogamiFingerprint, StringComparison.OrdinalIgnoreCase)));
+
+        if (existing != null)
         {
-            var existing = songs.FirstOrDefault(s => s.SongId.Equals(projectSong.SongId, StringComparison.OrdinalIgnoreCase));
-            if (existing != null)
+            // Keep the compiled game song entry as primary, enrich it with project metadata & directory
+            if (string.IsNullOrWhiteSpace(existing.ProjectDirectory) || projectSong.LastModified > existing.LastModified)
             {
-                existing.IsCreatedLocally = true;
-                existing.CreatedWithOnogamiCreator = true;
                 existing.ProjectDirectory = projectSong.ProjectDirectory;
                 if (!string.IsNullOrEmpty(projectSong.GhprojPath)) existing.GhprojPath = projectSong.GhprojPath;
-                if (!string.IsNullOrWhiteSpace(projectSong.Title) && projectSong.Title != projectSong.SongId)
-                    existing.Title = projectSong.Title;
-                if (!string.IsNullOrWhiteSpace(projectSong.Artist) && projectSong.Artist != "Custom Artist")
-                    existing.Artist = projectSong.Artist;
             }
+            if (projectSong.IsCloneHeroImport)
+            {
+                existing.IsCloneHeroImport = true;
+                existing.CreatedWithOnogamiCreator = false;
+                existing.IsCreatedLocally = false;
+            }
+            else if (projectSong.CreatedWithOnogamiCreator)
+            {
+                existing.CreatedWithOnogamiCreator = true;
+                existing.IsCreatedLocally = true;
+            }
+            if (!string.IsNullOrWhiteSpace(projectSong.Charter) && string.IsNullOrWhiteSpace(existing.Charter))
+                existing.Charter = projectSong.Charter;
+            if (!string.IsNullOrWhiteSpace(projectSong.Title) &&
+                (string.IsNullOrWhiteSpace(existing.Title) ||
+                 existing.Title.Equals("song", StringComparison.OrdinalIgnoreCase) ||
+                 existing.Title.Equals(existing.SongId, StringComparison.OrdinalIgnoreCase)))
+                existing.Title = projectSong.Title;
+            if (!string.IsNullOrWhiteSpace(projectSong.Artist) &&
+                (string.IsNullOrWhiteSpace(existing.Artist) || existing.Artist == "Custom Artist"))
+                existing.Artist = projectSong.Artist;
         }
         else
         {
@@ -624,6 +818,9 @@ public class Gh3Service
         var fsbFile = Path.Combine(MusicPath, $"{songId}.fsb.xen");
         var datFile = Path.Combine(MusicPath, $"{songId}.dat.xen");
 
+        var installedSong = GetInstalledCustomSongs()
+            .FirstOrDefault(s => s.SongId.Equals(songId, StringComparison.OrdinalIgnoreCase));
+
         if (File.Exists(pakFile))
         {
             using var ms = new MemoryStream();
@@ -633,14 +830,29 @@ public class Gh3Service
                 if (File.Exists(fsbFile)) archive.CreateEntryFromFile(fsbFile, Path.GetFileName(fsbFile));
                 if (File.Exists(datFile)) archive.CreateEntryFromFile(datFile, Path.GetFileName(datFile));
 
-                var (title, artist, isLocal) = ResolveSongMetadata(songId);
+                var (fbTitle, fbArtist, fbLocal) = ResolveSongMetadata(songId);
+                string title = installedSong?.Title ?? fbTitle;
+                string artist = installedSong?.Artist ?? fbArtist;
+                string charter = installedSong?.Charter ?? "";
+                string year = installedSong?.Year ?? "";
+                string album = installedSong?.Album ?? "";
+                bool createdWithCreator = installedSong?.CreatedWithOnogamiCreator ?? fbLocal;
+                bool isCloneHero = installedSong?.IsCloneHeroImport ?? false;
+
                 var metaJson = JsonSerializer.Serialize(new
                 {
                     songId,
                     title,
                     artist,
+                    charter,
+                    year,
+                    album,
                     isProject = false,
-                    createdWithOnogamiCreator = isLocal,
+                    createdWithCreator,
+                    createdWithOnogamiCreator = createdWithCreator,
+                    isCloneHeroImport = isCloneHero,
+                    pakHash = ComputeSha256(pakFile),
+                    fsbHash = File.Exists(fsbFile) ? ComputeSha256(fsbFile) : "",
                     onogamiFingerprint = ComputeFingerprint(title, artist),
                     exportedAt = DateTime.UtcNow
                 }, new JsonSerializerOptions { WriteIndented = true });
@@ -670,8 +882,13 @@ public class Gh3Service
                     songId,
                     title = proj?.Title ?? songId,
                     artist = proj?.Artist ?? "Custom Artist",
+                    charter = proj?.Charter ?? "",
+                    year = proj?.Year ?? "",
+                    album = proj?.Album ?? "",
                     isProject = true,
-                    createdWithOnogamiCreator = true,
+                    createdWithCreator = proj?.CreatedWithOnogamiCreator ?? false,
+                    createdWithOnogamiCreator = proj?.CreatedWithOnogamiCreator ?? false,
+                    isCloneHeroImport = proj?.IsCloneHeroImport ?? false,
                     onogamiFingerprint = proj?.OnogamiFingerprint ?? ComputeFingerprint(songId, ""),
                     exportedAt = DateTime.UtcNow
                 }, new JsonSerializerOptions { WriteIndented = true });
@@ -687,11 +904,56 @@ public class Gh3Service
         throw new FileNotFoundException($"Song package not found for ID: {songId}");
     }
 
-    public void InstallSongPackage(byte[] zipBytes, SyncLogger logger)
+    public ImportedSongMetaRecord? InstallSongPackage(
+        byte[] zipBytes,
+        SyncLogger logger,
+        string? expectedPakHash = null,
+        string? expectedFsbHash = null,
+        bool mergeIntoCustomsPak = true)
     {
+        ImportedSongMetaRecord? meta = null;
+        string detectedSongId = "";
+
         using (var testMs = new MemoryStream(zipBytes))
         using (var testArchive = new ZipArchive(testMs, ZipArchiveMode.Read))
         {
+            var metaEntry = testArchive.GetEntry("metadata.json");
+            if (metaEntry != null)
+            {
+                try
+                {
+                    using var s = metaEntry.Open();
+                    using var doc = JsonDocument.Parse(s);
+                    var r = doc.RootElement;
+                    string GetS(string k) => r.TryGetProperty(k, out var p) && p.ValueKind == JsonValueKind.String ? (p.GetString() ?? "") : "";
+                    bool GetB(string k) => r.TryGetProperty(k, out var p) && (p.ValueKind == JsonValueKind.True || p.ValueKind == JsonValueKind.False) && p.GetBoolean();
+
+                    meta = new ImportedSongMetaRecord
+                    {
+                        SongId = GetS("songId"),
+                        Title = GetS("title"),
+                        Artist = GetS("artist"),
+                        Charter = GetS("charter"),
+                        Year = GetS("year"),
+                        Album = GetS("album"),
+                        CreatedWithCreator = GetB("createdWithCreator") || GetB("createdWithOnogamiCreator"),
+                        IsCloneHeroImport = GetB("isCloneHeroImport")
+                    };
+                    if (string.IsNullOrWhiteSpace(expectedPakHash)) expectedPakHash = GetS("pakHash");
+                    if (string.IsNullOrWhiteSpace(expectedFsbHash)) expectedFsbHash = GetS("fsbHash");
+                }
+                catch { }
+            }
+
+            foreach (var e in testArchive.Entries)
+            {
+                if (e.Name.EndsWith("_song.pak.xen", StringComparison.OrdinalIgnoreCase))
+                {
+                    detectedSongId = e.Name.Substring(0, e.Name.Length - "_song.pak.xen".Length);
+                    break;
+                }
+            }
+
             bool isProject = testArchive.Entries.Any(e =>
                 e.Name.EndsWith(".ghproj", StringComparison.OrdinalIgnoreCase) ||
                 e.Name.Equals("song.ini", StringComparison.OrdinalIgnoreCase));
@@ -700,36 +962,60 @@ public class Gh3Service
             {
                 var targetRoot = SongCreatorService.ResolveSongsDirectory();
                 string folderName = "Imported_Song_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
-
-                var metaEntry = testArchive.GetEntry("metadata.json");
-                if (metaEntry != null)
+                if (meta != null && !string.IsNullOrWhiteSpace(meta.Artist) && !string.IsNullOrWhiteSpace(meta.Title))
                 {
-                    try
-                    {
-                        using var s = metaEntry.Open();
-                        using var doc = JsonDocument.Parse(s);
-                        var title = doc.RootElement.GetProperty("title").GetString();
-                        var artist = doc.RootElement.GetProperty("artist").GetString();
-                        if (!string.IsNullOrWhiteSpace(artist) && !string.IsNullOrWhiteSpace(title))
-                        {
-                            folderName = $"{artist} - {title}";
-                        }
-                    }
-                    catch { }
+                    folderName = $"{meta.Artist} - {meta.Title}";
                 }
 
                 var targetDir = Path.Combine(targetRoot, SanitizeFileName(folderName));
                 SecurityService.ExtractProjectZip(zipBytes, targetDir, logger);
-                AppConfig.RegisterCreatedSong(folderName, targetDir);
-                logger.LogInfo($"[CREATOR] ONOGAMI Song Project installed to: {targetDir}");
-                return;
+                if (meta != null && meta.CreatedWithCreator)
+                    AppConfig.RegisterCreatedSong(meta.SongId, targetDir);
+                logger.LogInfo($"[IMPORT] Song project installed to: {targetDir}");
+                return meta;
             }
         }
+
+        string effectiveSongId = !string.IsNullOrWhiteSpace(detectedSongId) ? detectedSongId : (meta?.SongId ?? "");
 
         if (AppConfig.Current.DirectInstallToGame)
         {
             if (!IsDetected) throw new InvalidOperationException("GH3 game directory is not detected.");
             SecurityService.ValidateAndExtractZip(zipBytes, SongsPath, MusicPath, logger);
+
+            // SHA-256 verification on extracted game binaries
+            if (!string.IsNullOrWhiteSpace(effectiveSongId))
+            {
+                var pakFile = Path.Combine(SongsPath, $"{effectiveSongId}_song.pak.xen");
+                var fsbFile = Path.Combine(MusicPath, $"{effectiveSongId}.fsb.xen");
+                if (!string.IsNullOrWhiteSpace(expectedPakHash) && File.Exists(pakFile) && !SecurityService.VerifyFileSha256(pakFile, expectedPakHash))
+                {
+                    try { File.Delete(pakFile); } catch { }
+                    throw new System.Security.SecurityException($"SHA-256 verification failed for {Path.GetFileName(pakFile)}.");
+                }
+                if (!string.IsNullOrWhiteSpace(expectedFsbHash) && File.Exists(fsbFile) && !SecurityService.VerifyFileSha256(fsbFile, expectedFsbHash))
+                {
+                    try { File.Delete(fsbFile); } catch { }
+                    throw new System.Security.SecurityException($"SHA-256 verification failed for {Path.GetFileName(fsbFile)}.");
+                }
+
+                meta ??= new ImportedSongMetaRecord { SongId = effectiveSongId, Title = effectiveSongId, Artist = "Custom Artist" };
+                meta.SongId = effectiveSongId;
+                SaveSongMetaCacheRecord(meta);
+
+                if (mergeIntoCustomsPak)
+                {
+                    CustomsPakService.MergeSongIntoCustomsPak(
+                        GamePath,
+                        effectiveSongId,
+                        string.IsNullOrWhiteSpace(meta.Title) ? effectiveSongId : meta.Title,
+                        string.IsNullOrWhiteSpace(meta.Artist) ? "Custom Artist" : meta.Artist,
+                        meta.Charter,
+                        meta.Year,
+                        meta.Album,
+                        logger);
+                }
+            }
         }
         else
         {
@@ -741,6 +1027,8 @@ public class Gh3Service
             SecurityService.ValidateAndExtractZip(zipBytes, stagingSongs, stagingMusic, logger);
             logger.LogInfo($"[STAGING] Song installed to staging folder: {StagingPath}");
         }
+
+        return meta;
     }
 
     private static string SanitizeFileName(string input)
@@ -768,6 +1056,20 @@ public class Gh3Service
         bool hasNestedSongs = archive.Entries.Any(e => e.Name.EndsWith(".gh3song", StringComparison.OrdinalIgnoreCase));
         if (hasNestedSongs)
         {
+            // Only deploy a bundled customs.pak.xen if the user does NOT already have one;
+            // otherwise preserve their existing customs.pak.xen and merge each song cleanly!
+            if (!File.Exists(CustomsPakPath))
+            {
+                var pakEntry = archive.Entries.FirstOrDefault(e => e.Name.Equals("customs.pak.xen", StringComparison.OrdinalIgnoreCase));
+                if (pakEntry != null)
+                {
+                    using var cMs = new MemoryStream();
+                    using var cStream = pakEntry.Open();
+                    cStream.CopyTo(cMs);
+                    BackupAndDeployCustomsPak(cMs.ToArray());
+                }
+            }
+
             foreach (var entry in archive.Entries)
             {
                 if (entry.Name.EndsWith(".gh3song", StringComparison.OrdinalIgnoreCase))
@@ -775,21 +1077,14 @@ public class Gh3Service
                     using var subMs = new MemoryStream();
                     using var entryStream = entry.Open();
                     entryStream.CopyTo(subMs);
-                    InstallSongPackage(subMs.ToArray(), logger);
+                    InstallSongPackage(subMs.ToArray(), logger, mergeIntoCustomsPak: true);
                     count++;
-                }
-                else if (entry.Name.Equals("customs.pak.xen", StringComparison.OrdinalIgnoreCase))
-                {
-                    using var cMs = new MemoryStream();
-                    using var cStream = entry.Open();
-                    cStream.CopyTo(cMs);
-                    BackupAndDeployCustomsPak(cMs.ToArray());
                 }
             }
         }
         else
         {
-            SecurityService.ValidateAndExtractZip(archiveBytes, SongsPath, MusicPath, logger);
+            InstallSongPackage(archiveBytes, logger, mergeIntoCustomsPak: true);
             count++;
         }
 
@@ -818,7 +1113,16 @@ public class Gh3Service
 
     public static string ComputeFingerprint(string title, string artist)
     {
-        var raw = $"{title.Trim().ToLowerInvariant()}|{artist.Trim().ToLowerInvariant()}";
+        static string Norm(string s)
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var c in (s ?? "").ToLowerInvariant())
+            {
+                if (char.IsLetterOrDigit(c)) sb.Append(c);
+            }
+            return sb.ToString();
+        }
+        var raw = $"{Norm(title)}|{Norm(artist)}";
         using var sha = SHA256.Create();
         var bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(bytes).Substring(0, 16);
@@ -1023,7 +1327,20 @@ public class Gh3Service
                 }
             }
 
-            // 5. Remove tracking entry from config.json
+            // 5. Strip song cleanly from DATA\customs.pak.xen so no ghost entry remains in-game
+            try
+            {
+                if (CustomsPakService.RemoveSongFromCustomsPak(GamePath, id, logger))
+                {
+                    result.DeletedItems.Add($"DATA\\customs.pak.xen entry ({id})");
+                }
+            }
+            catch (Exception ex)
+            {
+                result.Warnings.Add($"Could not strip entry from customs.pak.xen: {ex.Message}");
+            }
+
+            // 6. Remove tracking entry from config.json
             AppConfig.UnregisterCreatedSong(id, projectDir);
 
             result.Success = true;
@@ -1037,5 +1354,125 @@ public class Gh3Service
             logger?.LogWarn($"[DELETE SONG] {result.Message}");
             return result;
         }
+    }
+
+    /// <summary>
+    /// Cleans up unnecessary temporary/intermediate conversion MP3s, duplicate compiled .fsb/.pak/.dat files
+    /// sitting inside Custom_Songs project folders, redundant duplicate project folders, and excess .bak files.
+    /// </summary>
+    public (int FilesRemoved, long BytesFreed, List<string> Summary) CleanDuplicateAndTempFiles(SyncLogger? logger = null)
+    {
+        int removed = 0;
+        long bytesFreed = 0;
+        var summary = new List<string>();
+
+        void TryDeleteFile(string path, string reason)
+        {
+            try
+            {
+                if (!File.Exists(path)) return;
+                var len = new FileInfo(path).Length;
+                File.Delete(path);
+                removed++;
+                bytesFreed += len;
+                summary.Add($"Removed {Path.GetFileName(path)} ({reason})");
+            }
+            catch { }
+        }
+
+        // 1. Clean intermediate MP3s & duplicate compiled game binaries inside Custom_Songs project folders
+        var customSongsDir = Path.Combine(GamePath, "Custom_Songs");
+        var dirsToScan = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (Directory.Exists(customSongsDir)) dirsToScan.Add(customSongsDir);
+        var configuredSongs = SongCreatorService.ResolveSongsDirectory();
+        if (Directory.Exists(configuredSongs)) dirsToScan.Add(configuredSongs);
+
+        var seenByFingerprint = new Dictionary<string, (string Dir, DateTime LastWrite)>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var root in dirsToScan)
+        {
+            foreach (var subDir in Directory.GetDirectories(root))
+            {
+                // Intermediate temp audio files
+                foreach (var pat in new[] { "*_conv.mp3", "*_mix.mp3", "temp_*.mp3", "*_guitar.mp3", "*_rhythm.mp3", "*_song.mp3", "*_preview.mp3" })
+                {
+                    foreach (var f in Directory.GetFiles(subDir, pat))
+                        TryDeleteFile(f, "intermediate temp audio");
+                }
+
+                // Duplicate compiled game binaries (already deployed in DATA\SONGS and DATA\MUSIC)
+                foreach (var pat in new[] { "*_song.pak.xen", "*.fsb.xen", "*.dat.xen", "*.fsb", "*.dat" })
+                {
+                    foreach (var f in Directory.GetFiles(subDir, pat))
+                    {
+                        var name = Path.GetFileName(f);
+                        bool existsInGame =
+                            File.Exists(Path.Combine(SongsPath, name)) ||
+                            File.Exists(Path.Combine(MusicPath, name)) ||
+                            File.Exists(Path.Combine(MusicPath, name + ".xen"));
+                        if (existsInGame)
+                        {
+                            // Preserve link to compiled_song_id in song.ini before removing duplicate binary
+                            if (name.EndsWith("_song.pak.xen", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var sid = name.Substring(0, name.Length - "_song.pak.xen".Length);
+                                var iniPath = Path.Combine(subDir, "song.ini");
+                                try
+                                {
+                                    var lines = File.Exists(iniPath) ? File.ReadAllLines(iniPath).ToList() : new List<string> { "[song]" };
+                                    if (!lines.Any(l => l.TrimStart().StartsWith("compiled_song_id", StringComparison.OrdinalIgnoreCase)))
+                                    {
+                                        lines.Add($"compiled_song_id = {sid}");
+                                        File.WriteAllLines(iniPath, lines);
+                                    }
+                                }
+                                catch { }
+                            }
+                            TryDeleteFile(f, "duplicate compiled game binary");
+                        }
+                    }
+                }
+
+                // Detect redundant duplicate folders for the exact same song (e.g. "Ain't No Sunshine" vs "Aint No Sunshine")
+                var parsed = ParseProjectDirectory(subDir);
+                if (parsed != null && !string.IsNullOrWhiteSpace(parsed.OnogamiFingerprint))
+                {
+                    if (seenByFingerprint.TryGetValue(parsed.OnogamiFingerprint, out var prev))
+                    {
+                        string olderDir = parsed.LastModified >= prev.LastWrite ? prev.Dir : subDir;
+                        string newerDir = parsed.LastModified >= prev.LastWrite ? subDir : prev.Dir;
+                        seenByFingerprint[parsed.OnogamiFingerprint] = (newerDir, parsed.LastModified >= prev.LastWrite ? parsed.LastModified : prev.LastWrite);
+
+                        try
+                        {
+                            long dirSize = Directory.GetFiles(olderDir, "*.*", SearchOption.AllDirectories).Sum(x => new FileInfo(x).Length);
+                            Directory.Delete(olderDir, recursive: true);
+                            removed++;
+                            bytesFreed += dirSize;
+                            summary.Add($"Removed duplicate folder '{Path.GetFileName(olderDir)}'");
+                        }
+                        catch { }
+                    }
+                    else
+                    {
+                        seenByFingerprint[parsed.OnogamiFingerprint] = (subDir, parsed.LastModified);
+                    }
+                }
+            }
+        }
+
+        // 2. Prune excessive customs.pak.xen.bak_* backups in DATA (keep newest 3)
+        if (IsDetected && Directory.Exists(DataPath))
+        {
+            var baks = Directory.GetFiles(DataPath, "customs.pak.xen.bak_*")
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .Skip(3)
+                .ToList();
+            foreach (var oldBak in baks)
+                TryDeleteFile(oldBak, "old customs.pak backup");
+        }
+
+        logger?.LogInfo($"[CLEANUP] Removed {removed} redundant/temp item(s), freed {bytesFreed / (1024.0 * 1024.0):F1} MB.");
+        return (removed, bytesFreed, summary);
     }
 }

@@ -16,6 +16,8 @@ public class NatPortMappingService
     private readonly SyncLogger _logger;
     private readonly int _localPort;
     private readonly CancellationTokenSource _cts = new();
+    private Uri? _upnpControlUri;
+    private string? _upnpServiceType;
 
     public string? PublicIp { get; private set; }
     public int? ExternalPort { get; private set; }
@@ -192,7 +194,54 @@ public class NatPortMappingService
         req.Headers.Add("SOAPACTION", $"\"{serviceType}#AddPortMapping\"");
 
         var resp = await http.SendAsync(req);
+        if (resp.IsSuccessStatusCode)
+        {
+            _upnpControlUri = uri;
+            _upnpServiceType = serviceType;
+        }
         return resp.IsSuccessStatusCode;
+    }
+
+    /// <summary>
+    /// Removes the UPnP IGD port 7373 rule from the router cleanly on app exit or Offline Mode.
+    /// </summary>
+    public async Task RemoveMappingAsync()
+    {
+        if (!IsMapped || _upnpControlUri == null || string.IsNullOrEmpty(_upnpServiceType))
+            return;
+
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+            var soapBody = $"<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n" +
+                           $"<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">\r\n" +
+                           $"<s:Body>\r\n" +
+                           $"<u:DeletePortMapping xmlns:u=\"{_upnpServiceType}\">\r\n" +
+                           $"<NewRemoteHost></NewRemoteHost>\r\n" +
+                           $"<NewExternalPort>{ExternalPort ?? _localPort}</NewExternalPort>\r\n" +
+                           $"<NewProtocol>TCP</NewProtocol>\r\n" +
+                           $"</u:DeletePortMapping>\r\n" +
+                           $"</s:Body>\r\n" +
+                           $"</s:Envelope>";
+
+            var req = new HttpRequestMessage(HttpMethod.Post, _upnpControlUri)
+            {
+                Content = new StringContent(soapBody, Encoding.UTF8, "text/xml")
+            };
+            req.Headers.Add("SOAPACTION", $"\"{_upnpServiceType}#DeletePortMapping\"");
+
+            var resp = await http.SendAsync(req);
+            if (resp.IsSuccessStatusCode)
+            {
+                IsMapped = false;
+                MappingMethod = "Closed";
+                _logger.LogInfo($"[NAT/UPnP] Removed UPnP port mapping for TCP {_localPort} cleanly.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug($"[NAT/UPnP] Cleanup note: {ex.Message}");
+        }
     }
 
     private async Task<bool> TryNatPmpMapPortAsync(int port)
