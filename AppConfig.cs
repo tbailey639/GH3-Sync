@@ -34,6 +34,13 @@ public class FeatureUsageStats
     public int FriendsAddedCount { get; set; } = 0;
 }
 
+public class SetlistPreset
+{
+    public string Name { get; set; } = "";
+    public List<string> SongIds { get; set; } = new();
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
 public class FeedbackItem
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 8);
@@ -76,7 +83,12 @@ public class AppConfigData
     public bool AutoCompileCreatedSongs { get; set; } = true;
     public bool EnableInGameOverlay { get; set; } = true;
     public string InGameOverlayCorner { get; set; } = "TopRight"; // TopRight, TopLeft, BottomRight, BottomLeft
+    public double InGameOverlayOpacity { get; set; } = 0.95;      // 0.40 -> 1.00
+    public string InGameOverlaySize { get; set; } = "Medium";     // Small, Medium, Large
     public bool ConvertOpenNotesToClassicGh3 { get; set; } = false;
+    public bool NormalizeAudioLoudness { get; set; } = true;      // EBU R128 -14 LUFS loudness matching
+    public bool EnableDiscordRichPresence { get; set; } = true;
+    public List<SetlistPreset> SetlistPresets { get; set; } = new();
 }
 
 public static class AppConfig

@@ -61,6 +61,9 @@ internal sealed class GuitarHudWindow : Window
 
     private readonly RectangleGeometry _blueStringsClip;
     private readonly Canvas _blueStringsLayer;
+    private DropShadowEffect? _blueGlowEffect;
+    private readonly DispatcherTimer _pulseTimer;
+    private int _pulseTicksRemaining = 0;
 
     private const int GWL_EXSTYLE = -20;
     private const int WS_EX_TRANSPARENT = 0x00000020;
@@ -93,6 +96,7 @@ internal sealed class GuitarHudWindow : Window
         _logger = logger;
         _status = logger.CurrentStatus;
         _logger.StatusChanged += OnStatusChanged;
+        _logger.PeerActivityPulsed += OnPeerActivityPulsed;
 
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
@@ -102,13 +106,15 @@ internal sealed class GuitarHudWindow : Window
         ShowActivated = false;
         ResizeMode = ResizeMode.NoResize;
         IsHitTestVisible = false;
-        Width = 224;
-        Height = 58;
+        ApplyHudSizeAndOpacity();
         Left = -4000;
         Top = -4000;
 
         (_blueStringsLayer, _blueStringsClip) = BuildGuitarVisual();
         UpdateStringAppearance();
+
+        _pulseTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(55) };
+        _pulseTimer.Tick += (_, _) => StepStrumPulse();
 
         SourceInitialized += (_, _) =>
         {
@@ -260,11 +266,12 @@ internal sealed class GuitarHudWindow : Window
 
         // Glowing Electric Blue Strings Layer (shown when P2P connection is active; fills 0->100% during sync!)
         var clipRect = new RectangleGeometry(new Rect(92, 48, 434, 54));
+        _blueGlowEffect = new DropShadowEffect { Color = System.Windows.Media.Color.FromRgb(0, 210, 255), BlurRadius = 14, ShadowDepth = 0, Opacity = 0.95 };
         var blueLayer = new Canvas
         {
             Width = 640, Height = 150,
             Clip = clipRect,
-            Effect = new DropShadowEffect { Color = System.Windows.Media.Color.FromRgb(0, 210, 255), BlurRadius = 14, ShadowDepth = 0, Opacity = 0.95 }
+            Effect = _blueGlowEffect
         };
         double[] blueThick = { 2.2, 2.4, 2.6, 2.8, 3.0, 3.3 };
         for (int i = 0; i < 6; i++)
@@ -320,6 +327,62 @@ internal sealed class GuitarHudWindow : Window
         }
     }
 
+    private void ApplyHudSizeAndOpacity()
+    {
+        var (w, h) = (AppConfig.Current.InGameOverlaySize ?? "Medium") switch
+        {
+            "Small" => (176.0, 46.0),
+            "Large" => (280.0, 72.0),
+            _ => (224.0, 58.0)
+        };
+        if (Math.Abs(Width - w) > 0.5) Width = w;
+        if (Math.Abs(Height - h) > 0.5) Height = h;
+        double targetOpacity = Math.Clamp(AppConfig.Current.InGameOverlayOpacity, 0.35, 1.0);
+        if (Math.Abs(Opacity - targetOpacity) > 0.01) Opacity = targetOpacity;
+    }
+
+    private void OnPeerActivityPulsed(string detail)
+    {
+        try
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                _pulseTicksRemaining = 24;
+                if (!_pulseTimer.IsEnabled) _pulseTimer.Start();
+            });
+        }
+        catch { }
+    }
+
+    private void StepStrumPulse()
+    {
+        if (_pulseTicksRemaining <= 0)
+        {
+            _pulseTimer.Stop();
+            if (_blueGlowEffect != null)
+            {
+                _blueGlowEffect.BlurRadius = 14;
+                _blueGlowEffect.Opacity = 0.95;
+            }
+            UpdateStringAppearance();
+            return;
+        }
+
+        _pulseTicksRemaining--;
+        double phase = Math.Sin(_pulseTicksRemaining * 0.55);
+        if (_blueGlowEffect != null)
+        {
+            _blueGlowEffect.BlurRadius = 16 + Math.Abs(phase) * 14;
+            _blueGlowEffect.Opacity = 1.0;
+        }
+        // Electric sweep across strings during peer strum pulse
+        if (_blueStringsLayer.Visibility == Visibility.Visible && _status.State != SyncState.Syncing)
+        {
+            double sweep = 0.65 + 0.35 * Math.Abs(phase);
+            _blueStringsClip.Rect = new Rect(92, 48, 434.0 * sweep, 54);
+        }
+    }
+
     private void TrackGh3Window()
     {
         if (!AppConfig.Current.EnableInGameOverlay)
@@ -327,6 +390,8 @@ internal sealed class GuitarHudWindow : Window
             if (IsVisible) Hide();
             return;
         }
+
+        ApplyHudSizeAndOpacity();
 
         // Refresh string glow state if P2P Online setting changed dynamically
         bool nowActive = AppConfig.Current.P2pOnlineEnabled && _status.State != SyncState.Failed;

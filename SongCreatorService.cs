@@ -14,6 +14,22 @@ public class SongAudioMixConfig
     public string LeadFocus { get; set; } = "Guitar";          // Guitar, KeysSynth, Bass, Vocals, MultiLead
 }
 
+public class SongAiAnalysisCache
+{
+    public string InstrumentFocusRequested { get; set; } = "Auto";
+    public string ResolvedLeadFocus { get; set; } = "Guitar";
+    public string StemEnergySummary { get; set; } = "";
+    public double PreciseBpm { get; set; } = 120.0;
+    public double SongDurationSeconds { get; set; } = 180.0;
+    public bool IsStudioConstantTempo { get; set; } = true;
+    public bool IsGuitarDominant { get; set; } = true;
+    public List<double> PreciseBeatTimes { get; set; } = new();
+    public List<double> MeasureEnergies { get; set; } = new();
+    public List<DetectedMusicalSection> DetectedSections { get; set; } = new();
+    public List<TranscribedNote> TranscribedGuitarNotes { get; set; } = new();
+    public List<TranscribedNote> TranscribedBassNotes { get; set; } = new();
+}
+
 public class SongCreationRequest
 {
     public string Title { get; set; } = "";
@@ -36,6 +52,12 @@ public class SongCreationRequest
     public bool SeparateStemsWithDemucs { get; set; } = false;
     public bool AutoGenerateChart { get; set; } = false;
     public bool AutoCompile { get; set; } = true;
+    public bool NormalizeLoudness { get; set; } = true;         // FFmpeg EBU R128 -14 LUFS loudness matching
+    public double TrimStartSeconds { get; set; } = 0.0;         // Optional intro trim (seconds)
+    public double TrimEndSeconds { get; set; } = 0.0;           // Optional outro trim (0 = full track)
+    public double FadeOutSeconds { get; set; } = 0.0;           // Optional smooth fade-out at end
+    public int AudioOffsetMs { get; set; } = 0;                 // Optional ±ms chart sync nudge
+    public bool UseCachedAiAnalysis { get; set; } = true;       // Instant 5-second re-chart cache when available
 }
 
 public class CreatedSongResult
@@ -198,6 +220,22 @@ public class SongCreatorService
             }
             catch { }
 
+            // 1b. Optional Audio Trim, Fade-Out, & Auto-Loudness Normalization (-14 LUFS) via bundled FFmpeg
+            bool needTrim = meta.TrimStartSeconds > 0.1 || meta.TrimEndSeconds > 1.0;
+            bool needFade = meta.FadeOutSeconds > 0.2;
+            bool needLoudnorm = meta.NormalizeLoudness;
+            if (needTrim || needFade || needLoudnorm)
+            {
+                onProgress?.Invoke(9, needTrim
+                    ? "Applying audio trim, fade-out & -14 LUFS loudness normalization..."
+                    : "Normalizing audio loudness (-14 LUFS) to match official GH3 volume...");
+                var processedPath = TryPreprocessAudioWithFfmpeg(audioFullPath, targetDir, meta.TrimStartSeconds, meta.TrimEndSeconds, meta.FadeOutSeconds, needLoudnorm);
+                if (!string.IsNullOrEmpty(processedPath) && File.Exists(processedPath))
+                {
+                    audioFullPath = processedPath;
+                }
+            }
+
             // 2. Analyze Full Mix for BPM & Duration
             onProgress?.Invoke(12, "Analyzing audio tempo (BPM) & guitar frequencies...");
             AudioAnalysisResult? mixAnalysis = _audioAnalysis?.AnalyzeAudio(audioFullPath);
@@ -230,7 +268,44 @@ public class SongCreatorService
             string stemEnergySummary = "";
             string chartingEngine = "Uploaded Chart/MIDI";
 
-            if (meta.SeparateStemsWithDemucs && _demucs != null && _demucs.GetStatus().IsInstalled)
+            var aiCachePath = Path.Combine(targetDir, "gh3sync_ai_cache.json");
+            bool usedAiCache = false;
+            bool wantOnlyStudioOrCached = meta.UseCachedAiAnalysis && File.Exists(aiCachePath);
+
+            if (wantOnlyStudioOrCached &&
+                (meta.AudioMixMode.Equals("StudioMaster", StringComparison.OrdinalIgnoreCase) || !meta.SeparateStemsWithDemucs ||
+                 (meta.AudioMixMode.Equals("Auto", StringComparison.OrdinalIgnoreCase))))
+            {
+                try
+                {
+                    var cached = JsonSerializer.Deserialize<SongAiAnalysisCache>(File.ReadAllText(aiCachePath));
+                    bool sameFocus = cached != null && string.Equals(cached.InstrumentFocusRequested, meta.InstrumentFocus ?? "Auto", StringComparison.OrdinalIgnoreCase);
+                    bool canReuseAudio = cached != null && (!cached.IsGuitarDominant || meta.AudioMixMode.Equals("StudioMaster", StringComparison.OrdinalIgnoreCase) || !meta.SeparateStemsWithDemucs);
+                    if (cached != null && sameFocus && canReuseAudio && cached.TranscribedGuitarNotes.Count >= 12)
+                    {
+                        onProgress?.Invoke(62, "Instant Re-Chart Cache hit! Skipping Demucs & Basic Pitch (~5s build)...");
+                        usedAiCache = true;
+                        isGuitarDominant = cached.IsGuitarDominant;
+                        isStudioConstantTempo = cached.IsStudioConstantTempo;
+                        resolvedLeadFocus = cached.ResolvedLeadFocus;
+                        stemEnergySummary = cached.StemEnergySummary;
+                        measureEnergies = cached.MeasureEnergies;
+                        detectedSections = cached.DetectedSections;
+                        if (cached.PreciseBpm >= 55 && cached.PreciseBpm <= 230 && (meta.AutoDetectBpm || meta.Bpm <= 0))
+                        {
+                            exactBpm = cached.PreciseBpm;
+                            meta.Bpm = exactBpm;
+                        }
+                        if (cached.PreciseBeatTimes.Count >= 8) bestBeats = cached.PreciseBeatTimes;
+                        bestNotes = cached.TranscribedGuitarNotes;
+                        bassNotes = cached.TranscribedBassNotes;
+                        chartingEngine = $"ONOGAMI AI v2 [Instant Cache] ({resolvedLeadFocus})";
+                    }
+                }
+                catch { }
+            }
+
+            if (!usedAiCache && meta.SeparateStemsWithDemucs && _demucs != null && _demucs.GetStatus().IsInstalled)
             {
                 onProgress?.Invoke(18, "Separating Guitar, Bass, Drums, Vocals & Piano stems (Demucs 6-Stem)...");
                 var stemsDir = Path.Combine(targetDir, "stems");
@@ -275,6 +350,28 @@ public class SongCreatorService
                     {
                         bassNotes = demucsRes.TranscribedBassNotes;
                     }
+
+                    // Persist lightweight ~80 KB AI cache for 5-second future re-chart tweaks!
+                    try
+                    {
+                        var cacheObj = new SongAiAnalysisCache
+                        {
+                            InstrumentFocusRequested = meta.InstrumentFocus ?? "Auto",
+                            ResolvedLeadFocus = resolvedLeadFocus,
+                            StemEnergySummary = stemEnergySummary,
+                            PreciseBpm = exactBpm,
+                            SongDurationSeconds = songDuration,
+                            IsStudioConstantTempo = isStudioConstantTempo,
+                            IsGuitarDominant = isGuitarDominant,
+                            PreciseBeatTimes = bestBeats ?? new(),
+                            MeasureEnergies = measureEnergies ?? new(),
+                            DetectedSections = detectedSections ?? new(),
+                            TranscribedGuitarNotes = bestNotes,
+                            TranscribedBassNotes = bassNotes
+                        };
+                        File.WriteAllText(aiCachePath, JsonSerializer.Serialize(cacheObj));
+                    }
+                    catch { }
                 }
             }
 
@@ -349,6 +446,26 @@ public class SongCreatorService
             }
             else
             {
+                // Apply optional ±ms audio-chart sync offset cleanly to note timestamps
+                if (meta.AudioOffsetMs != 0)
+                {
+                    double deltaSec = meta.AudioOffsetMs / 1000.0;
+                    bestNotes = bestNotes.Select(n => new TranscribedNote
+                    {
+                        StartSec = Math.Max(0, n.StartSec + deltaSec),
+                        EndSec = Math.Max(0.05, n.EndSec + deltaSec),
+                        MidiPitch = n.MidiPitch,
+                        Amplitude = n.Amplitude
+                    }).ToList();
+                    bassNotes = bassNotes.Select(n => new TranscribedNote
+                    {
+                        StartSec = Math.Max(0, n.StartSec + deltaSec),
+                        EndSec = Math.Max(0.05, n.EndSec + deltaSec),
+                        MidiPitch = n.MidiPitch,
+                        Amplitude = n.Amplitude
+                    }).ToList();
+                }
+
                 chartFullPath = Path.Combine(targetDir, "notes.chart");
                 var chartContent = MidiToGh3ChartMapper.BuildChartFromNotes(
                     meta,
@@ -640,6 +757,167 @@ public class SongCreatorService
         {
             return (false, $"Failed updating song info: {ex.Message}");
         }
+    }
+
+    public static bool HasAiCache(string? projectDir)
+        => !string.IsNullOrWhiteSpace(projectDir) && File.Exists(Path.Combine(projectDir, "gh3sync_ai_cache.json"));
+
+    /// <summary>
+    /// 5-second Instant Re-Chart using the cached Basic Pitch + Librosa analysis (zero Demucs wait!).
+    /// Allows rapid iteration on Chart Feel (Casual / Standard / Shredder) and ±ms Sync Offset.
+    /// </summary>
+    public async Task<(bool Ok, string Message)> InstantRechartFromCacheAsync(
+        string projectDir,
+        string chartFeel,
+        int offsetMs = 0,
+        bool recompile = true,
+        Action<string>? onProgress = null)
+    {
+        var cachePath = Path.Combine(projectDir, "gh3sync_ai_cache.json");
+        if (!File.Exists(cachePath))
+            return (false, "No AI analysis cache found for this song yet. Run a full 'Re-Chart AI v2' once to build the cache.");
+
+        try
+        {
+            onProgress?.Invoke("Loading cached Basic Pitch & beat-grid analysis...");
+            var cache = JsonSerializer.Deserialize<SongAiAnalysisCache>(File.ReadAllText(cachePath));
+            if (cache == null || cache.TranscribedGuitarNotes.Count < 8)
+                return (false, "Cached AI analysis is empty or invalid.");
+
+            var iniPath = Path.Combine(projectDir, "song.ini");
+            string title = Path.GetFileName(projectDir);
+            string artist = "Unknown Artist";
+            if (File.Exists(iniPath))
+            {
+                foreach (var l in File.ReadAllLines(iniPath))
+                {
+                    var eq = l.IndexOf('=');
+                    if (eq <= 0) continue;
+                    var k = l.Substring(0, eq).Trim();
+                    var v = l.Substring(eq + 1).Trim();
+                    if (k.Equals("name", StringComparison.OrdinalIgnoreCase)) title = v;
+                    else if (k.Equals("artist", StringComparison.OrdinalIgnoreCase)) artist = v;
+                }
+            }
+
+            var meta = new SongCreationRequest
+            {
+                Title = title,
+                Artist = artist,
+                Bpm = cache.PreciseBpm,
+                ChartFeel = chartFeel,
+                InstrumentFocus = cache.InstrumentFocusRequested,
+                AudioOffsetMs = offsetMs,
+                UseVariableTempoMap = !cache.IsStudioConstantTempo
+            };
+
+            var leadNotes = cache.TranscribedGuitarNotes;
+            var bassNotes = cache.TranscribedBassNotes;
+            if (offsetMs != 0)
+            {
+                double delta = offsetMs / 1000.0;
+                leadNotes = leadNotes.Select(n => new TranscribedNote { StartSec = Math.Max(0, n.StartSec + delta), EndSec = Math.Max(0.05, n.EndSec + delta), MidiPitch = n.MidiPitch, Amplitude = n.Amplitude }).ToList();
+                bassNotes = bassNotes.Select(n => new TranscribedNote { StartSec = Math.Max(0, n.StartSec + delta), EndSec = Math.Max(0.05, n.EndSec + delta), MidiPitch = n.MidiPitch, Amplitude = n.Amplitude }).ToList();
+            }
+
+            onProgress?.Invoke($"Generating {chartFeel} chart from instant AI cache...");
+            var chartPath = Path.Combine(projectDir, "notes.chart");
+            var stats = new ChartBuildStats();
+            var content = MidiToGh3ChartMapper.BuildChartFromNotes(
+                meta, leadNotes, cache.PreciseBpm, cache.SongDurationSeconds,
+                $"ONOGAMI AI v2 [Instant Cache] ({cache.ResolvedLeadFocus})",
+                cache.PreciseBeatTimes, bassNotes,
+                isStudioConstantTempo: cache.IsStudioConstantTempo,
+                measureEnergies: cache.MeasureEnergies,
+                detectedSections: cache.DetectedSections,
+                statsOut: stats);
+            File.WriteAllText(chartPath, content);
+            TryConvertChart(chartPath);
+
+            if (recompile && _compiler != null)
+            {
+                var ghproj = Directory.GetFiles(projectDir, "*.ghproj").FirstOrDefault();
+                if (!string.IsNullOrEmpty(ghproj))
+                {
+                    onProgress?.Invoke("Recompiling updated chart into Guitar Hero III...");
+                    var comp = await _compiler.CompileSongProjectAsync(ghproj);
+                    if (!comp.Success) return (false, $"Chart rebuilt ({stats.ExpertNoteCount} notes), but recompile failed: {comp.Message}");
+                }
+            }
+
+            return (true, $"Instant Re-Chart complete! '{title}' ({chartFeel}, {stats.ExpertNoteCount:N0} Expert notes, {stats.RepeatedRiffsMatched} locked riffs) updated in seconds.");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Instant Re-Chart failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Applies optional Start/End Trim, Fade-Out, and EBU R128 Loudness Normalization (-14 LUFS)
+    /// using bundled FFmpeg so every custom song plays at balanced official GH3 volume.
+    /// </summary>
+    public static string? TryPreprocessAudioWithFfmpeg(
+        string inputPath,
+        string targetDir,
+        double trimStartSec,
+        double trimEndSec,
+        double fadeOutSec,
+        bool normalizeLoudness)
+    {
+        try
+        {
+            var ff = HoneycombCompilerService.EnsureFfmpeg(HoneycombCompilerService.FindHoneycombDirectory());
+            if (string.IsNullOrEmpty(ff) || !File.Exists(ff)) return null;
+
+            var outPath = Path.Combine(targetDir, "song_processed.mp3");
+            var filters = new List<string>();
+            if (normalizeLoudness)
+                filters.Add("loudnorm=I=-14:TP=-1.5:LRA=11");
+
+            if (fadeOutSec > 0.2 && trimEndSec > trimStartSec + fadeOutSec + 1.0)
+            {
+                double trimmedDur = trimEndSec - Math.Max(0, trimStartSec);
+                double fadeStart = Math.Max(0, trimmedDur - fadeOutSec);
+                filters.Add($"afade=t=out:st={fadeStart.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}:d={fadeOutSec.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}");
+            }
+
+            var argsSb = new StringBuilder("-y ");
+            if (trimStartSec > 0.1)
+                argsSb.Append($"-ss {trimStartSec.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)} ");
+            argsSb.Append($"-i \"{inputPath}\" ");
+            if (trimEndSec > trimStartSec + 1.0)
+            {
+                double dur = trimEndSec - Math.Max(0, trimStartSec);
+                argsSb.Append($"-t {dur.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)} ");
+            }
+            if (filters.Count > 0)
+                argsSb.Append($"-af \"{string.Join(",", filters)}\" ");
+            argsSb.Append($"-vn -c:a libmp3lame -b:a 192k -ar 44100 -ac 2 \"{outPath}\"");
+
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = ff,
+                Arguments = argsSb.ToString(),
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            using var p = System.Diagnostics.Process.Start(psi);
+            p?.WaitForExit(90_000);
+
+            if (File.Exists(outPath) && new FileInfo(outPath).Length > 10_000)
+            {
+                var finalPath = Path.Combine(targetDir, "song.mp3");
+                if (!string.Equals(inputPath, finalPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    try { File.Delete(inputPath); } catch { }
+                }
+                File.Move(outPath, finalPath, overwrite: true);
+                return finalPath;
+            }
+        }
+        catch { }
+        return null;
     }
 
     private static void TryConvertChart(string chartPath)

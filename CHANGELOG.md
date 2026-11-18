@@ -4,6 +4,36 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.6.0] - 2026-11-18
+
+### Major New Features
+* **Interactive Mini Highway Chart Previewer (`🎸 Highway`):**
+  - Watch any installed custom, uploaded `.chart`, or newly created AI track on a live 60 FPS perspective 5-fret Guitar Hero highway (Green/Red/Yellow/Blue/Orange gems, white HOPO caps, purple open-note bars, sustain tails, electric-blue Star Power aura, beat gridlines, live section banner & NPS/BPM readout) synced to audio — before ever launching GH3.
+  - Includes Easy/Medium/Hard/Expert switcher, Hyperspeed (`1.0x–2.5x`), scrub bar, and a live **Audio-Chart Sync Offset (`±250ms`)** slider with 1-click **Save Offset & Recompile**.
+* **Instant Re-Chart Cache (5-Second Tweak Loop):**
+  - Songs created with ONOGAMI AI Engine v2 now save a lightweight `gh3sync_ai_cache.json` (~80 KB) of the Basic Pitch & Librosa analysis inside the song folder.
+  - Click **⚡ Fast Re-Chart** on any cached song to switch between `Casual` / `Standard` / `Shredder` or nudge sync offset and recompile into GH3 in ~5 seconds without re-running Demucs.
+* **Auto-Loudness Normalization (`-14 LUFS`) + Audio Trimmer & Fade-Out:**
+  - Automatically matches custom song volume to official Guitar Hero III loudness using FFmpeg EBU R128 (`loudnorm=I=-14:TP=-1.5:LRA=11`).
+  - Use **Trim In** and **Trim Out** right on the built-in audio preview player bar + **2s Smooth Fade-Out** to trim silent intros or concert applause cleanly.
+* **"Chart Doctor" Auto-Fixer (`🩺 Doctor`):**
+  - Scans any custom or imported Clone Hero chart and repairs missing Easy/Medium/Hard difficulties, missing Star Power phrases (`S 2`), missing Practice Mode sections, Clone Hero open notes (`N 7` → `N 0`), and `±ms` audio-chart sync offset in 1 click.
+* **1-Click Lobby Invite Codes & Saved Setlist Presets:**
+  - Save reusable named **Setlist Presets** in My Customs, load them in 1 click, or hit **🎲 Shuffle Party Setlist** for instant randomized multiplayer lobbies.
+  - Click **Copy Lobby Invite Code** (`gh3sync://...`) in P2P Sync & Lobby so friends can click **Paste Invite Code** to auto-fill address + token and compare libraries immediately.
+* **Discord Rich Presence:**
+  - Lightweight, zero-dependency local Discord IPC client showing live Guitar Hero III / GH3-Sync status (toggleable in **Settings → General & Paths**).
+* **Electric Guitar HUD Enhancements:**
+  - Added **Size (`Small` / `Medium` / `Large`)** and **Opacity (`40%–100%`)** controls in **Settings → Appearance & Overlay**, plus an automatic electric-blue **String-Strum Pulse** animation whenever a peer connects or downloads from your P2P server.
+* **Clone Hero / YARG Full Library Migration Wizard:**
+  - Open **Import & Convert → 🚀 Full Library Migration Wizard** to recursively scan an entire Clone Hero / YARG Songs library, filter by title/artist/charter, auto-flag duplicates, and batch-convert selected songs straight into GH3.
+* **BetterGH3 Quick-Tweaks & Plugin Manager:**
+  - Added a dedicated **Settings → BetterGH3 Tweaks** tab to safely toggle BetterGH3 plugins (`BorderlessWindow`, `FastGH3`, `NoteLimitFix`, `SongLimitFix`, `TapHopoChord`, `UncappedFPS`, `WhammyFix`) between `PLUGINS\` and `PLUGINS\Disabled\` (protecting `core.dll`), plus quick shortcuts to `PLUGINS`, `DATA\IMAGES` custom highways, and `x360ce`.
+* **Audio Tap-Tempo Lock:**
+  - Added a **Tap Tempo** button next to Detect BPM in ONOGAMI Song Creator so you can tap along with live or rubato tracks to lock exact BPM manually.
+
+---
+
 ## [v1.5.0] - 2026-11-18
 
 ### Major New Features

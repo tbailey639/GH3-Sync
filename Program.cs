@@ -84,6 +84,12 @@ var natService = new NatPortMappingService(port, syncLogger);
 var updateService = new UpdateService(syncLogger);
 var tempSessionService = new TemporarySessionService(gh3Service, saveManager, syncLogger);
 var componentUpdater = new ComponentUpdaterService(gh3Service, updateService, demucsService, syncLogger);
+var chartDoctor = new ChartDoctorService(compilerService, syncLogger);
+var betterGh3Tweaks = new BetterGh3TweaksService(gh3Service, syncLogger);
+var discordRpc = new DiscordRpcService(
+    syncLogger,
+    () => gh3Service.GetInstalledCustomSongs().Count,
+    () => ((AppConfig.Current.LobbySetlistIds ?? new()).Count, Math.Clamp(AppConfig.Current.MaxLobbyAutoSyncSongs, 1, 25)));
 
 builder.Services.AddSingleton(gh3Service);
 builder.Services.AddSingleton(syncLogger);
@@ -126,10 +132,11 @@ app.Use(async (context, next) =>
     await next();
 });
 
-// Start In-Game Overlay
+// Start In-Game Overlay & Discord Rich Presence
 var overlay = new InGameOverlay(syncLogger);
 overlay.Start();
-syncLogger.LogInfo("In-game HUD overlay service started.");
+discordRpc.Start();
+syncLogger.LogInfo("In-game HUD overlay & Discord Rich Presence services started.");
 syncLogger.LogInfo($"[SECURITY] Session Pairing PIN: {securityService.PairingPin}");
 syncLogger.LogInfo($"[PROFILE] Active user: {friendService.Profile.Username} ({friendService.Profile.FriendCode})");
 
@@ -796,6 +803,7 @@ app.MapGet("/api/manifest", (HttpContext context, Gh3Service gh3, SyncLogger log
         return Results.Unauthorized();
 
     logger.LogDebug("Serving authenticated manifest request to peer.");
+    logger.PulsePeerActivity("Peer connected & checking library");
     return Results.Ok(gh3.GenerateManifest());
 });
 
@@ -819,6 +827,7 @@ app.MapGet("/api/download/{songId}", async (HttpContext context, string songId, 
     try
     {
         logger.LogInfo($"Serving encrypted song package for: {songId}");
+        logger.PulsePeerActivity($"Sharing {songId}");
         var packageBytes = gh3.PackageSong(songId);
         var encryptedBytes = sec.EncryptPayload(packageBytes, sharedSecret);
         return Results.File(encryptedBytes, "application/octet-stream", $"{songId}.gh3enc");
@@ -1428,7 +1437,10 @@ else
                     updateService,
                     tempSessionService,
                     componentUpdater,
-                    port);
+                    port,
+                    chartDoctor,
+                    betterGh3Tweaks,
+                    discordRpc);
 
                 // Single-instance restore listener (brings minimized/tray window to front if user launches GH3-Sync again)
                 if (!hasCustomPortArg)
@@ -1482,6 +1494,7 @@ else
 
     await uiDone.Task;
     pipeCts.Cancel();
+    discordRpc.Dispose();
     tempSessionService.Stop();
     await natService.RemoveMappingAsync();
     await app.StopAsync();

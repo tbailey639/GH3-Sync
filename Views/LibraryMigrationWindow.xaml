@@ -1,0 +1,70 @@
+<Window x:Class="GH3_Sync.Views.LibraryMigrationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="GH3-Sync — Clone Hero / YARG Full Library Migration Wizard"
+        Width="860" Height="640"
+        MinWidth="740" MinHeight="520"
+        WindowStartupLocation="CenterOwner"
+        Background="#090A0F"
+        Foreground="#F8FAFC">
+
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <TextBlock Text="Clone Hero / YARG Library Migration Wizard" FontSize="20" FontWeight="Bold" Foreground="#F8FAFC"/>
+            <TextBlock Text="Point GH3-Sync at your entire Clone Hero or YARG Songs folder to browse, skip duplicates, and batch-convert selected songs straight into Guitar Hero III."
+                       FontSize="12" Foreground="#94A3B8" TextWrapping="Wrap" Margin="0,3,0,0"/>
+        </StackPanel>
+
+        <!-- Root Folder Picker -->
+        <Border Grid.Row="1" Background="#11131B" BorderBrush="#262B3D" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,10">
+            <DockPanel>
+                <Button x:Name="ScanBtn" DockPanel.Dock="Right" Content="Scan Folder" Padding="14,7" Margin="8,0,0,0"
+                        Background="#F97316" Foreground="White" BorderThickness="0" FontWeight="Bold" Cursor="Hand" Click="ScanBtn_Click"/>
+                <Button x:Name="BrowseRootBtn" DockPanel.Dock="Right" Content="Browse..." Padding="12,7" Margin="8,0,0,0"
+                        Background="#1E2436" Foreground="#E2E8F0" BorderBrush="#334155" BorderThickness="1" Cursor="Hand" Click="BrowseRootBtn_Click"/>
+                <TextBox x:Name="RootFolderBox" VerticalContentAlignment="Center" Padding="8,6"
+                         Background="#0B0D14" Foreground="#F8FAFC" BorderBrush="#334155" BorderThickness="1"/>
+            </DockPanel>
+        </Border>
+
+        <!-- Filter & Selection Strip -->
+        <DockPanel Grid.Row="2" Margin="0,0,0,10">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Content="Select All New" Padding="10,5" Margin="0,0,6,0" Background="#059669" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Cursor="Hand" Click="SelectAllNewBtn_Click"/>
+                <Button Content="Select None" Padding="10,5" Margin="0,0,12,0" Background="#1E2436" Foreground="#CBD5E1" BorderBrush="#334155" BorderThickness="1" Cursor="Hand" Click="SelectNoneBtn_Click"/>
+                <TextBlock x:Name="ScanSummaryText" Text="Select your Clone Hero Songs folder and click Scan." FontSize="12" Foreground="#94A3B8" VerticalAlignment="Center"/>
+            </StackPanel>
+            <TextBox x:Name="SearchFilterBox" DockPanel.Dock="Right" Width="220" Padding="8,5"
+                     Background="#11131B" Foreground="#F8FAFC" BorderBrush="#334155" BorderThickness="1"
+                     TextChanged="SearchFilterBox_TextChanged" ToolTip="Filter by title, artist, or charter"/>
+        </DockPanel>
+
+        <!-- Song Checklist -->
+        <Border Grid.Row="3" Background="#11131B" BorderBrush="#262B3D" BorderThickness="1" CornerRadius="10" Padding="8">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="SongsCheckPanel"/>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Bottom Action & Progress Bar -->
+        <StackPanel Grid.Row="4" Margin="0,12,0,0">
+            <ProgressBar x:Name="MigrationProgressBar" Height="9" Minimum="0" Maximum="100" Visibility="Collapsed" Margin="0,0,0,8"/>
+            <DockPanel>
+                <TextBlock x:Name="MigrationStatusText" Text="" FontSize="12" Foreground="#FDBA74" VerticalAlignment="Center"/>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="Close" Padding="14,8" Margin="0,0,8,0" Background="#1E2436" Foreground="#CBD5E1" BorderBrush="#334155" BorderThickness="1" Cursor="Hand" Click="CloseBtn_Click"/>
+                    <Button x:Name="StartMigrateBtn" Content="Convert &amp; Install Selected (0)" Padding="18,8"
+                            Background="#F97316" Foreground="White" BorderThickness="0" FontWeight="Bold" Cursor="Hand" Click="StartMigrateBtn_Click"/>
+                </StackPanel>
+            </DockPanel>
+        </StackPanel>
+    </Grid>
+</Window>

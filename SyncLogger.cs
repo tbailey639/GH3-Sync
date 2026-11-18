@@ -28,6 +28,12 @@ public class SyncLogger
     public OverlayStatus CurrentStatus { get; private set; } = new();
 
     public event Action<OverlayStatus>? StatusChanged;
+    public event Action<string>? PeerActivityPulsed;
+
+    public void PulsePeerActivity(string detail = "Peer Sync Activity")
+    {
+        try { PeerActivityPulsed?.Invoke(detail); } catch { }
+    }
 
     public SyncLogger(string? gamePath = null)
     {

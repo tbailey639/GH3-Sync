@@ -40,6 +40,9 @@ public partial class MainWindow : Window
     private readonly UpdateService _updater;
     private readonly TemporarySessionService _tempSession;
     private readonly ComponentUpdaterService _compUpdater;
+    private readonly ChartDoctorService _chartDoctor;
+    private readonly BetterGh3TweaksService _betterGh3Tweaks;
+    private readonly DiscordRpcService? _discordRpc;
     private readonly int _port;
 
     private List<CustomSongInfo> _allSongs = new();
@@ -49,6 +52,15 @@ public partial class MainWindow : Window
     private string _currentFilter = "all";
     private bool _friendCodeVisible = false;
     private int _creatorPreviewStartMs = 5000;
+    private double _creatorTrimStartSec = 0.0;
+    private double _creatorTrimEndSec = 0.0;
+    private readonly List<DateTime> _tapTempoStamps = new();
+    private bool _tapTempoLocked = false;
+    private string? _lastCreatedChartPath;
+    private string? _lastCreatedAudioPath;
+    private string? _lastCreatedProjectDir;
+    private string _lastCreatedTitle = "";
+    private string _lastCreatedArtist = "";
 
     // Community chart search cache for client-side filtering & sorting
     private List<CommunityChartEntry> _lastCommunitySearchCharts = new();
@@ -89,7 +101,10 @@ public partial class MainWindow : Window
         UpdateService updater,
         TemporarySessionService tempSession,
         ComponentUpdaterService compUpdater,
-        int port)
+        int port,
+        ChartDoctorService? chartDoctor = null,
+        BetterGh3TweaksService? betterGh3Tweaks = null,
+        DiscordRpcService? discordRpc = null)
     {
         _gh3 = gh3;
         _logger = logger;
@@ -106,6 +121,9 @@ public partial class MainWindow : Window
         _tempSession = tempSession;
         _compUpdater = compUpdater;
         _port = port;
+        _chartDoctor = chartDoctor ?? new ChartDoctorService(compiler, logger);
+        _betterGh3Tweaks = betterGh3Tweaks ?? new BetterGh3TweaksService(gh3, logger);
+        _discordRpc = discordRpc;
         _communityCharts = new CommunityChartService(logger);
 
         InitializeComponent();
@@ -533,12 +551,14 @@ public partial class MainWindow : Window
         LoadSettingsForm();
 
         RefreshSongsList();
+        RefreshSetlistPresets();
         RefreshToolsAndAiStatus();
         RefreshFriendsList();
         RefreshTrustedFriendDropdown();
         RefreshTempSessionBanner();
         RefreshNetworkSummary();
         RefreshSaveBackups();
+        RefreshBetterGh3Plugins();
         RefreshLogs();
     }
 
@@ -652,6 +672,50 @@ public partial class MainWindow : Window
         var path = Gh3Service.FindSongAudioPath(_previewingSong, preferGuitarStem: wantStem);
         if (!string.IsNullOrEmpty(path))
             PlayAudioPreview(path, _previewingSong.Title, _previewingSong, wantStem);
+    }
+
+    private void PlayerSetTrimInBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _creatorTrimStartSec = Math.Max(0, _player.Position.TotalSeconds);
+        if (_creatorTrimEndSec > 0 && _creatorTrimEndSec <= _creatorTrimStartSec + 1.0)
+            _creatorTrimEndSec = 0;
+        UpdateTrimSummaryLabel();
+    }
+
+    private void PlayerSetTrimOutBtn_Click(object sender, RoutedEventArgs e)
+    {
+        double pos = Math.Max(0, _player.Position.TotalSeconds);
+        if (pos <= _creatorTrimStartSec + 1.0)
+        {
+            WpfMessageBox.Show("Trim Out must be after Trim In.", "Audio Trimmer", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        _creatorTrimEndSec = pos;
+        UpdateTrimSummaryLabel();
+    }
+
+    private void CrResetTrimBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _creatorTrimStartSec = 0;
+        _creatorTrimEndSec = 0;
+        UpdateTrimSummaryLabel();
+    }
+
+    private void UpdateTrimSummaryLabel()
+    {
+        bool hasTrim = _creatorTrimStartSec > 0.1 || _creatorTrimEndSec > 1.0;
+        if (!hasTrim)
+        {
+            CrTrimSummaryText.Text = "Trim: Full Track (use ▶ Preview bar to set Trim In/Out)";
+            CrResetTrimBtn.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            var startTxt = $"{(int)(_creatorTrimStartSec / 60)}:{(int)(_creatorTrimStartSec % 60):D2}";
+            var endTxt = _creatorTrimEndSec > 1.0 ? $"{(int)(_creatorTrimEndSec / 60)}:{(int)(_creatorTrimEndSec % 60):D2}" : "End";
+            CrTrimSummaryText.Text = $"Trim: {startTxt} → {endTxt}";
+            CrResetTrimBtn.Visibility = Visibility.Visible;
+        }
     }
 
     private void PlayerSetPreviewBtn_Click(object sender, RoutedEventArgs e)
@@ -1140,6 +1204,46 @@ public partial class MainWindow : Window
 
         if (hasProject)
         {
+            var chartFile = ChartDoctorService.FindChartFileInProject(song.ProjectDirectory);
+            if (!string.IsNullOrEmpty(chartFile))
+            {
+                var hwBtn = new System.Windows.Controls.Button
+                {
+                    Content = "🎸 Highway",
+                    Style = (Style)FindResource("OutlineButton"),
+                    Padding = new Thickness(9, 5, 9, 5),
+                    Margin = new Thickness(0, 0, 5, 0),
+                    ToolTip = "Preview this song's chart on a live 5-fret Guitar Hero highway synced to audio"
+                };
+                hwBtn.Click += (_, _) => OpenHighwayPreview(song.Title, song.Artist, chartFile, Gh3Service.FindSongAudioPath(song), song.ProjectDirectory);
+                btnRow.Children.Add(hwBtn);
+
+                var docBtn = new System.Windows.Controls.Button
+                {
+                    Content = "🩺 Doctor",
+                    Style = (Style)FindResource("OutlineButton"),
+                    Padding = new Thickness(9, 5, 9, 5),
+                    Margin = new Thickness(0, 0, 5, 0),
+                    ToolTip = "Run Chart Doctor: check & auto-fix missing difficulties, Star Power, Practice sections, open notes & sync offset"
+                };
+                docBtn.Click += (_, _) => OpenChartDoctorDialog(song);
+                btnRow.Children.Add(docBtn);
+            }
+
+            if (isOnogami && SongCreatorService.HasAiCache(song.ProjectDirectory))
+            {
+                var fastBtn = new System.Windows.Controls.Button
+                {
+                    Content = "⚡ Fast Re-Chart",
+                    Style = (Style)FindResource("GreenButton"),
+                    Padding = new Thickness(9, 5, 9, 5),
+                    Margin = new Thickness(0, 0, 5, 0),
+                    ToolTip = "5-second Instant Re-Chart from cached AI analysis (tweak Casual/Standard/Shredder or Sync Offset without re-running Demucs!)"
+                };
+                fastBtn.Click += (_, _) => OpenFastRechartDialog(song);
+                btnRow.Children.Add(fastBtn);
+            }
+
             if (isOnogami && hasAudio)
             {
                 var rechartBtn = new System.Windows.Controls.Button
@@ -1335,6 +1439,284 @@ public partial class MainWindow : Window
         {
             WpfMessageBox.Show($"Export error: {ex.Message}", "Export Failed", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private void OpenHighwayPreview(string title, string artist, string chartPath, string? audioPath, string? projectDir)
+    {
+        StopAudioPreview();
+        var win = new HighwayPreviewWindow(title, artist, chartPath, audioPath, projectDir, _chartDoctor) { Owner = this };
+        win.SongRecompiled += () => Dispatcher.Invoke(RefreshSongsList);
+        win.Show();
+    }
+
+    private void OpenChartDoctorDialog(CustomSongInfo song)
+    {
+        var report = _chartDoctor.AnalyzeProject(song.ProjectDirectory);
+        var dlg = new Window
+        {
+            Title = $"Chart Doctor — {song.Title}",
+            Width = 560,
+            Height = 470,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            ResizeMode = ResizeMode.NoResize,
+            Background = new SolidColorBrush(WpfColor.FromRgb(17, 19, 27)),
+            Foreground = System.Windows.Media.Brushes.White
+        };
+
+        var stack = new StackPanel { Margin = new Thickness(20) };
+        stack.Children.Add(new TextBlock { Text = $"🩺 Chart Doctor — {song.Title}", FontSize = 16.5, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 6) });
+        stack.Children.Add(new TextBlock
+        {
+            Text = report.Summary,
+            FontSize = 12,
+            Foreground = new SolidColorBrush(report.Issues.Count == 0 ? WpfColor.FromRgb(110, 231, 183) : WpfColor.FromRgb(253, 224, 71)),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 10)
+        });
+
+        if (report.Issues.Count > 0)
+        {
+            var issuesBox = new Border
+            {
+                Background = new SolidColorBrush(WpfColor.FromRgb(11, 13, 20)),
+                BorderBrush = new SolidColorBrush(WpfColor.FromRgb(51, 65, 85)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10),
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            var iStack = new StackPanel();
+            foreach (var iss in report.Issues)
+            {
+                iStack.Children.Add(new TextBlock
+                {
+                    Text = $"• [{iss.Severity}] {iss.Description}",
+                    FontSize = 11.5,
+                    Foreground = new SolidColorBrush(WpfColor.FromRgb(226, 232, 240)),
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 0, 0, 4)
+                });
+            }
+            issuesBox.Child = iStack;
+            stack.Children.Add(issuesBox);
+        }
+
+        var genDiffsChk = new System.Windows.Controls.CheckBox { Content = "Auto-generate missing Easy / Medium / Hard difficulties", IsChecked = true, Margin = new Thickness(0, 0, 0, 6) };
+        var spChk = new System.Windows.Controls.CheckBox { Content = "Auto-insert balanced Star Power phrases (if missing)", IsChecked = true, Margin = new Thickness(0, 0, 0, 6) };
+        var secChk = new System.Windows.Controls.CheckBox { Content = "Auto-insert Practice Mode sections (if missing)", IsChecked = true, Margin = new Thickness(0, 0, 0, 6) };
+        var openChk = new System.Windows.Controls.CheckBox { Content = "Convert Clone Hero Open Notes (N 7) → Classic Green (N 0)", IsChecked = false, Margin = new Thickness(0, 0, 0, 10) };
+
+        var offLbl = new TextBlock { Text = "Sync Offset Shift: 0 ms", FontSize = 12, Foreground = new SolidColorBrush(WpfColor.FromRgb(125, 211, 252)) };
+        var offSlider = new Slider { Minimum = -250, Maximum = 250, Value = 0, TickFrequency = 10, IsSnapToTickEnabled = true, Margin = new Thickness(0, 3, 0, 14) };
+        offSlider.ValueChanged += (_, _) => offLbl.Text = $"Sync Offset Shift: {(int)offSlider.Value:+0;-0;0} ms";
+
+        stack.Children.Add(genDiffsChk);
+        stack.Children.Add(spChk);
+        stack.Children.Add(secChk);
+        stack.Children.Add(openChk);
+        stack.Children.Add(offLbl);
+        stack.Children.Add(offSlider);
+
+        var statusLbl = new TextBlock { Text = "", FontSize = 11.5, Foreground = new SolidColorBrush(WpfColor.FromRgb(253, 186, 116)), Margin = new Thickness(0, 0, 0, 10) };
+        stack.Children.Add(statusLbl);
+
+        var btns = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
+        var closeBtn = new System.Windows.Controls.Button { Content = "Close", Style = (Style)FindResource("OutlineButton"), Margin = new Thickness(0, 0, 8, 0) };
+        closeBtn.Click += (_, _) => dlg.Close();
+        var fixBtn = new System.Windows.Controls.Button { Content = "Fix & Recompile into GH3", Style = (Style)FindResource("FlameButton") };
+        fixBtn.Click += async (_, _) =>
+        {
+            fixBtn.IsEnabled = false;
+            fixBtn.Content = "Repairing...";
+            var opts = new ChartDoctorFixOptions
+            {
+                GenerateMissingDifficulties = genDiffsChk.IsChecked == true,
+                AddMissingStarPower = spChk.IsChecked == true,
+                AddMissingSections = secChk.IsChecked == true,
+                ConvertOpenNotesToClassicGh3 = openChk.IsChecked == true,
+                OffsetShiftMs = (int)Math.Round(offSlider.Value),
+                RecompileToGame = true
+            };
+            var (ok, msg) = await _chartDoctor.RepairChartAndRecompileAsync(song.ProjectDirectory, opts, s => Dispatcher.Invoke(() => statusLbl.Text = s));
+            dlg.Close();
+            RefreshSongsList();
+            WpfMessageBox.Show(msg, ok ? "Chart Doctor Complete" : "Chart Doctor Note", MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        };
+        btns.Children.Add(closeBtn);
+        btns.Children.Add(fixBtn);
+        stack.Children.Add(btns);
+
+        dlg.Content = stack;
+        dlg.ShowDialog();
+    }
+
+    private void OpenFastRechartDialog(CustomSongInfo song)
+    {
+        var dlg = new Window
+        {
+            Title = $"⚡ 5-Second Fast Re-Chart — {song.Title}",
+            Width = 460,
+            Height = 300,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            ResizeMode = ResizeMode.NoResize,
+            Background = new SolidColorBrush(WpfColor.FromRgb(17, 19, 27)),
+            Foreground = System.Windows.Media.Brushes.White
+        };
+
+        var stack = new StackPanel { Margin = new Thickness(20) };
+        stack.Children.Add(new TextBlock { Text = "⚡ Instant Re-Chart (Cached AI Analysis)", FontSize = 15.5, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 5) });
+        stack.Children.Add(new TextBlock
+        {
+            Text = "Rebuilds the chart & recompiles into Guitar Hero III in ~5 seconds using this song's cached Basic Pitch + Librosa analysis (no Demucs wait!).",
+            FontSize = 12,
+            Foreground = new SolidColorBrush(WpfColor.FromRgb(148, 163, 184)),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 12)
+        });
+
+        stack.Children.Add(new TextBlock { Text = "Chart Density / Feel", FontSize = 12, Foreground = new SolidColorBrush(WpfColor.FromRgb(203, 213, 225)), Margin = new Thickness(0, 0, 0, 4) });
+        var feelCombo = new System.Windows.Controls.ComboBox { Margin = new Thickness(0, 0, 0, 12) };
+        feelCombo.Items.Add("Casual");
+        feelCombo.Items.Add("Standard");
+        feelCombo.Items.Add("Shredder");
+        feelCombo.SelectedIndex = 1;
+        stack.Children.Add(feelCombo);
+
+        var offLbl = new TextBlock { Text = "Sync Offset Nudge: 0 ms", FontSize = 12, Foreground = new SolidColorBrush(WpfColor.FromRgb(125, 211, 252)) };
+        var offSlider = new Slider { Minimum = -200, Maximum = 200, Value = 0, TickFrequency = 10, IsSnapToTickEnabled = true, Margin = new Thickness(0, 3, 0, 14) };
+        offSlider.ValueChanged += (_, _) => offLbl.Text = $"Sync Offset Nudge: {(int)offSlider.Value:+0;-0;0} ms";
+        stack.Children.Add(offLbl);
+        stack.Children.Add(offSlider);
+
+        var statusLbl = new TextBlock { Text = "", FontSize = 11.5, Foreground = new SolidColorBrush(WpfColor.FromRgb(253, 186, 116)), Margin = new Thickness(0, 0, 0, 10) };
+        stack.Children.Add(statusLbl);
+
+        var btns = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
+        var goBtn = new System.Windows.Controls.Button { Content = "⚡ Rebuild & Recompile", Style = (Style)FindResource("GreenButton") };
+        goBtn.Click += async (_, _) =>
+        {
+            goBtn.IsEnabled = false;
+            goBtn.Content = "Rebuilding...";
+            var feel = feelCombo.SelectedItem?.ToString() ?? "Standard";
+            var (ok, msg) = await _creator.InstantRechartFromCacheAsync(song.ProjectDirectory, feel, (int)Math.Round(offSlider.Value), true, s => Dispatcher.Invoke(() => statusLbl.Text = s));
+            dlg.Close();
+            RefreshSongsList();
+            WpfMessageBox.Show(msg, ok ? "Instant Re-Chart Complete" : "Instant Re-Chart Note", MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        };
+        btns.Children.Add(goBtn);
+        stack.Children.Add(btns);
+
+        dlg.Content = stack;
+        dlg.ShowDialog();
+    }
+
+    // ==================== SETLIST PRESETS & PARTY SHUFFLE ====================
+    private bool _suppressPresetSelection;
+
+    private void RefreshSetlistPresets()
+    {
+        _suppressPresetSelection = true;
+        try
+        {
+            SetlistPresetCombo.Items.Clear();
+            SetlistPresetCombo.Items.Add("-- Load Setlist Preset --");
+            foreach (var p in AppConfig.Current.SetlistPresets ?? new())
+                SetlistPresetCombo.Items.Add($"{p.Name} ({p.SongIds.Count} songs)");
+            SetlistPresetCombo.SelectedIndex = 0;
+        }
+        finally { _suppressPresetSelection = false; }
+    }
+
+    private void SetlistPresetCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressPresetSelection || !IsLoaded) return;
+        int idx = SetlistPresetCombo.SelectedIndex - 1;
+        var presets = AppConfig.Current.SetlistPresets ?? new();
+        if (idx < 0 || idx >= presets.Count) return;
+
+        var chosen = presets[idx];
+        int cap = Math.Clamp(AppConfig.Current.MaxLobbyAutoSyncSongs, 1, 25);
+        AppConfig.Current.LobbySetlistIds = chosen.SongIds.Take(cap).ToList();
+        AppConfig.Save();
+        RefreshSongsList();
+        WpfMessageBox.Show($"Loaded Setlist Preset '{chosen.Name}' ({AppConfig.Current.LobbySetlistIds.Count} songs active in Lobby Setlist).", "Setlist Preset Loaded", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void SaveSetlistPresetBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var currentLobby = AppConfig.Current.LobbySetlistIds ?? new();
+        if (currentLobby.Count == 0)
+        {
+            WpfMessageBox.Show("Tag at least 1 song with '+ Lobby' in My Customs first before saving a preset.", "Save Setlist Preset", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var dlg = new Window
+        {
+            Title = "Save Lobby Setlist Preset",
+            Width = 380,
+            Height = 180,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            ResizeMode = ResizeMode.NoResize,
+            Background = new SolidColorBrush(WpfColor.FromRgb(17, 19, 27)),
+            Foreground = System.Windows.Media.Brushes.White
+        };
+        var sp = new StackPanel { Margin = new Thickness(18) };
+        sp.Children.Add(new TextBlock { Text = $"Preset Name ({currentLobby.Count} songs):", FontSize = 13, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) });
+        var nameBox = new System.Windows.Controls.TextBox { Text = "Friday Night Co-Op", Margin = new Thickness(0, 0, 0, 14) };
+        sp.Children.Add(nameBox);
+        var saveBtn = new System.Windows.Controls.Button { Content = "Save Preset", Style = (Style)FindResource("FlameButton"), HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
+        saveBtn.Click += (_, _) => { dlg.DialogResult = true; dlg.Close(); };
+        sp.Children.Add(saveBtn);
+        dlg.Content = sp;
+
+        if (dlg.ShowDialog() == true)
+        {
+            var name = nameBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(name)) return;
+            AppConfig.Current.SetlistPresets ??= new();
+            AppConfig.Current.SetlistPresets.RemoveAll(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            AppConfig.Current.SetlistPresets.Add(new SetlistPreset { Name = name, SongIds = currentLobby.ToList(), CreatedAt = DateTime.UtcNow });
+            AppConfig.Save();
+            RefreshSetlistPresets();
+        }
+    }
+
+    private void DeleteSetlistPresetBtn_Click(object sender, RoutedEventArgs e)
+    {
+        int idx = SetlistPresetCombo.SelectedIndex - 1;
+        var presets = AppConfig.Current.SetlistPresets ?? new();
+        if (idx < 0 || idx >= presets.Count)
+        {
+            WpfMessageBox.Show("Select a saved preset from the dropdown first to delete it.", "Delete Preset", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var removed = presets[idx].Name;
+        presets.RemoveAt(idx);
+        AppConfig.Save();
+        RefreshSetlistPresets();
+        WpfMessageBox.Show($"Deleted Setlist Preset '{removed}'.", "Preset Deleted", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void ShuffleLobbySetlistBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var installed = _allSongs.Where(s => !s.IsProject).ToList();
+        if (installed.Count == 0)
+        {
+            WpfMessageBox.Show("No compiled custom songs installed yet to shuffle.", "Shuffle Setlist", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        int cap = Math.Clamp(AppConfig.Current.MaxLobbyAutoSyncSongs, 1, 25);
+        var picked = installed.OrderBy(_ => Random.Shared.Next()).Take(Math.Min(cap, installed.Count)).ToList();
+        AppConfig.Current.LobbySetlistIds = picked.Select(s => s.SongId).ToList();
+        AppConfig.Save();
+        RefreshSongsList();
+        WpfMessageBox.Show($"Shuffled {picked.Count} random songs into your active Lobby Auto-Sync Setlist!\n\n• " + string.Join("\n• ", picked.Select(p => $"{p.Title} — {p.Artist}")),
+            "🎲 Party Setlist Ready!", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private async Task RechartSongInCreatorAsync(CustomSongInfo song)
@@ -1546,7 +1928,55 @@ public partial class MainWindow : Window
     private async void DetectBpmBtn_Click(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrWhiteSpace(CrAudioPathBox.Text) || !File.Exists(CrAudioPathBox.Text)) return;
+        _tapTempoLocked = false;
+        _tapTempoStamps.Clear();
         await DetectBpmInternalAsync(CrAudioPathBox.Text);
+    }
+
+    private void TapTempoBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var now = DateTime.UtcNow;
+        if (_tapTempoStamps.Count > 0 && (now - _tapTempoStamps[^1]).TotalSeconds > 2.5)
+            _tapTempoStamps.Clear();
+
+        _tapTempoStamps.Add(now);
+        while (_tapTempoStamps.Count > 9) _tapTempoStamps.RemoveAt(0);
+
+        if (_tapTempoStamps.Count < 2)
+        {
+            BpmStatusLabel.Text = "Tap again on beat...";
+            return;
+        }
+
+        double totalSec = (_tapTempoStamps[^1] - _tapTempoStamps[0]).TotalSeconds;
+        int intervals = _tapTempoStamps.Count - 1;
+        double avgSec = totalSec / intervals;
+        if (avgSec > 0.15 && avgSec < 2.5)
+        {
+            double tappedBpm = Math.Clamp(60.0 / avgSec, 40.0, 260.0);
+            CrBpmBox.Text = tappedBpm.ToString("F1");
+            _tapTempoLocked = true;
+            BpmStatusLabel.Text = $"Tapped: {tappedBpm:F1} BPM ({_tapTempoStamps.Count} taps — Locked)";
+        }
+    }
+
+    private void CreatorPreviewHighwayBtn_Click(object sender, RoutedEventArgs e)
+    {
+        string? chartPath = ModeUploadRadio.IsChecked == true ? CrChartPathBox.Text.Trim() : _lastCreatedChartPath;
+        string? audioPath = ModeUploadRadio.IsChecked == true ? CrAudioPathBox.Text.Trim() : (_lastCreatedAudioPath ?? CrAudioPathBox.Text.Trim());
+        string title = string.IsNullOrWhiteSpace(CrTitleBox.Text) ? _lastCreatedTitle : CrTitleBox.Text.Trim();
+        string artist = string.IsNullOrWhiteSpace(CrArtistBox.Text) ? _lastCreatedArtist : CrArtistBox.Text.Trim();
+        string? projDir = ModeUploadRadio.IsChecked == true ? null : _lastCreatedProjectDir;
+
+        if (string.IsNullOrWhiteSpace(chartPath) || !File.Exists(chartPath) || !chartPath.EndsWith(".chart", StringComparison.OrdinalIgnoreCase))
+        {
+            WpfMessageBox.Show(
+                "Load a .chart file (in 'Use Existing Chart' mode) or click 'Create & Compile Song' first to preview it on the 5-fret highway.\n\nYou can also click '🎸 Highway' on any song in My Customs!",
+                "Interactive Highway Preview", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        OpenHighwayPreview(string.IsNullOrWhiteSpace(title) ? Path.GetFileNameWithoutExtension(chartPath) : title, artist, chartPath, audioPath, projDir);
     }
 
     private async Task DetectBpmInternalAsync(string audioPath)
@@ -1634,6 +2064,8 @@ public partial class MainWindow : Window
             return null;
         }
 
+        int offsetMs = int.TryParse(CrOffsetBox.Text, out var parsedOff) ? Math.Clamp(parsedOff, -500, 500) : 0;
+
         return new SongCreationRequest
         {
             Title = CrTitleBox.Text.Trim(),
@@ -1644,14 +2076,20 @@ public partial class MainWindow : Window
             Charter = string.IsNullOrWhiteSpace(CrCharterBox.Text) ? "Mad Scientist" : CrCharterBox.Text.Trim(),
             Bpm = double.TryParse(CrBpmBox.Text, out var bpm) ? bpm : 120.0,
             PreviewStartMs = _creatorPreviewStartMs,
-            AutoDetectBpm = true,
-            UseVariableTempoMap = CrVariableTempoChk.IsChecked == true,
+            AutoDetectBpm = !_tapTempoLocked,
+            UseVariableTempoMap = CrVariableTempoChk.IsChecked == true && !_tapTempoLocked,
             ChartFeel = (CrFeelCombo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Standard",
             InstrumentFocus = GetSelectedFocusValue(),
             AudioMixMode = GetSelectedAudioModeValue(),
             AutoGenerateChart = autoGen,
             SeparateStemsWithDemucs = CrSeparateStemsChk.IsChecked == true && _demucs.GetStatus().IsInstalled,
-            AutoCompile = CrAutoCompileChk.IsChecked == true
+            AutoCompile = CrAutoCompileChk.IsChecked == true,
+            NormalizeLoudness = CrNormalizeLoudnessChk.IsChecked == true,
+            TrimStartSeconds = _creatorTrimStartSec,
+            TrimEndSeconds = _creatorTrimEndSec,
+            FadeOutSeconds = CrFadeOutChk.IsChecked == true ? 2.0 : 0.0,
+            AudioOffsetMs = offsetMs,
+            UseCachedAiAnalysis = true
         };
     }
 
@@ -1967,6 +2405,7 @@ public partial class MainWindow : Window
         CrProgressBar.Visibility = Visibility.Visible;
         CrProgressBar.Value = 5;
         CrResultBox.Visibility = Visibility.Collapsed;
+        _discordRpc?.SetTemporaryActivity("Charting Custom Song in GH3-Sync", $"{meta.Title} — {meta.Artist}", 180);
 
         try
         {
@@ -1979,6 +2418,12 @@ public partial class MainWindow : Window
             CrResultBox.Visibility = Visibility.Visible;
             if (result.Success)
             {
+                _lastCreatedProjectDir = result.ProjectDirectory;
+                _lastCreatedChartPath = ChartDoctorService.FindChartFileInProject(result.ProjectDirectory);
+                _lastCreatedAudioPath = Path.Combine(result.ProjectDirectory, "song.mp3");
+                if (!File.Exists(_lastCreatedAudioPath)) _lastCreatedAudioPath = audioPath;
+                _lastCreatedTitle = meta.Title;
+                _lastCreatedArtist = meta.Artist;
                 CrResultBox.Background = new SolidColorBrush(WpfColor.FromRgb(13, 34, 26));
                 CrResultBox.BorderBrush = new SolidColorBrush(WpfColor.FromRgb(16, 185, 129));
                 CrResultText.Foreground = new SolidColorBrush(WpfColor.FromRgb(167, 243, 208));
@@ -2545,6 +2990,75 @@ public partial class MainWindow : Window
         }
     }
 
+    private void CopyLobbyInviteBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var addr = !string.IsNullOrWhiteSpace(AppConfig.Current.CustomPublicAddress)
+            ? AppConfig.Current.CustomPublicAddress.Trim()
+            : (!string.IsNullOrEmpty(_nat.PublicIp) ? $"{_nat.PublicIp}:{_nat.ExternalPort ?? _port}" : $"127.0.0.1:{_port}");
+
+        // Prefer currently selected Trusted Friend's token if chosen, else first trusted friend's token, else session PIN
+        string secret = _security.PairingPin;
+        string targetNote = "View-Only PIN (add friend as Trusted to include a download token)";
+        int selIdx = TrustedFriendQuickCombo.SelectedIndex - 1;
+        if (selIdx >= 0 && selIdx < _trustedDropdownEntries.Count && !string.IsNullOrWhiteSpace(_trustedDropdownEntries[selIdx].TrustToken))
+        {
+            secret = _trustedDropdownEntries[selIdx].TrustToken;
+            targetNote = $"Trusted Token for {_trustedDropdownEntries[selIdx].Username}";
+        }
+        else
+        {
+            var firstTrusted = _trustedDropdownEntries.FirstOrDefault(f => !string.IsNullOrWhiteSpace(f.TrustToken));
+            if (firstTrusted != null)
+            {
+                secret = firstTrusted.TrustToken;
+                targetNote = $"Trusted Token for {firstTrusted.Username}";
+            }
+        }
+
+        var payload = JsonSerializer.Serialize(new { addr, token = secret, host = _friends.Profile.Username });
+        var code = "gh3sync://" + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(payload));
+        System.Windows.Clipboard.SetText(code);
+        WpfMessageBox.Show($"Copied 1-Click Lobby Invite Code to clipboard!\n\nIncludes: {addr}\nAuth: {targetNote}\n\nSend it to your friend and have them click 'Paste Invite Code' in P2P Sync & Lobby.",
+            "Lobby Invite Code Copied", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void PasteLobbyInviteBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var raw = (System.Windows.Clipboard.GetText() ?? "").Trim();
+            if (!raw.StartsWith("gh3sync://", StringComparison.OrdinalIgnoreCase))
+            {
+                WpfMessageBox.Show("Copy a 'gh3sync://...' Lobby Invite Code from a friend first, then click 'Paste Invite Code'.",
+                    "Paste Invite Code", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var b64 = raw.Substring("gh3sync://".Length).Trim();
+            var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(b64));
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var addr = root.TryGetProperty("addr", out var a) ? a.GetString() ?? "" : "";
+            var token = root.TryGetProperty("token", out var t) ? t.GetString() ?? "" : "";
+            var host = root.TryGetProperty("host", out var h) ? h.GetString() ?? "Friend" : "Friend";
+
+            if (string.IsNullOrWhiteSpace(addr))
+            {
+                WpfMessageBox.Show("Invite code did not contain a valid peer address.", "Invalid Invite Code", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            PeerAddressBox.Text = addr;
+            PeerPinBox.Text = token;
+            PeerCompareStatus.Text = $"Loaded invite from {host} ({addr}) — connecting...";
+            ComparePeerBtn_Click(sender, e);
+        }
+        catch (Exception ex)
+        {
+            WpfMessageBox.Show($"Could not parse Lobby Invite Code: {ex.Message}", "Invalid Invite Code", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private async void RefreshNatBtn_Click(object sender, RoutedEventArgs e)
     {
         P2pNetworkSummary.Text = "Refreshing Public IP & Router UPnP / NAT-PMP...";
@@ -2788,6 +3302,14 @@ public partial class MainWindow : Window
             await RunCloneHeroImportAsync(fbd.SelectedPath);
     }
 
+    private void OpenLibraryMigrationBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var wizard = new LibraryMigrationWindow(_gh3, _cloneHero) { Owner = this };
+        wizard.ShowDialog();
+        if (wizard.ImportedCount > 0)
+            RefreshSongsList();
+    }
+
     private async void ImportCloneHeroZipBtn_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new Microsoft.Win32.OpenFileDialog
@@ -2946,6 +3468,7 @@ public partial class MainWindow : Window
         if (sender is not System.Windows.Controls.Button btn || btn.Tag is not string tag) return;
         SettingsSubGeneral.Visibility = tag == "general" ? Visibility.Visible : Visibility.Collapsed;
         SettingsSubAppearance.Visibility = tag == "appearance" ? Visibility.Visible : Visibility.Collapsed;
+        SettingsSubBetterGh3.Visibility = tag == "bettergh3" ? Visibility.Visible : Visibility.Collapsed;
         SettingsSubUpdates.Visibility = tag == "updates" ? Visibility.Visible : Visibility.Collapsed;
         SettingsSubHowTo.Visibility = tag == "howto" ? Visibility.Visible : Visibility.Collapsed;
         SettingsSubCredits.Visibility = tag == "credits" ? Visibility.Visible : Visibility.Collapsed;
@@ -2953,11 +3476,13 @@ public partial class MainWindow : Window
 
         TabSetGeneralBtn.Style = (Style)FindResource(tag == "general" ? "FlameButton" : "OutlineButton");
         TabSetAppearanceBtn.Style = (Style)FindResource(tag == "appearance" ? "FlameButton" : "OutlineButton");
+        TabSetBetterGh3Btn.Style = (Style)FindResource(tag == "bettergh3" ? "FlameButton" : "OutlineButton");
         TabSetUpdatesBtn.Style = (Style)FindResource(tag == "updates" ? "FlameButton" : "OutlineButton");
         TabSetHowToBtn.Style = (Style)FindResource(tag == "howto" ? "FlameButton" : "OutlineButton");
         TabSetCreditsBtn.Style = (Style)FindResource(tag == "credits" ? "FlameButton" : "OutlineButton");
         TabSetLogsBtn.Style = (Style)FindResource(tag == "logs" ? "FlameButton" : "OutlineButton");
 
+        if (tag == "bettergh3") RefreshBetterGh3Plugins();
         if (tag == "logs") RefreshLogs();
     }
 
@@ -2969,6 +3494,9 @@ public partial class MainWindow : Window
         SettingsDirectInstallChk.IsChecked = AppConfig.Current.DirectInstallToGame;
         SettingsMinLaunchChk.IsChecked = AppConfig.Current.MinimizeOnGameLaunch;
         SettingsP2pOnlineChk.IsChecked = AppConfig.Current.P2pOnlineEnabled;
+        SettingsDiscordRpcChk.IsChecked = AppConfig.Current.EnableDiscordRichPresence;
+        SettingsNormalizeDefaultChk.IsChecked = AppConfig.Current.NormalizeAudioLoudness;
+        CrNormalizeLoudnessChk.IsChecked = AppConfig.Current.NormalizeAudioLoudness;
         SettingsLobbyCapBox.Text = AppConfig.Current.MaxLobbyAutoSyncSongs.ToString();
         SettingsAutoRollbackChk.IsChecked = AppConfig.Current.AutoRollbackOnFailedUpdate;
         SettingsOverlayEnabledChk.IsChecked = AppConfig.Current.EnableInGameOverlay;
@@ -2979,6 +3507,15 @@ public partial class MainWindow : Window
             "BottomLeft" => 3,
             _ => 0
         };
+        SettingsOverlaySizeCombo.SelectedIndex = (AppConfig.Current.InGameOverlaySize ?? "Medium") switch
+        {
+            "Small" => 0,
+            "Large" => 2,
+            _ => 1
+        };
+        int opPct = (int)Math.Round(Math.Clamp(AppConfig.Current.InGameOverlayOpacity, 0.4, 1.0) * 100.0);
+        SettingsOverlayOpacitySlider.Value = opPct;
+        SettingsOverlayOpacityLabel.Text = $"Opacity: {opPct}%";
         CommunityClassicFretsChk.IsChecked = AppConfig.Current.ConvertOpenNotesToClassicGh3;
         UpdateThemeCardSelection();
     }
@@ -3003,6 +3540,119 @@ public partial class MainWindow : Window
         AppConfig.Save();
     }
 
+    private void SettingsOverlaySize_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        AppConfig.Current.InGameOverlaySize = SettingsOverlaySizeCombo.SelectedIndex switch
+        {
+            0 => "Small",
+            2 => "Large",
+            _ => "Medium"
+        };
+        AppConfig.Save();
+    }
+
+    private void SettingsOverlayOpacity_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!IsLoaded) return;
+        int pct = (int)Math.Round(SettingsOverlayOpacitySlider.Value);
+        SettingsOverlayOpacityLabel.Text = $"Opacity: {pct}%";
+        AppConfig.Current.InGameOverlayOpacity = Math.Clamp(pct / 100.0, 0.4, 1.0);
+        AppConfig.Save();
+    }
+
+    private void TestOverlayPulseBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _logger.PulsePeerActivity("Manual HUD Strum Pulse Test");
+        WpfMessageBox.Show("Triggered Electric Guitar HUD strum pulse! (When GH3.exe is running, the blue strings flash & sweep automatically whenever a friend connects or syncs.)",
+            "Electric Guitar HUD Pulse", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    // ==================== BETTERGH3 QUICK-TWEAKS & PLUGIN MANAGER ====================
+    private void RefreshBetterGh3PluginsBtn_Click(object sender, RoutedEventArgs e) => RefreshBetterGh3Plugins();
+
+    private void RefreshBetterGh3Plugins()
+    {
+        if (BetterGh3PluginsPanel == null) return;
+        BetterGh3PluginsPanel.Children.Clear();
+        LaunchX360ceBtn.Visibility = File.Exists(_betterGh3Tweaks.X360ceExePath) ? Visibility.Visible : Visibility.Collapsed;
+
+        var plugins = _betterGh3Tweaks.GetPlugins();
+        if (plugins.Count == 0)
+        {
+            BetterGh3PluginsPanel.Children.Add(new TextBlock
+            {
+                Text = "No BetterGH3 PLUGINS folder detected in your configured GH3 directory.",
+                Foreground = (WpfBrush)FindResource("TextMuted"),
+                FontSize = 12.5
+            });
+            return;
+        }
+
+        foreach (var p in plugins)
+        {
+            var card = new Border
+            {
+                Background = (WpfBrush)FindResource("BgCardHover"),
+                BorderBrush = (WpfBrush)FindResource("BorderSubtle"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 9, 12, 9),
+                Margin = new Thickness(0, 0, 0, 7)
+            };
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var left = new StackPanel();
+            left.Children.Add(new TextBlock { Text = $"{p.DisplayName}  ({p.FileName})", FontSize = 13.5, FontWeight = FontWeights.Bold, Foreground = (WpfBrush)FindResource("TextPrimary") });
+            left.Children.Add(new TextBlock { Text = p.Description, FontSize = 11.5, Foreground = (WpfBrush)FindResource("TextMuted"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
+            Grid.SetColumn(left, 0);
+            grid.Children.Add(left);
+
+            var toggleBtn = new System.Windows.Controls.Button
+            {
+                Content = p.IsCoreProtected ? "Protected (Active)" : (p.IsEnabled ? "✓ Enabled (Disable)" : "Disabled (Enable)"),
+                Style = (Style)FindResource(p.IsEnabled ? "GreenButton" : "OutlineButton"),
+                IsEnabled = !p.IsCoreProtected,
+                Padding = new Thickness(11, 5, 11, 5),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(10, 0, 0, 0)
+            };
+            toggleBtn.Click += (_, _) =>
+            {
+                var (ok, msg) = _betterGh3Tweaks.SetPluginEnabled(p.FileName, !p.IsEnabled);
+                BetterGh3TweaksStatusText.Text = msg;
+                if (!ok) WpfMessageBox.Show(msg, "BetterGH3 Tweaks", MessageBoxButton.OK, MessageBoxImage.Warning);
+                RefreshBetterGh3Plugins();
+            };
+            Grid.SetColumn(toggleBtn, 1);
+            grid.Children.Add(toggleBtn);
+
+            card.Child = grid;
+            BetterGh3PluginsPanel.Children.Add(card);
+        }
+    }
+
+    private void OpenBetterGh3PluginsFolderBtn_Click(object sender, RoutedEventArgs e)
+        => OpenFolderInExplorer(_betterGh3Tweaks.PluginsDir);
+
+    private void OpenBetterGh3HighwaysFolderBtn_Click(object sender, RoutedEventArgs e)
+        => OpenFolderInExplorer(_betterGh3Tweaks.HighwaysDir);
+
+    private void LaunchX360ceBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (File.Exists(_betterGh3Tweaks.X360ceExePath))
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = _betterGh3Tweaks.X360ceExePath,
+                WorkingDirectory = Path.GetDirectoryName(_betterGh3Tweaks.X360ceExePath),
+                UseShellExecute = true
+            });
+        }
+    }
+
     private void SettingsBrowseGamePath_Click(object sender, RoutedEventArgs e)
     {
         using var fbd = new WinForms.FolderBrowserDialog { SelectedPath = SettingsGamePathBox.Text, Description = "Select Guitar Hero III Game Directory" };
@@ -3024,6 +3674,9 @@ public partial class MainWindow : Window
         AppConfig.Current.DirectInstallToGame = SettingsDirectInstallChk.IsChecked == true;
         AppConfig.Current.MinimizeOnGameLaunch = SettingsMinLaunchChk.IsChecked == true;
         AppConfig.Current.P2pOnlineEnabled = SettingsP2pOnlineChk.IsChecked == true;
+        AppConfig.Current.EnableDiscordRichPresence = SettingsDiscordRpcChk.IsChecked == true;
+        AppConfig.Current.NormalizeAudioLoudness = SettingsNormalizeDefaultChk.IsChecked == true;
+        CrNormalizeLoudnessChk.IsChecked = AppConfig.Current.NormalizeAudioLoudness;
         if (int.TryParse(SettingsLobbyCapBox.Text, out var cap))
             AppConfig.Current.MaxLobbyAutoSyncSongs = Math.Clamp(cap, 1, 25);
         AppConfig.Save();
