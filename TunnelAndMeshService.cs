@@ -145,8 +145,23 @@ public class TunnelAndMeshService : IDisposable
                     try { File.Delete(tmpPath); } catch { }
                     return (false, "Downloaded cloudflared binary appears invalid or truncated.");
                 }
+
+                // Verify official Cloudflare Authenticode signature & GitHub release digest before trusting binary
+                onProgress?.Invoke("Verifying Cloudflare Authenticode digital signature...");
+                if (!VerifyCloudflaredSignature(tmpPath, out var sigReason))
+                {
+                    try { File.Delete(tmpPath); } catch { }
+                    _logger.LogWarn($"[TUNNEL] SECURITY BLOCK: {sigReason}");
+                    return (false, $"Security check failed: {sigReason}");
+                }
+
                 File.Move(tmpPath, CloudflaredExePath, overwrite: true);
-                _logger.LogInfo($"[TUNNEL] cloudflared saved to {CloudflaredExePath}");
+                _logger.LogInfo($"[TUNNEL] Verified cloudflared binary saved to {CloudflaredExePath} ({sigReason})");
+            }
+            else if (!VerifyCloudflaredSignature(CloudflaredExePath, out var existingSigErr))
+            {
+                _logger.LogWarn($"[TUNNEL] SECURITY BLOCK on existing cloudflared.exe: {existingSigErr}");
+                return (false, $"Existing cloudflared.exe failed signature check ({existingSigErr}). Delete it and retry.");
             }
 
             StopTunnel();
@@ -234,6 +249,42 @@ public class TunnelAndMeshService : IDisposable
             StopTunnel();
             _logger.LogWarn($"[TUNNEL] Failed to start Quick Tunnel: {ex.Message}");
             return (false, $"Quick Tunnel error: {ex.Message}");
+        }
+    }
+
+    public static bool VerifyCloudflaredSignature(string exePath, out string detail)
+    {
+        detail = "";
+        try
+        {
+            if (!File.Exists(exePath)) { detail = "Binary missing."; return false; }
+#pragma warning disable SYSLIB0057 // Authenticode PE signature extraction API on Windows
+            using var baseCert = System.Security.Cryptography.X509Certificates.X509Certificate.CreateFromSignedFile(exePath);
+            using var cert = System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadCertificate(baseCert.GetRawCertData());
+#pragma warning restore SYSLIB0057
+            var subject = cert.Subject ?? "";
+            if (!subject.Contains("Cloudflare", StringComparison.OrdinalIgnoreCase))
+            {
+                detail = $"Unexpected signer '{subject}' (expected Cloudflare, Inc.).";
+                return false;
+            }
+            using var chain = new System.Security.Cryptography.X509Certificates.X509Chain();
+            chain.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.Online;
+            chain.ChainPolicy.VerificationFlags = System.Security.Cryptography.X509Certificates.X509VerificationFlags.IgnoreCertificateAuthorityRevocationUnknown
+                                                | System.Security.Cryptography.X509Certificates.X509VerificationFlags.IgnoreEndRevocationUnknown;
+            bool chainOk = chain.Build(cert);
+            if (!chainOk)
+            {
+                detail = "Authenticode certificate chain validation failed.";
+                return false;
+            }
+            detail = $"Authenticode verified ({subject})";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            detail = $"Authenticode signature check failed: {ex.Message}";
+            return false;
         }
     }
 

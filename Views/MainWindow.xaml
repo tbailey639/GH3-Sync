@@ -1,7 +1,7 @@
 <Window x:Class="GH3_Sync.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="GH3-Sync v1.0.0"
+        Title="GH3-Sync v1.1.0"
         Icon="pack://application:,,,/Assets/app_icon.ico"
         Width="1360" Height="880"
         MinWidth="1060" MinHeight="700"
@@ -68,10 +68,10 @@
                             <TextBlock Text="GH3" FontSize="21" FontWeight="Black" Foreground="{DynamicResource TextPrimary}"/>
                             <TextBlock Text="-SYNC" FontSize="21" FontWeight="Black" Foreground="{DynamicResource FlameGradient}"/>
                             <Border Background="{DynamicResource VersionBadgeBg}" BorderBrush="{DynamicResource VersionBadgeBorder}" BorderThickness="1" CornerRadius="5" Padding="7,1" Margin="10,0,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="v1.0.0" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
+                                <TextBlock Text="v1.1.0" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
                             </Border>
                         </StackPanel>
-                        <TextBlock Text="Guitar Hero III Companion  •  Legends of Rock Edition  •  by Mad Scientist" FontSize="11.5" Foreground="{DynamicResource TextMuted}"/>
+                        <TextBlock Text="Guitar Hero III Companion  •  Encore &amp; Zero-Trust Edition  •  by Mad Scientist" FontSize="11.5" Foreground="{DynamicResource TextMuted}"/>
                     </StackPanel>
                 </StackPanel>
 
@@ -110,6 +110,8 @@
                         </StackPanel>
                     </Border>
 
+                    <Button x:Name="StreamerPrivacyBtn" Content="👁 Privacy" Style="{StaticResource OutlineButton}" Padding="10,7" Margin="0,0,6,0" Click="StreamerPrivacyBtn_Click" ToolTip="Streamer Privacy Mode — instantly hides IPs, PINs, Friend Codes &amp; Tunnel URLs on screen"/>
+                    <Button x:Name="QuickPaletteBtn" Content="⚡ Ctrl+K" Style="{StaticResource OutlineButton}" Padding="10,7" Margin="0,0,6,0" Click="QuickPaletteBtn_Click" ToolTip="Open Spotlight Quick-Command Palette (Ctrl+K)"/>
                     <Button Content="▶ Launch GH3" Style="{StaticResource GreenButton}" Padding="13,7" Margin="0,0,8,0" Click="LaunchGh3Btn_Click"/>
                     <Button x:Name="HeaderUpdateBtn" Content="Check Updates" Style="{StaticResource OutlineButton}" Click="CheckUpdatesBtn_Click"/>
                 </StackPanel>
@@ -274,6 +276,12 @@
                                 <Button x:Name="VolumeSoundcheckBtn" Content="🔊 Soundcheck" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="VolumeSoundcheckBtn_Click" ToolTip="Scan &amp; batch-normalize existing custom songs to -14 LUFS"/>
                                 <Button x:Name="AutoHealLibraryBtn" Content="🩺 Auto-Heal" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="AutoHealLibraryBtn_Click" ToolTip="Scan customs.pak.xen, soundbanks &amp; plugins and auto-heal issues"/>
                                 <Button x:Name="BulkEditBtn" Content="✏️ Bulk Edit" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="BulkEditBtn_Click" ToolTip="Batch-edit Genre, Year, Charter, Volume &amp; Venue across checked songs"/>
+                                <Button x:Name="MedleyBuilderBtn" Content="🎸 Medley" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="MedleyBuilderBtn_Click" ToolTip="Stitch 2–4 checked songs into a single playable Live Concert Medley!"/>
+                                <Button x:Name="CompareChartsBtn" Content="⚖️ Scorecard" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="CompareChartsBtn_Click" ToolTip="Compare Chart Quality Scorecards (Grade S-C, Peak NPS, HOPO%, Chords, GH3 Venue Tier)"/>
+                                <Button x:Name="CalibrateLagBtn" Content="🎯 Calibrate" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="CalibrateLagBtn_Click" ToolTip="Launch GH3 Audio/Video Lag Calibration Mini-Game"/>
+                                <Button x:Name="TrophiesWallBtn" Content="🏆 Trophies" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="TrophiesWallBtn_Click" ToolTip="View Legends of Rock Lifetime Stats &amp; Trophies Wall"/>
+                                <Button x:Name="SongRequestsBtn" Content="🎤 Requests" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="SongRequestsBtn_Click" ToolTip="Open Streamer !sr Song Request Queue"/>
+                                <Button x:Name="CopyDiscordSetlistBtn" Content="📋 Discord" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="CopyDiscordSetlistBtn_Click" ToolTip="Copy Discord-formatted setlist with tiers, high scores &amp; stars"/>
                                 <Button x:Name="CopyObsOverlayBtn" Content="📺 OBS Overlay" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="CopyObsOverlayBtn_Click" ToolTip="Copy local OBS Studio Browser Source URL (http://127.0.0.1:7373/obs-overlay)"/>
                                 <Button x:Name="ExportLobbyPackBtn" Content="Export Lobby" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="ExportLobbyPack_Click"/>
                                 <Button x:Name="ExportSelectedBtn" Content="Selected (0)" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="ExportSelectedPack_Click"/>
@@ -298,7 +306,13 @@
                                 </StackPanel>
 
                                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <ComboBox x:Name="TagFilterCombo" Width="110" Margin="0,0,6,0" SelectionChanged="TagFilterCombo_SelectionChanged" SelectedIndex="0" ToolTip="Filter by custom song tag">
+                                    <Button x:Name="CompactViewBtn" Content="☰ Compact" Style="{StaticResource OutlineButton}" Padding="8,5" Margin="0,0,6,0" Click="CompactViewBtn_Click" ToolTip="Toggle Compact Setlist vs Full Visual Cards"/>
+                                    <ComboBox x:Name="GroupByCombo" Width="118" Margin="0,0,6,0" SelectionChanged="GroupByCombo_SelectionChanged" SelectedIndex="0" ToolTip="Group library by Artist or 8-Tier GH3 Venue Tour">
+                                        <ComboBoxItem Content="Group: None"/>
+                                        <ComboBoxItem Content="Group: Artist"/>
+                                        <ComboBoxItem Content="Group: GH3 Tour"/>
+                                    </ComboBox>
+                                    <ComboBox x:Name="TagFilterCombo" Width="105" Margin="0,0,6,0" SelectionChanged="TagFilterCombo_SelectionChanged" SelectedIndex="0" ToolTip="Filter by custom song tag">
                                         <ComboBoxItem Content="All Tags"/>
                                         <ComboBoxItem Content="Warmup"/>
                                         <ComboBoxItem Content="Shred"/>
@@ -816,6 +830,7 @@
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Button x:Name="SetlistDraftBtn" Content="⚔️ Setlist Draft" Style="{StaticResource BlueButton}" Margin="0,0,8,0" Click="SetlistDraftBtn_Click" ToolTip="Launch Head-to-Head Best-of-3 Multiplayer Setlist Draft &amp; Match Tracker"/>
                                         <Button x:Name="CopyLobbyInviteBtn" Content="Copy Lobby Invite Code" Style="{StaticResource FlameButton}" Margin="0,0,8,0" Click="CopyLobbyInviteBtn_Click" ToolTip="Copy a single gh3sync:// invite string containing your address &amp; token for friends to paste"/>
                                         <Button Content="Refresh NAT / UPnP" Style="{StaticResource OutlineButton}" Click="RefreshNatBtn_Click"/>
                                     </StackPanel>
@@ -1056,7 +1071,8 @@
                                     <TextBlock Text="Legends of Rock UI Animations &amp; Stage Effects" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}" Margin="0,0,0,4"/>
                                     <TextBlock Text="Toggle animated concert stage spotlights, flowing 5-fret energy shimmer, smooth page slide-ins, pulsing status dots, and the real-time 5-fret audio spectrum visualizer."
                                                FontSize="12.5" Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" Margin="0,0,0,10"/>
-                                    <CheckBox x:Name="SettingsAnimationsChk" Content="Enable UI Animations &amp; Animated Stage Effects (uncheck for static low-motion UI)" IsChecked="True" Checked="SettingsAnimationsChk_Changed" Unchecked="SettingsAnimationsChk_Changed"/>
+                                    <CheckBox x:Name="SettingsAnimationsChk" Content="Enable UI Animations &amp; Animated Stage Effects (uncheck for static low-motion UI)" IsChecked="True" Margin="0,0,0,6" Checked="SettingsAnimationsChk_Changed" Unchecked="SettingsAnimationsChk_Changed"/>
+                                    <CheckBox x:Name="SettingsSfxChk" Content="Enable Synthesized GH3 Sound Effects (Power-Chord on compile, Star Power chime, FC fanfare)" IsChecked="True" Checked="SettingsSfxChk_Changed" Unchecked="SettingsSfxChk_Changed"/>
                                 </StackPanel>
                             </Border>
 
@@ -1346,28 +1362,29 @@
                         <StackPanel x:Name="SettingsSubSecurity" Visibility="Collapsed">
                             <Border Style="{StaticResource GhCard}" BorderBrush="{DynamicResource CardSuccessBorder}">
                                 <StackPanel>
-                                    <TextBlock Text="Hardened P2P &amp; Local Security Status (v1.0.0)" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}" Margin="0,0,0,6"/>
-                                    <TextBlock Text="Every external P2P connection is protected by strict route isolation, single-use Challenge-Response HMAC-SHA256 authentication, per-transfer salted AES-256-GCM encryption, and streaming zip-bomb/executable defense."
-                                               FontSize="12.5" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                    <TextBlock Text="Zero-Trust P2P &amp; Local Security Status (v1.1.0)" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}" Margin="0,0,0,6"/>
+                                    <TextBlock x:Name="HostFingerprintText" Text="Host ECDSA Identity Fingerprint: Loading..." FontSize="11.5" FontFamily="Consolas" Foreground="{DynamicResource CardInfoTitle}" Margin="0,0,0,8"/>
                                     <WrapPanel>
                                         <Border Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1" CornerRadius="6" Padding="10,5" Margin="0,0,8,8">
-                                            <TextBlock Text="✓ External API Lockdown Active" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
+                                            <TextBlock Text="✓ External API &amp; CSRF/DNS-Rebinding Lockdown" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
                                         </Border>
                                         <Border Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1" CornerRadius="6" Padding="10,5" Margin="0,0,8,8">
-                                            <TextBlock Text="✓ Challenge-Response HMAC Auth" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
+                                            <TextBlock Text="✓ Challenge-HMAC + ECDSA Mutual Signing" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
                                         </Border>
                                         <Border Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1" CornerRadius="6" Padding="10,5" Margin="0,0,8,8">
-                                            <TextBlock Text="✓ Per-Transfer Salted AES-256-GCM" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
+                                            <TextBlock Text="✓ DPAPI Token Vault + Salted AES-256-GCM" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
                                         </Border>
                                         <Border Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1" CornerRadius="6" Padding="10,5" Margin="0,0,8,8">
-                                            <TextBlock Text="✓ Streaming Zip-Bomb &amp; SHA-256 Guard" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
+                                            <TextBlock Text="✓ Authenticode + SHA-256 + Binary Magic Guard" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
                                         </Border>
                                     </WrapPanel>
-                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                        <Button x:Name="RotateCredentialsBtn" Content="🔄 Rotate All Tokens &amp; Session PIN Now" Style="{StaticResource DangerButton}" Padding="14,7" Click="RotateCredentialsBtn_Click"/>
-                                        <Button Content="Refresh Security Audit" Style="{StaticResource OutlineButton}" Margin="8,0,0,0" Padding="11,7" Click="RefreshSecurityAuditBtn_Click"/>
+                                    <CheckBox x:Name="SettingsRequireDownloadApprovalChk" Content="Require 1-Click Host Approval popup before external friends can download a song" Margin="0,4,0,10" Checked="SettingsRequireDownloadApprovalChk_Changed" Unchecked="SettingsRequireDownloadApprovalChk_Changed"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <Button x:Name="RunSecuritySelfTestBtn" Content="🛡️ Run Live Security Self-Test" Style="{StaticResource GreenButton}" Padding="14,7" Margin="0,0,8,0" Click="RunSecuritySelfTestBtn_Click"/>
+                                        <Button x:Name="RotateCredentialsBtn" Content="🔄 Rotate All Tokens &amp; PIN" Style="{StaticResource DangerButton}" Padding="14,7" Click="RotateCredentialsBtn_Click"/>
+                                        <Button Content="Refresh Audit" Style="{StaticResource OutlineButton}" Margin="8,0,0,0" Padding="11,7" Click="RefreshSecurityAuditBtn_Click"/>
                                     </StackPanel>
-                                    <TextBlock x:Name="SecurityActionStatusText" Text="" FontSize="12" Foreground="{DynamicResource CardWarnTitle}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="SecurityActionStatusText" Text="" FontSize="12" FontFamily="Consolas" Foreground="{DynamicResource CardWarnTitle}" Margin="0,8,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
 
@@ -1458,10 +1475,21 @@
                 <!-- Real-Time 5-Fret Neon Audio Spectrum Visualizer -->
                 <Canvas x:Name="PlayerVisualizerCanvas" Grid.Column="2" Width="110" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
 
-                <Slider x:Name="PlayerSeekSlider" Grid.Column="3" VerticalAlignment="Center" Minimum="0" Maximum="100" Value="0"
-                        PreviewMouseLeftButtonUp="PlayerSeekSlider_MouseUp"/>
+                <!-- Real-Time Audio Waveform Scrubber + Seek Slider -->
+                <Grid Grid.Column="3" VerticalAlignment="Center" Margin="0,0,8,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="24"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Canvas x:Name="PlayerWaveformCanvas" Grid.Row="0" Height="22" Background="Transparent" Cursor="Hand"
+                            MouseLeftButtonDown="PlayerWaveformCanvas_MouseDown" ToolTip="Real Audio Waveform — click anywhere to jump to solos or chorus!"/>
+                    <Slider x:Name="PlayerSeekSlider" Grid.Row="1" VerticalAlignment="Center" Minimum="0" Maximum="100" Value="0"
+                            PreviewMouseLeftButtonUp="PlayerSeekSlider_MouseUp"/>
+                </Grid>
 
-                <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0">
+                    <Button x:Name="PlayerMuteBtn" Content="🔊" Style="{StaticResource OutlineButton}" Padding="7,4" Margin="0,0,4,0" Click="PlayerMuteBtn_Click" ToolTip="Mute / Unmute Preview"/>
+                    <Slider x:Name="PlayerVolumeSlider" Width="64" Minimum="0" Maximum="1" Value="0.85" VerticalAlignment="Center" Margin="0,0,8,0" ValueChanged="PlayerVolumeSlider_ValueChanged" ToolTip="Preview Audio Volume"/>
                     <Button x:Name="PlayerStemToggleBtn" Content="Solo Guitar Stem" Style="{StaticResource OutlineButton}" Padding="9,4" Margin="0,0,6,0" Visibility="Collapsed" Click="PlayerStemToggleBtn_Click"/>
                     <Button x:Name="PlayerSetTrimInBtn" Content="Trim In" Style="{StaticResource OutlineButton}" Padding="8,4" Margin="0,0,5,0" Click="PlayerSetTrimInBtn_Click" ToolTip="Set Creator audio Trim Start to current playback position"/>
                     <Button x:Name="PlayerSetTrimOutBtn" Content="Trim Out" Style="{StaticResource OutlineButton}" Padding="8,4" Margin="0,0,5,0" Click="PlayerSetTrimOutBtn_Click" ToolTip="Set Creator audio Trim End to current playback position"/>
@@ -1470,6 +1498,28 @@
                 </StackPanel>
             </Grid>
         </Border>
+
+        <!-- ==================== CTRL+K SPOTLIGHT QUICK-COMMAND PALETTE ==================== -->
+        <Grid x:Name="CommandPaletteOverlay" Grid.Row="0" Grid.RowSpan="5" Panel.ZIndex="980"
+              Visibility="Collapsed" Background="#AA05070E" MouseLeftButtonDown="CommandPaletteBackdrop_Click">
+            <Border Width="560" VerticalAlignment="Top" HorizontalAlignment="Center" Margin="0,95,0,0"
+                    Background="#111420" BorderBrush="#F97316" BorderThickness="1.6" CornerRadius="14" Padding="16">
+                <Border.Effect>
+                    <DropShadowEffect Color="#F97316" BlurRadius="28" ShadowDepth="0" Opacity="0.35"/>
+                </Border.Effect>
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,8">
+                        <TextBlock DockPanel.Dock="Right" Text="ESC to close" FontSize="11" Foreground="#64748B" VerticalAlignment="Center"/>
+                        <TextBlock Text="⚡ Spotlight Quick-Command Palette" FontSize="13.5" FontWeight="Bold" Foreground="#FDBA74"/>
+                    </DockPanel>
+                    <TextBox x:Name="CommandPaletteSearchBox" FontSize="14" Padding="10,8" Margin="0,0,0,10"
+                             TextChanged="CommandPaletteSearchBox_TextChanged" KeyDown="CommandPaletteSearchBox_KeyDown"/>
+                    <ScrollViewer MaxHeight="310" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="CommandPaletteResultsPanel"/>
+                    </ScrollViewer>
+                </StackPanel>
+            </Border>
+        </Grid>
 
         <!-- ==================== ANIMATED GH3 STAGE TOAST BANNER ==================== -->
         <Border x:Name="StageToastBanner" Grid.Row="0" Grid.RowSpan="5" Panel.ZIndex="950"

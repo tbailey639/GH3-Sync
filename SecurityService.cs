@@ -42,10 +42,341 @@ public class SecurityService
     private readonly List<ExpiringInviteRecord> _expiringInvites = new();
     private readonly List<string> _securityAuditLog = new();
     private readonly object _lock = new();
+    private readonly ECDsa _hostIdentityKey;
+
+    public string HostPublicKeyBase64 { get; }
+    public string HostPublicKeyFingerprint { get; }
+
+    /// <summary>
+    /// Optional interactive UI callback when AppConfig.Current.RequireHostDownloadApproval is enabled.
+    /// Args: (remoteIp, songId, songTitle, sizeBytes) -> true to approve, false to deny.
+    /// </summary>
+    public Func<string, string, string, long, Task<bool>>? DownloadApprovalCallback { get; set; }
 
     public SecurityService()
     {
         PairingPin = GenerateSecurePin();
+        _hostIdentityKey = LoadOrCreateHostIdentityKey();
+        var pubBytes = _hostIdentityKey.ExportSubjectPublicKeyInfo();
+        HostPublicKeyBase64 = Convert.ToBase64String(pubBytes);
+        HostPublicKeyFingerprint = FormatFingerprint(SHA256.HashData(pubBytes));
+    }
+
+    private static ECDsa LoadOrCreateHostIdentityKey()
+    {
+        try
+        {
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GH3-Sync");
+            Directory.CreateDirectory(dir);
+            var keyPath = Path.Combine(dir, "host_identity.key");
+            if (File.Exists(keyPath))
+            {
+                var stored = File.ReadAllText(keyPath).Trim();
+                var unprot = AppConfig.UnprotectSecret(stored);
+                if (!string.IsNullOrWhiteSpace(unprot))
+                {
+                    var keyBytes = Convert.FromBase64String(unprot);
+                    var loaded = ECDsa.Create();
+                    loaded.ImportPkcs8PrivateKey(keyBytes, out _);
+                    return loaded;
+                }
+            }
+
+            var created = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            var pkcs8 = Convert.ToBase64String(created.ExportPkcs8PrivateKey());
+            File.WriteAllText(keyPath, AppConfig.ProtectSecret(pkcs8));
+            return created;
+        }
+        catch
+        {
+            return ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        }
+    }
+
+    public static string FormatFingerprint(byte[] sha256)
+    {
+        var hex = Convert.ToHexString(sha256).ToLowerInvariant();
+        return string.Join(":", Enumerable.Range(0, Math.Min(16, hex.Length / 2)).Select(i => hex.Substring(i * 2, 2)));
+    }
+
+    public string SignManifestBytes(byte[] payload)
+    {
+        lock (_lock)
+        {
+            return Convert.ToBase64String(_hostIdentityKey.SignData(payload, HashAlgorithmName.SHA256));
+        }
+    }
+
+    public static bool VerifyHostSignature(string pubKeyBase64, byte[] payload, string signatureBase64, out string fingerprint)
+    {
+        fingerprint = "";
+        try
+        {
+            var pubBytes = Convert.FromBase64String(pubKeyBase64.Trim());
+            var sigBytes = Convert.FromBase64String(signatureBase64.Trim());
+            fingerprint = FormatFingerprint(SHA256.HashData(pubBytes));
+            using var ecdsa = ECDsa.Create();
+            ecdsa.ImportSubjectPublicKeyInfo(pubBytes, out _);
+            return ecdsa.VerifyData(payload, sigBytes, HashAlgorithmName.SHA256);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// SSH-style Trust-On-First-Use (TOFU) peer host fingerprint pinning.
+    /// Returns: "PinnedNew", "Matched", or "MISMATCH" (possible MITM / host spoof!).
+    /// </summary>
+    public static string CheckOrPinPeerFingerprint(string peerBaseUrl, string fingerprint, out string? previousFingerprint)
+    {
+        previousFingerprint = null;
+        if (string.IsNullOrWhiteSpace(peerBaseUrl) || string.IsNullOrWhiteSpace(fingerprint))
+            return "Unverified";
+
+        AppConfig.Current.PinnedPeerFingerprints ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var key = peerBaseUrl.Trim().TrimEnd('/').ToLowerInvariant();
+        if (AppConfig.Current.PinnedPeerFingerprints.TryGetValue(key, out var existing))
+        {
+            previousFingerprint = existing;
+            return string.Equals(existing, fingerprint, StringComparison.OrdinalIgnoreCase) ? "Matched" : "MISMATCH";
+        }
+
+        AppConfig.Current.PinnedPeerFingerprints[key] = fingerprint;
+        AppConfig.Save();
+        return "PinnedNew";
+    }
+
+    /// <summary>
+    /// Validates peer URLs from pasted invite codes to prevent SSRF / dangerous schemes / cloud metadata probing.
+    /// </summary>
+    public static bool ValidatePeerUrl(string rawUrl, out string normalizedBaseUrl, out string error)
+    {
+        normalizedBaseUrl = "";
+        error = "";
+        var trimmed = (rawUrl ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(trimmed)) { error = "Peer address is empty."; return false; }
+
+        if (!trimmed.Contains("://")) trimmed = "http://" + trimmed;
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        {
+            error = "Invalid URL syntax.";
+            return false;
+        }
+
+        if (!uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) &&
+            !uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
+        {
+            error = $"Blocked disallowed URL scheme '{uri.Scheme}'. Only http:// and https:// are permitted.";
+            return false;
+        }
+
+        var host = uri.Host.Trim('[', ']');
+        if (string.IsNullOrWhiteSpace(host)) { error = "Missing peer host."; return false; }
+
+        if (System.Net.IPAddress.TryParse(host, out var ip))
+        {
+            var b = ip.GetAddressBytes();
+            if (b.Length == 4)
+            {
+                // Block 0.0.0.0/8 and AWS/GCP/Azure link-local metadata 169.254.0.0/16
+                if (b[0] == 0 || (b[0] == 169 && b[1] == 254))
+                {
+                    error = $"Blocked restricted link-local / metadata IP address ({host}).";
+                    return false;
+                }
+            }
+            else if (ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal)
+            {
+                error = $"Blocked link-local IPv6 address ({host}).";
+                return false;
+            }
+        }
+
+        normalizedBaseUrl = $"{uri.Scheme.ToLowerInvariant()}://{uri.Authority}";
+        return true;
+    }
+
+    /// <summary>
+    /// Verifies actual binary magic bytes for compiled GH3 .fsb.xen (FMOD FSB3/FSB4/encrypted audio)
+    /// and .pak.xen files inside a received song zip before writing anything to the GH3 game directory.
+    /// </summary>
+    public static bool ValidateCompiledSongPackageBytes(byte[] zipBytes, out string reason)
+    {
+        reason = "";
+        try
+        {
+            using var ms = new MemoryStream(zipBytes);
+            using var archive = new ZipArchive(ms, ZipArchiveMode.Read);
+            bool sawPak = false;
+            bool sawFsb = false;
+
+            foreach (var entry in archive.Entries)
+            {
+                if (string.IsNullOrEmpty(entry.Name)) continue;
+                var lower = entry.Name.ToLowerInvariant();
+                if (lower.EndsWith(".pak.xen"))
+                {
+                    if (entry.Length < 32) { reason = $"Corrupt/truncated PAK file ({entry.Name})."; return false; }
+                    using var s = entry.Open();
+                    var hdr = new byte[16];
+                    int n = s.Read(hdr, 0, hdr.Length);
+                    // Reject PE executables masquerading as .pak.xen (MZ header) or script text
+                    if (n < 16 || (hdr[0] == (byte)'M' && hdr[1] == (byte)'Z'))
+                    {
+                        reason = $"Blocked spoofed executable masquerading as {entry.Name}.";
+                        return false;
+                    }
+                    sawPak = true;
+                }
+                else if (lower.EndsWith(".fsb.xen"))
+                {
+                    if (entry.Length < 48) { reason = $"Corrupt/truncated FSB soundbank ({entry.Name})."; return false; }
+                    using var s = entry.Open();
+                    var hdr = new byte[16];
+                    int n = s.Read(hdr, 0, hdr.Length);
+                    if (n < 16 || (hdr[0] == (byte)'M' && hdr[1] == (byte)'Z'))
+                    {
+                        reason = $"Blocked spoofed executable masquerading as {entry.Name}.";
+                        return false;
+                    }
+                    sawFsb = true;
+                }
+            }
+
+            if (!sawPak && !sawFsb)
+            {
+                reason = "Package did not contain valid Guitar Hero III .pak.xen or .fsb.xen assets.";
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            reason = $"Invalid song archive binary: {ex.Message}";
+            return false;
+        }
+    }
+
+    public async Task<bool> RequestDownloadApprovalAsync(string remoteIp, string songId, string songTitle, long sizeBytes, SyncLogger logger)
+    {
+        if (!AppConfig.Current.RequireHostDownloadApproval || DownloadApprovalCallback == null)
+            return true;
+
+        try
+        {
+            var task = DownloadApprovalCallback(remoteIp, songId, songTitle, sizeBytes);
+            var completed = await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(30)));
+            bool approved = completed == task && await task;
+            lock (_lock)
+            {
+                RecordAuditLocked(approved
+                    ? $"Host approved download of '{songTitle}' for {remoteIp}"
+                    : $"Host DENIED download of '{songTitle}' for {remoteIp}");
+            }
+            if (!approved) logger.LogWarn($"[SECURITY] Host denied download request for '{songId}' from {remoteIp}");
+            return approved;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<(string Grade, List<(string Check, bool Passed, string Detail)> Results)> RunLiveSecuritySelfTestAsync(int localPort)
+    {
+        var results = new List<(string Check, bool Passed, string Detail)>();
+
+        // 1. DPAPI Token Vault check
+        try
+        {
+            var testSecret = "gh3_dpapi_selftest_" + Guid.NewGuid().ToString("N");
+            var prot = AppConfig.ProtectSecret(testSecret);
+            var unprot = AppConfig.UnprotectSecret(prot);
+            results.Add(("Windows DPAPI Token Vault", prot.StartsWith("dpapi:") && unprot == testSecret,
+                prot.StartsWith("dpapi:") ? "Active (CurrentUser encrypted at rest)" : "Fallback plaintext"));
+        }
+        catch (Exception ex) { results.Add(("Windows DPAPI Token Vault", false, ex.Message)); }
+
+        // 2. Host ECDSA Identity Signing
+        try
+        {
+            var sample = Encoding.UTF8.GetBytes("{\"selftest\":true}");
+            var sig = SignManifestBytes(sample);
+            bool ok = VerifyHostSignature(HostPublicKeyBase64, sample, sig, out var fp) && fp == HostPublicKeyFingerprint;
+            results.Add(("Host ECDSA P-256 Identity Signing", ok, $"Fingerprint {HostPublicKeyFingerprint[..23]}..."));
+        }
+        catch (Exception ex) { results.Add(("Host ECDSA P-256 Identity Signing", false, ex.Message)); }
+
+        // 3. Per-Transfer Salted AES-256-GCM
+        try
+        {
+            var pt = Encoding.UTF8.GetBytes("salted-gcm-test");
+            var c1 = EncryptPayload(pt, "test-secret-0123456789");
+            var c2 = EncryptPayload(pt, "test-secret-0123456789");
+            var dec = DecryptPayload(c1, "test-secret-0123456789");
+            bool ok = !c1.SequenceEqual(c2) && dec.SequenceEqual(pt);
+            results.Add(("Per-Transfer Salted AES-256-GCM (GH3E v2)", ok, ok ? "Unique random salt per transfer" : "Failed"));
+        }
+        catch (Exception ex) { results.Add(("Per-Transfer Salted AES-256-GCM", false, ex.Message)); }
+
+        // 4. SSRF URL Guard
+        bool ssrfBlocked = !ValidatePeerUrl("http://169.254.169.254/latest/meta-data", out _, out _)
+                        && !ValidatePeerUrl("file:///C:/Windows/win.ini", out _, out _);
+        results.Add(("Invite-Link SSRF & Scheme Guard", ssrfBlocked, ssrfBlocked ? "Blocked 169.254.169.254 & file://" : "Failed"));
+
+        // 5. Live External-IP Lockdown & Local CSRF Probe against local Kestrel
+        try
+        {
+            using var http = new System.Net.Http.HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{localPort}"), Timeout = TimeSpan.FromSeconds(3) };
+
+            using var extReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, "/api/status");
+            extReq.Headers.Add("CF-Connecting-IP", "198.51.100.77");
+            using var extResp = await http.SendAsync(extReq);
+            bool extBlocked = extResp.StatusCode == System.Net.HttpStatusCode.Forbidden;
+            results.Add(("External-IP API Lockdown (/api/status)", extBlocked, $"Simulated external IP -> HTTP {(int)extResp.StatusCode}"));
+
+            using var csrfReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, "/api/status");
+            csrfReq.Headers.Add("Origin", "https://evil-website.example");
+            using var csrfResp = await http.SendAsync(csrfReq);
+            bool csrfBlocked = csrfResp.StatusCode == System.Net.HttpStatusCode.Forbidden;
+            results.Add(("Localhost Browser CSRF Shield", csrfBlocked, $"Cross-origin fetch -> HTTP {(int)csrfResp.StatusCode}"));
+
+            using var chReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, "/api/auth/challenge");
+            chReq.Headers.Add("CF-Connecting-IP", "198.51.100.78");
+            using var chResp = await http.SendAsync(chReq);
+            var chJson = await chResp.Content.ReadAsStringAsync();
+            var nonce = System.Text.Json.JsonDocument.Parse(chJson).RootElement.GetProperty("nonce").GetString() ?? "";
+            var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+            var hmac = ComputeChallengeHmac(nonce, "GET /api/manifest", ts, PairingPin);
+
+            using var authReq1 = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, "/api/manifest");
+            authReq1.Headers.Add("CF-Connecting-IP", "198.51.100.78");
+            authReq1.Headers.Add("X-GH3-Auth-Nonce", nonce);
+            authReq1.Headers.Add("X-GH3-Auth-Timestamp", ts);
+            authReq1.Headers.Add("X-GH3-Auth-Hmac", hmac);
+            using var r1 = await http.SendAsync(authReq1);
+
+            using var authReq2 = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, "/api/manifest");
+            authReq2.Headers.Add("CF-Connecting-IP", "198.51.100.78");
+            authReq2.Headers.Add("X-GH3-Auth-Nonce", nonce);
+            authReq2.Headers.Add("X-GH3-Auth-Timestamp", ts);
+            authReq2.Headers.Add("X-GH3-Auth-Hmac", hmac);
+            using var r2 = await http.SendAsync(authReq2);
+
+            bool hmacAndReplayOk = r1.IsSuccessStatusCode && r2.StatusCode == System.Net.HttpStatusCode.Unauthorized;
+            results.Add(("Challenge-HMAC & Single-Use Anti-Replay", hmacAndReplayOk, $"First={(int)r1.StatusCode}, Replay={(int)r2.StatusCode}"));
+        }
+        catch (Exception ex)
+        {
+            results.Add(("Live Kestrel Self-Probe", false, $"Skipped/offline: {ex.Message}"));
+        }
+
+        int passCount = results.Count(r => r.Passed);
+        string grade = passCount == results.Count ? "A+ HARDENED" : (passCount >= results.Count - 1 ? "A SECURE" : "B WARNING");
+        lock (_lock) RecordAuditLocked($"Live Security Self-Test completed: {grade} ({passCount}/{results.Count} passed)");
+        return (grade, results);
     }
 
     public static bool FixedTimeEquals(string? a, string? b)

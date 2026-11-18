@@ -52,6 +52,25 @@ public class SongScoreRecord
     public DateTime AchievedAt { get; set; } = DateTime.UtcNow;
 }
 
+public class TourStats
+{
+    public long TotalNotesHit { get; set; }
+    public int TotalFullCombos { get; set; }
+    public int TotalSolosExtracted { get; set; }
+    public int TotalMedleysBuilt { get; set; }
+    public int TotalMatchesPlayed { get; set; }
+    public List<string> UnlockedTrophies { get; set; } = new();
+}
+
+public class SongRequestItem
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string Requester { get; set; } = "Viewer";
+    public string Query { get; set; } = "";
+    public string MatchedSongId { get; set; } = "";
+    public DateTime RequestedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 public class FeedbackItem
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 8);
@@ -103,6 +122,23 @@ public class AppConfigData
     public List<SetlistPreset> SetlistPresets { get; set; } = new();
     public Dictionary<string, List<string>> SongTags { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, SongScoreRecord> LocalHighScores { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    // v1.1.0 Encore & Zero-Trust Settings
+    public bool StreamerPrivacyMode { get; set; } = false;
+    public bool CompactSetlistView { get; set; } = false;
+    public string GroupByMode { get; set; } = "None"; // None, Artist, Tier
+    public bool RequireHostDownloadApproval { get; set; } = false;
+    public double AudioPreviewVolume { get; set; } = 0.85;
+    public bool EnableSoundEffects { get; set; } = true;
+    public int CalibrationOffsetMs { get; set; } = 0;
+    public string HighwayGemPalette { get; set; } = "Classic"; // Classic, Colorblind, Synthwave, Metallic
+    public string CustomControllerMode { get; set; } = "Auto"; // Auto, Gamepad, Guitar
+    public string[] CustomKeyFrets { get; set; } = { "A", "S", "J", "K", "L" };
+    public string CustomKeyStrum { get; set; } = "Space";
+    public int[] CustomPadButtonIndices { get; set; } = { -1, -1, -1, -1, -1 }; // Optional custom HID/DualSense Edge paddle indices
+    public Dictionary<string, string> PinnedPeerFingerprints { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public TourStats LifetimeStats { get; set; } = new();
+    public List<SongRequestItem> SongRequests { get; set; } = new();
 }
 
 public static class AppConfig
@@ -201,6 +237,23 @@ public static class AppConfig
     }
 
     private static readonly byte[] DpapiEntropy = System.Text.Encoding.UTF8.GetBytes("GH3-SYNC-TRUST-DPAPI-v1");
+
+    public static string ProtectSecret(string? plain) => ProtectToken(plain);
+    public static string UnprotectSecret(string? protectedStr) => UnprotectToken(protectedStr);
+
+    public static void UnlockTrophy(string trophyKey)
+    {
+        lock (_lock)
+        {
+            Current.LifetimeStats ??= new TourStats();
+            Current.LifetimeStats.UnlockedTrophies ??= new List<string>();
+            if (!Current.LifetimeStats.UnlockedTrophies.Contains(trophyKey, StringComparer.OrdinalIgnoreCase))
+            {
+                Current.LifetimeStats.UnlockedTrophies.Add(trophyKey);
+                Save();
+            }
+        }
+    }
 
     private static string ProtectToken(string? token)
     {

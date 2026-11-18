@@ -4,6 +4,30 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.1.0] - 2026-11-18 — Encore & Zero-Trust Edition
+
+### Universal Plug-and-Play Controller Support (DualSense Edge • PlayStation • Xbox • Guitar)
+* **Zero-Driver Multi-Controller Engine (`UnifiedControllerService`):** Instant plug-and-play support for **Sony DualSense Edge (PS5)**, **DualSense**, **DualShock 4**, **Xbox 360 / One / Series**, and **USB / XInput Guitar Controllers** — combining XInput + native Windows HID (`winmm`) with zero external drivers required.
+* **Official Guitar Hero III Mappings Out of the Box:** Automatic Gamepad Mode (`L2 / L1 / R1 / R2 / ✕` on PlayStation, `LT / LB / RB / RT / A` on Xbox) with **Official GH3 Auto-Strum on Fret Press**, plus Official GH3 Guitar Mode (`A / B / Y / X / LB` + Strum Bar) and **1-click custom back-paddle / keyboard keybinding**!
+* **Upgraded Live Controller Diagnostic Tester:** Displays detected controller name (`DualSense Edge (PS5)`, etc.), live 5-fret lights, L2/R2 analog trigger bars, Whammy axis, Star Power, and click-to-bind custom paddle remapping.
+
+### Authentic GH3 Gameplay, Studio Pro Tools & Real Audio Reactivity
+* **Upgraded Playable Highway Previewer:** Working **Star Power Meter & `8x` Activation** (`Create / Share / Back / Right Shift`), live **Mini Rock Meter**, **4 Note-Gem Palettes** (`Classic GH3`, `Colorblind High-Contrast`, `Synthwave Neon`, `Metallic Chrome`), **Post-Song `"★ YOU ROCK!"` Results Overlay**, and 1-click **Custom Keyboard Fret Remapper**.
+* **1-Click Playable Solo Extractor (`✂️ Build Solo Cut`):** Slice any song section or `A→B` loop into its own standalone playable `[SOLO]` custom song (with 2-second count-in + fade-out) compiled straight into BetterGH3!
+* **1-Click Concert Medley Builder (`🎸 Medley`):** Crossfade 2–4 checked custom songs and stitch their `.chart` tempo maps & note tracks seamlessly into one continuous Live Concert Medley.
+* **Real Audio Waveform Scrubber & Beat-Reactive Stage:** Extracts real FFmpeg PCM amplitude envelopes so the bottom Audio Player draws a **clickable Waveform Scrubber** (+ inline Volume Slider & Mute) while the **GH3 Rock Meter** and **5-Fret Spectrum Visualizer** react to real music beats!
+* **Smart Difficulty Scaler & Reverse Export to Clone Hero / YARG (`.zip`):** Generate progressive Easy/Medium/Hard tracks on any song or export your ONOGAMI customs as clean Clone Hero / YARG `.zip` packages.
+* **GH3 Audio/Video Lag Calibration Mini-Game (`🎯 Calibrate`), Chart Quality Scorecard & 8-Tier Venue Tour Ranking (`⚖️ Scorecard`), `Ctrl+K` Spotlight Quick-Command Palette, Compact Setlist View + Artist/GH3-Tour Grouping, Streamer `!sr` Song Request Queue, Discord Setlist Exporter, Multiplayer Best-of-3 Setlist Draft, Tour Stats & Trophies Wall (`🏆 Trophies`), Synthesized GH3 Sound Effects, & 100ms Pre-Flight Launch Check.**
+
+### Zero-Trust Security Upgrades
+* **1-Click `👁 Streamer Privacy Mode`:** Instantly masks Public IP, Mesh IP, Tunnel URL, Session PIN, Invite Codes & Friend Codes across every screen for safe Twitch/YouTube/Discord streaming.
+* **Localhost DNS-Rebinding & Browser CSRF Shield:** Enforces strict local `Host` header allowlist, blocks cross-origin browser `Origin` requests to local APIs, and removes legacy `?pin=` / `?token=` query-string fallbacks.
+* **Mutual Host Identity Verification (ECDSA P-256 Signing + SSH-Style TOFU Fingerprint Pinning):** Every `/api/manifest` is cryptographically signed by a persistent DPAPI-protected Host ECDSA keypair; unexpected host fingerprint changes trigger an immediate tamper warning.
+* **Authenticode Signature Verification on `cloudflared.exe`:** Verifies official `Cloudflare, Inc.` Windows Authenticode certificate chain before launching HTTPS Quick Tunnels.
+* **Invite-Link SSRF Guard + Pre-Connect Confirmation Card**, **Neversoft `.pak.xen` / FMOD `.fsb.xen` Binary Magic-Byte Validation**, **Optional 1-Click Host Approval Popup for Friend Downloads**, and **1-Click `🛡️ Run Live Security Self-Test` (`A+ HARDENED`)** inside `Settings → 🔒 Security & Privacy`.
+
+---
+
 ## [v1.0.0] - 2026-11-18 — Official Launch (Legends of Rock Edition)
 
 ### Iconic Guitar Hero III Animated Stage UI & Theme Studio

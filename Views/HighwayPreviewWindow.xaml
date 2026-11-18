@@ -30,6 +30,14 @@
                 <TextBlock x:Name="SongHeaderMeta" Text="Loading chart..." FontSize="12" Foreground="#94A3B8" Margin="0,2,0,0"/>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="Palette:" FontSize="11.5" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <ComboBox x:Name="PaletteCombo" Width="96" SelectedIndex="0" Margin="0,0,8,0" SelectionChanged="PaletteCombo_SelectionChanged"
+                          Background="#141722" Foreground="#F8FAFC" BorderBrush="#334155" ToolTip="Choose Note-Gem Color Palette (incl. Colorblind High-Contrast)">
+                    <ComboBoxItem Content="Classic GH3"/>
+                    <ComboBoxItem Content="Colorblind"/>
+                    <ComboBoxItem Content="Synthwave"/>
+                    <ComboBoxItem Content="Metallic"/>
+                </ComboBox>
                 <TextBlock Text="Track:" FontSize="12" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <ComboBox x:Name="TrackModeCombo" Width="136" SelectedIndex="0" Margin="0,0,8,0" SelectionChanged="TrackModeCombo_SelectionChanged"
                           Background="#141722" Foreground="#F8FAFC" BorderBrush="#334155" ToolTip="Switch between Lead Guitar, Co-Op Bass/Rhythm, or Side-by-Side Co-Op Split-Screen">
@@ -71,7 +79,9 @@
                     <!-- A->B Solo Looper -->
                     <Button x:Name="SetLoopABtn" Content="Loop A" Padding="8,4" Margin="0,0,4,0" Background="#1E2436" Foreground="#7DD3FC" BorderBrush="#334155" BorderThickness="1" Cursor="Hand" Click="SetLoopABtn_Click"/>
                     <Button x:Name="SetLoopBBtn" Content="Loop B" Padding="8,4" Margin="0,0,4,0" Background="#1E2436" Foreground="#7DD3FC" BorderBrush="#334155" BorderThickness="1" Cursor="Hand" Click="SetLoopBBtn_Click"/>
-                    <Button x:Name="ClearLoopBtn" Content="Clear Loop" Padding="8,4" Margin="0,0,8,0" Visibility="Collapsed" Background="#1E2436" Foreground="#FCA5A5" BorderBrush="#334155" BorderThickness="1" Cursor="Hand" Click="ClearLoopBtn_Click"/>
+                    <Button x:Name="ClearLoopBtn" Content="Clear Loop" Padding="8,4" Margin="0,0,6,0" Visibility="Collapsed" Background="#1E2436" Foreground="#FCA5A5" BorderBrush="#334155" BorderThickness="1" Cursor="Hand" Click="ClearLoopBtn_Click"/>
+                    <Button x:Name="BuildSoloCutBtn" Content="✂️ Build Solo Cut" Padding="8,4" Margin="0,0,6,0" Background="#312E81" Foreground="#C7D2FE" BorderBrush="#6366F1" BorderThickness="1" FontWeight="SemiBold" Cursor="Hand" Click="BuildSoloCutBtn_Click" ToolTip="Slice A→B loop into its own standalone playable GH3 custom song!"/>
+                    <Button x:Name="RemapKeysBtn" Content="⌨️ Keys" Padding="8,4" Margin="0,0,6,0" Background="#1E2436" Foreground="#CBD5E1" BorderBrush="#334155" BorderThickness="1" Cursor="Hand" Click="RemapKeysBtn_Click" ToolTip="Customize keyboard fret &amp; strum keys"/>
                     <TextBlock x:Name="LoopStatusText" Text="" FontSize="11.5" FontFamily="Consolas" Foreground="#38BDF8" VerticalAlignment="Center"/>
                 </StackPanel>
 
@@ -110,14 +120,39 @@
                         <TextBlock Text="⚡ STAR POWER PHRASE" FontSize="12" FontWeight="ExtraBold" Foreground="#7DD3FC"/>
                     </Border>
                     <Border x:Name="PlayScoreHud" Visibility="Collapsed" Background="#DD0F172A" BorderBrush="#F97316" BorderThickness="1.5" CornerRadius="10" Padding="14,10">
-                        <StackPanel>
+                        <StackPanel Width="210">
                             <TextBlock x:Name="PlayScoreText" Text="0" FontSize="22" FontWeight="Black" FontFamily="Consolas" Foreground="#F8FAFC" HorizontalAlignment="Right"/>
                             <TextBlock x:Name="PlayStreakText" Text="Streak: 0 (1x)" FontSize="12" FontWeight="Bold" Foreground="#FDBA74" HorizontalAlignment="Right"/>
-                            <TextBlock x:Name="PlayAccuracyText" Text="100%  •  FC" FontSize="11.5" FontFamily="Consolas" Foreground="#6EE7B7" HorizontalAlignment="Right" Margin="0,2,0,0"/>
-                            <TextBlock Text="Keys: A S J K L + Space/Enter • Or XInput Guitar" FontSize="10" Foreground="#94A3B8" HorizontalAlignment="Right" Margin="0,4,0,0"/>
+                            <TextBlock x:Name="PlayAccuracyText" Text="100%  •  FC" FontSize="11.5" FontFamily="Consolas" Foreground="#6EE7B7" HorizontalAlignment="Right" Margin="0,2,0,4"/>
+                            <DockPanel Margin="0,2,0,2">
+                                <TextBlock x:Name="PlayRockMeterLabel" DockPanel.Dock="Right" Text="ROCK: GREEN" FontSize="9.5" FontWeight="Bold" Foreground="#22C55E"/>
+                                <TextBlock Text="ROCK METER" FontSize="9.5" Foreground="#94A3B8"/>
+                            </DockPanel>
+                            <ProgressBar x:Name="PlayRockMeterBar" Height="7" Minimum="0" Maximum="100" Value="75" Foreground="#22C55E" Background="#1E293B" Margin="0,0,0,5"/>
+                            <DockPanel Margin="0,0,0,2">
+                                <TextBlock x:Name="PlaySpChargeLabel" DockPanel.Dock="Right" Text="0%" FontSize="9.5" FontWeight="Bold" Foreground="#38BDF8"/>
+                                <TextBlock Text="⚡ STAR POWER (Create/RShift)" FontSize="9.5" Foreground="#7DD3FC"/>
+                            </DockPanel>
+                            <ProgressBar x:Name="PlaySpChargeBar" Height="7" Minimum="0" Maximum="100" Value="0" Foreground="#38BDF8" Background="#1E293B" Margin="0,0,0,5"/>
+                            <TextBlock x:Name="PlayControllerHint" Text="DualSense Edge / Xbox / Guitar / Keys Ready" FontSize="10" Foreground="#94A3B8" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                     </Border>
                 </StackPanel>
+
+                <!-- Post-Song "★ YOU ROCK!" Results Summary Overlay -->
+                <Border x:Name="PostSongResultsOverlay" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center"
+                        Background="#EE0B1020" BorderBrush="#F97316" BorderThickness="2" CornerRadius="14" Padding="26,20" Width="400">
+                    <StackPanel>
+                        <TextBlock x:Name="ResultsHeadlineText" Text="★ YOU ROCK! ★" FontSize="24" FontWeight="Black" Foreground="#FDBA74" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="ResultsStarsText" Text="★★★★★" FontSize="26" Foreground="#FACC15" HorizontalAlignment="Center" Margin="0,2,0,10"/>
+                        <TextBlock x:Name="ResultsScoreSummary" Text="Score: 0 • 100.0% • Max Streak: 0" FontSize="13.5" FontWeight="Bold" Foreground="#F8FAFC" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
+                        <TextBlock x:Name="ResultsDetailText" Text="" FontSize="12" Foreground="#94A3B8" HorizontalAlignment="Center" Margin="0,4,0,16"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Button Content="▶ Replay" Padding="14,7" Margin="0,0,8,0" Background="#F97316" Foreground="White" BorderThickness="0" FontWeight="Bold" Cursor="Hand" Click="ResultsReplayBtn_Click"/>
+                            <Button Content="Close Summary" Padding="14,7" Background="#1E2436" Foreground="#E2E8F0" BorderBrush="#334155" BorderThickness="1" Cursor="Hand" Click="ResultsCloseBtn_Click"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
 

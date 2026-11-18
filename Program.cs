@@ -138,11 +138,44 @@ static bool IsExternalP2pRoute(string path)
     return false;
 }
 
-// Strict External-IP Lockdown, IP Ban, Online/Offline P2P Mode & Per-IP Rate Limit Middleware
+// Strict External-IP Lockdown, Localhost DNS-Rebinding/CSRF Shield, IP Ban, Online/Offline P2P Mode & Rate Limit Middleware
 app.Use(async (context, next) =>
 {
     var (effectiveIp, isExternal) = ResolveClientIdentity(context);
     var reqPath = context.Request.Path.Value ?? "/";
+
+    if (!isExternal)
+    {
+        // Localhost DNS-Rebinding Guard: reject spoofed Host headers (e.g. evil.com pointing to 127.0.0.1)
+        var hostName = context.Request.Host.Host ?? "";
+        bool validLocalHost = hostName.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                           || hostName == "127.0.0.1"
+                           || hostName == "::1"
+                           || hostName == "[::1]";
+        if (!string.IsNullOrEmpty(hostName) && !validLocalHost)
+        {
+            syncLogger.LogWarn($"[SECURITY] Blocked DNS-rebinding Host header '{hostName}' on {reqPath}");
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new { error = "Forbidden: invalid local Host header." });
+            return;
+        }
+
+        // Localhost Browser CSRF Shield: reject cross-origin fetches from external websites
+        if (context.Request.Headers.TryGetValue("Origin", out var originHdr) && !string.IsNullOrWhiteSpace(originHdr.ToString()))
+        {
+            var origin = originHdr.ToString().Trim();
+            bool safeOrigin = origin.StartsWith("http://127.0.0.1", StringComparison.OrdinalIgnoreCase)
+                           || origin.StartsWith("http://localhost", StringComparison.OrdinalIgnoreCase)
+                           || origin.StartsWith("http://[::1]", StringComparison.OrdinalIgnoreCase);
+            if (!safeOrigin)
+            {
+                syncLogger.LogWarn($"[SECURITY] Blocked cross-origin browser CSRF request from '{origin}' to {reqPath}");
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new { error = "Forbidden: cross-origin requests to local API are blocked." });
+                return;
+            }
+        }
+    }
 
     if (isExternal)
     {
@@ -279,18 +312,14 @@ bool TryAuthorize(HttpContext context, SecurityService sec, FriendService friend
         return false;
     }
 
-    // 2. Backwards-compatible HTTP Headers (for older peers) — still protected by unified 5-attempt IP lockout
+    // 2. Backwards-compatible HTTP Headers ONLY (never query strings, which leak in logs/history)
     string? token = null;
     if (context.Request.Headers.TryGetValue("X-GH3-Trust-Token", out var headerToken))
         token = headerToken.ToString();
-    else if (context.Request.Query.TryGetValue("token", out var queryToken))
-        token = queryToken.ToString();
 
     string? pin = null;
     if (context.Request.Headers.TryGetValue("X-GH3-PIN", out var headerPin))
         pin = headerPin.ToString();
-    else if (context.Request.Query.TryGetValue("pin", out var queryPin))
-        pin = queryPin.ToString();
 
     if (!string.IsNullOrEmpty(token))
     {
@@ -897,9 +926,13 @@ app.MapGet("/api/manifest", (HttpContext context, Gh3Service gh3, SyncLogger log
     if (!IsAuthorized(context, sec, friends, logger))
         return Results.Unauthorized();
 
-    logger.LogDebug("Serving authenticated manifest request to peer.");
+    logger.LogDebug("Serving authenticated & ECDSA-signed manifest request to peer.");
     logger.PulsePeerActivity("Peer connected & checking library");
-    return Results.Ok(gh3.GenerateManifest());
+    var manifestJson = JsonSerializer.SerializeToUtf8Bytes(gh3.GenerateManifest());
+    context.Response.Headers["X-GH3-Host-PubKey"] = sec.HostPublicKeyBase64;
+    context.Response.Headers["X-GH3-Host-Fingerprint"] = sec.HostPublicKeyFingerprint;
+    context.Response.Headers["X-GH3-Host-Signature"] = sec.SignManifestBytes(manifestJson);
+    return Results.Bytes(manifestJson, "application/json; charset=utf-8");
 });
 
 app.MapGet("/api/download/{songId}", async (HttpContext context, string songId, Gh3Service gh3, SyncLogger logger, SecurityService sec, FriendService friends) =>
@@ -913,6 +946,15 @@ app.MapGet("/api/download/{songId}", async (HttpContext context, string songId, 
         return Results.Json(
             new { error = "Trusted Friend Token required to download songs. Ask the host to mark you as a Trusted Friend." },
             statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var (peerIp, isExternalPeer) = ResolveClientIdentity(context);
+    if (isExternalPeer && AppConfig.Current.RequireHostDownloadApproval)
+    {
+        var matchSong = gh3.GetInstalledCustomSongs().FirstOrDefault(s => s.SongId.Equals(songId, StringComparison.OrdinalIgnoreCase));
+        bool approved = await sec.RequestDownloadApprovalAsync(peerIp, songId, matchSong?.Title ?? songId, matchSong?.TotalSizeBytes ?? 0, logger);
+        if (!approved)
+            return Results.Json(new { error = "Download request was declined by the host." }, statusCode: StatusCodes.Status403Forbidden);
     }
 
     bool acquired = await sec.DownloadConcurrencyGuard.WaitAsync(TimeSpan.FromSeconds(30));

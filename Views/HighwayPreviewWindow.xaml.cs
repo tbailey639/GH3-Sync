@@ -19,9 +19,12 @@ namespace GH3_Sync.Views;
 public partial class HighwayPreviewWindow : Window
 {
     private readonly ParsedChartData _chart;
+    private readonly string _songTitle;
+    private readonly string _songArtist;
     private readonly string? _projectDir;
     private readonly string? _songId;
     private readonly ChartDoctorService? _doctor;
+    private readonly ChartStudioToolsService? _studioTools;
     private readonly MediaPlayer _player = new();
     private readonly DispatcherTimer _renderTimer;
     private readonly Stopwatch _fallbackClock = new();
@@ -43,28 +46,39 @@ public partial class HighwayPreviewWindow : Window
     private double? _loopASec;
     private double? _loopBSec;
 
-    // Playable Practice State
+    // Playable Practice State (Universal DualSense Edge / PS / Xbox / Guitar + Star Power + Rock Meter)
     private readonly bool[] _heldFrets = new bool[5];
+    private readonly bool[] _prevPadFrets = new bool[5];
     private readonly bool[] _keyFrets = new bool[5];
     private readonly double[] _hitFlashUntil = new double[5];
     private readonly HashSet<ChartPreviewNote> _hitNotes = new();
     private readonly HashSet<ChartPreviewNote> _missedNotes = new();
-    private ushort _prevXInputBtns;
+    private bool _prevPadStrum;
+    private bool _prevPadSp;
     private int _score;
     private int _streak;
     private int _maxStreak;
     private int _notesHit;
     private int _notesMissed;
+    private double _rockMeterVal = 75.0; // 0..100
+    private double _starPowerCharge = 0.0; // 0..100
+    private bool _starPowerActive;
     private bool _hasRecordedScoreThisRun;
+    private Key[] _boundFretKeys = { Key.A, Key.S, Key.J, Key.K, Key.L };
+    private Key _boundStrumKey = Key.Space;
 
-    private static readonly WpfColor[] FretColors =
+    private static readonly WpfColor[][] PalettePresets =
     {
-        WpfColor.FromRgb(34, 197, 94),   // 0 Green
-        WpfColor.FromRgb(239, 68, 68),   // 1 Red
-        WpfColor.FromRgb(234, 179, 8),   // 2 Yellow
-        WpfColor.FromRgb(59, 130, 246),  // 3 Blue
-        WpfColor.FromRgb(249, 115, 22),  // 4 Orange
+        // 0: Classic GH3
+        new[] { WpfColor.FromRgb(34, 197, 94), WpfColor.FromRgb(239, 68, 68), WpfColor.FromRgb(234, 179, 8), WpfColor.FromRgb(59, 130, 246), WpfColor.FromRgb(249, 115, 22) },
+        // 1: Colorblind High-Contrast (Okabe-Ito inspired)
+        new[] { WpfColor.FromRgb(0, 158, 115), WpfColor.FromRgb(213, 94, 0), WpfColor.FromRgb(240, 228, 66), WpfColor.FromRgb(86, 180, 233), WpfColor.FromRgb(204, 121, 167) },
+        // 2: Synthwave Neon
+        new[] { WpfColor.FromRgb(34, 211, 238), WpfColor.FromRgb(236, 72, 153), WpfColor.FromRgb(250, 204, 21), WpfColor.FromRgb(168, 85, 247), WpfColor.FromRgb(251, 146, 60) },
+        // 3: Metallic Chrome
+        new[] { WpfColor.FromRgb(134, 239, 172), WpfColor.FromRgb(252, 165, 165), WpfColor.FromRgb(253, 224, 71), WpfColor.FromRgb(147, 197, 253), WpfColor.FromRgb(253, 186, 116) }
     };
+    private WpfColor[] FretColors = PalettePresets[0];
 
     public event Action? SongRecompiled;
     public event Action? ScoreRecorded;
@@ -76,14 +90,21 @@ public partial class HighwayPreviewWindow : Window
         string? audioPath,
         string? projectDir = null,
         ChartDoctorService? doctor = null,
-        string? songId = null)
+        string? songId = null,
+        ChartStudioToolsService? studioTools = null)
     {
         InitializeComponent();
 
+        _songTitle = title;
+        _songArtist = artist;
         _projectDir = projectDir;
         _songId = songId;
         _doctor = doctor;
+        _studioTools = studioTools;
         _chart = ChartDoctorService.ParseChartFile(chartPath);
+
+        LoadKeyBindingsAndPalette();
+        BuildSoloCutBtn.IsEnabled = !string.IsNullOrWhiteSpace(_projectDir) && _studioTools != null;
 
         SongHeaderTitle.Text = string.IsNullOrWhiteSpace(artist) ? title : $"{title}  —  {artist}";
         SaveOffsetBtn.IsEnabled = !string.IsNullOrWhiteSpace(_projectDir) && _doctor != null;
@@ -191,6 +212,120 @@ public partial class HighwayPreviewWindow : Window
         RenderHighwayFrame();
     }
 
+    private void LoadKeyBindingsAndPalette()
+    {
+        var keys = AppConfig.Current.CustomKeyFrets;
+        if (keys != null && keys.Length == 5)
+        {
+            for (int i = 0; i < 5; i++)
+                if (Enum.TryParse<Key>(keys[i], true, out var k)) _boundFretKeys[i] = k;
+        }
+        if (Enum.TryParse<Key>(AppConfig.Current.CustomKeyStrum ?? "Space", true, out var sk))
+            _boundStrumKey = sk;
+
+        int palIdx = (AppConfig.Current.HighwayGemPalette ?? "Classic").ToLowerInvariant() switch
+        {
+            "colorblind" => 1,
+            "synthwave" => 2,
+            "metallic" => 3,
+            _ => 0
+        };
+        PaletteCombo.SelectedIndex = palIdx;
+        FretColors = PalettePresets[palIdx];
+    }
+
+    private void PaletteCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded || PaletteCombo == null) return;
+        int idx = Math.Clamp(PaletteCombo.SelectedIndex, 0, PalettePresets.Length - 1);
+        FretColors = PalettePresets[idx];
+        AppConfig.Current.HighwayGemPalette = idx switch { 1 => "Colorblind", 2 => "Synthwave", 3 => "Metallic", _ => "Classic" };
+        AppConfig.Save();
+        RenderHighwayFrame();
+    }
+
+    private void RemapKeysBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Window
+        {
+            Title = "Custom Keyboard Fret Bindings",
+            Width = 390,
+            Height = 320,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            ResizeMode = ResizeMode.NoResize,
+            Background = new SolidColorBrush(WpfColor.FromRgb(17, 19, 27)),
+            Foreground = System.Windows.Media.Brushes.White
+        };
+        var sp = new StackPanel { Margin = new Thickness(18) };
+        sp.Children.Add(new TextBlock { Text = "Enter 5 Fret Keys + Strum Key (e.g. A S J K L or D1 D2 D3 D4 D5)", FontSize = 11.5, Foreground = System.Windows.Media.Brushes.LightGray, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) });
+
+        var boxes = new System.Windows.Controls.TextBox[5];
+        string[] labels = { "Green Fret:", "Red Fret:", "Yellow Fret:", "Blue Fret:", "Orange Fret:" };
+        for (int i = 0; i < 5; i++)
+        {
+            var dp = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+            boxes[i] = new System.Windows.Controls.TextBox { Text = _boundFretKeys[i].ToString(), Width = 90 };
+            DockPanel.SetDock(boxes[i], Dock.Right);
+            dp.Children.Add(boxes[i]);
+            dp.Children.Add(new TextBlock { Text = labels[i], VerticalAlignment = VerticalAlignment.Center });
+            sp.Children.Add(dp);
+        }
+        var strumBox = new System.Windows.Controls.TextBox { Text = _boundStrumKey.ToString(), Width = 90 };
+        var sdp = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
+        DockPanel.SetDock(strumBox, Dock.Right);
+        sdp.Children.Add(strumBox);
+        sdp.Children.Add(new TextBlock { Text = "Strum Key:", VerticalAlignment = VerticalAlignment.Center });
+        sp.Children.Add(sdp);
+
+        var save = new System.Windows.Controls.Button { Content = "Save Keybinds", Padding = new Thickness(14, 6, 14, 6), Background = new SolidColorBrush(WpfColor.FromRgb(249, 115, 22)), Foreground = System.Windows.Media.Brushes.White, BorderThickness = new Thickness(0), HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
+        save.Click += (_, _) =>
+        {
+            var arr = new string[5];
+            for (int i = 0; i < 5; i++)
+            {
+                if (Enum.TryParse<Key>(boxes[i].Text.Trim(), true, out var k)) { _boundFretKeys[i] = k; arr[i] = k.ToString(); }
+                else arr[i] = _boundFretKeys[i].ToString();
+            }
+            if (Enum.TryParse<Key>(strumBox.Text.Trim(), true, out var sk)) _boundStrumKey = sk;
+            AppConfig.Current.CustomKeyFrets = arr;
+            AppConfig.Current.CustomKeyStrum = _boundStrumKey.ToString();
+            AppConfig.Save();
+            dlg.Close();
+        };
+        sp.Children.Add(save);
+        dlg.Content = sp;
+        dlg.ShowDialog();
+    }
+
+    private async void BuildSoloCutBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_projectDir) || _studioTools == null) return;
+        double start = _loopASec ?? Math.Max(0, _currentTimeSec - 10.0);
+        double end = _loopBSec ?? Math.Min(_chart.TotalDurationSeconds, start + 30.0);
+        if (end <= start + 3.0)
+        {
+            WpfMessageBox.Show("Set Loop A and Loop B first (at least 3 seconds apart) to mark the solo you want to slice into a standalone GH3 song!", "Solo Extractor", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        BuildSoloCutBtn.IsEnabled = false;
+        BuildSoloCutBtn.Content = "Slicing...";
+        StopPlayback();
+        try
+        {
+            var secName = _chart.Sections.LastOrDefault(s => s.TimeSeconds <= start)?.Name ?? "Solo Cut";
+            var (ok, msg) = await _studioTools.BuildPlayableSoloCutAsync(_projectDir, _songTitle, _songArtist, secName, start, end, autoCompile: true);
+            if (ok) AudioWaveformAndSfxService.PlayCompilePowerChord();
+            WpfMessageBox.Show(msg, ok ? "Playable Solo Cut Created!" : "Solo Extractor", MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            if (ok) SongRecompiled?.Invoke();
+        }
+        finally
+        {
+            BuildSoloCutBtn.IsEnabled = true;
+            BuildSoloCutBtn.Content = "✂️ Build Solo Cut";
+        }
+    }
+
     private void ResetPlayStats()
     {
         _hitNotes.Clear();
@@ -200,40 +335,77 @@ public partial class HighwayPreviewWindow : Window
         _maxStreak = 0;
         _notesHit = 0;
         _notesMissed = 0;
+        _rockMeterVal = 75.0;
+        _starPowerCharge = 0.0;
+        _starPowerActive = false;
         _hasRecordedScoreThisRun = false;
+        if (PostSongResultsOverlay != null) PostSongResultsOverlay.Visibility = Visibility.Collapsed;
         UpdatePlayHud();
     }
 
     private void UpdatePlayHud()
     {
-        int mult = Math.Min(4, 1 + _streak / 10);
+        int baseMult = Math.Min(4, 1 + _streak / 10);
+        int mult = _starPowerActive ? baseMult * 2 : baseMult;
         int total = _notesHit + _notesMissed;
         double acc = total > 0 ? (_notesHit * 100.0 / total) : 100.0;
         bool fc = _notesMissed == 0 && _notesHit > 0;
         PlayScoreText.Text = _score.ToString("N0");
-        PlayStreakText.Text = $"Streak: {_streak} ({mult}x)";
+        PlayStreakText.Text = _starPowerActive ? $"⚡ STAR POWER! Streak: {_streak} ({mult}x)" : $"Streak: {_streak} ({mult}x)";
         PlayAccuracyText.Text = $"{acc:F1}%{(fc ? "  •  ★ FC" : "")}";
+
+        PlayRockMeterBar.Value = Math.Clamp(_rockMeterVal, 0, 100);
+        if (_rockMeterVal >= 66) { PlayRockMeterLabel.Text = "ROCK: GREEN"; PlayRockMeterLabel.Foreground = new SolidColorBrush(WpfColor.FromRgb(34, 197, 94)); PlayRockMeterBar.Foreground = new SolidColorBrush(WpfColor.FromRgb(34, 197, 94)); }
+        else if (_rockMeterVal >= 33) { PlayRockMeterLabel.Text = "ROCK: YELLOW"; PlayRockMeterLabel.Foreground = new SolidColorBrush(WpfColor.FromRgb(234, 179, 8)); PlayRockMeterBar.Foreground = new SolidColorBrush(WpfColor.FromRgb(234, 179, 8)); }
+        else { PlayRockMeterLabel.Text = "ROCK: RED!"; PlayRockMeterLabel.Foreground = new SolidColorBrush(WpfColor.FromRgb(239, 68, 68)); PlayRockMeterBar.Foreground = new SolidColorBrush(WpfColor.FromRgb(239, 68, 68)); }
+
+        PlaySpChargeBar.Value = Math.Clamp(_starPowerCharge, 0, 100);
+        PlaySpChargeLabel.Text = _starPowerActive ? "ACTIVE!" : (_starPowerCharge >= 50 ? "READY!" : $"{(int)_starPowerCharge}%");
     }
 
-    private void SavePlayScoreIfMeaningful()
+    private void TryActivateStarPower()
     {
-        if (_hasRecordedScoreThisRun || _mode != "play" || string.IsNullOrWhiteSpace(_songId) || _notesHit < 15) return;
-        int total = Math.Max(1, _notesHit + _notesMissed);
-        double pct = _notesHit * 100.0 / total;
-        bool isFc = _notesMissed == 0 && _notesHit >= Math.Max(15, _activeNotes.Count - 2);
-        var diff = DifficultyCombo.SelectedItem?.ToString() ?? "Expert";
-        if (AppConfig.RecordHighScore(_songId, _score, pct, _maxStreak, isFc, diff))
-        {
-            _hasRecordedScoreThisRun = true;
-            ScoreRecorded?.Invoke();
-        }
+        if (_starPowerActive || _starPowerCharge < 50.0) return;
+        _starPowerActive = true;
+        AudioWaveformAndSfxService.PlayStarPowerChime();
+        UpdatePlayHud();
     }
 
     private void OnTrackEnded()
     {
         SavePlayScoreIfMeaningful();
-        StopPlayback();
+        bool showResults = _mode == "play" && (_notesHit + _notesMissed) >= 10;
+        if (showResults)
+        {
+            int total = Math.Max(1, _notesHit + _notesMissed);
+            double acc = _notesHit * 100.0 / total;
+            bool fc = _notesMissed == 0 && _notesHit >= Math.Max(10, _activeNotes.Count - 2);
+            int stars = acc >= 95 ? 5 : acc >= 88 ? 4 : acc >= 75 ? 3 : acc >= 60 ? 2 : 1;
+            ResultsHeadlineText.Text = fc ? "👑 FULL COMBO! YOU ROCK!" : "★ YOU ROCK! ★";
+            ResultsStarsText.Text = string.Concat(Enumerable.Repeat("★", stars)) + string.Concat(Enumerable.Repeat("☆", 5 - stars));
+            ResultsScoreSummary.Text = $"Score: {_score:N0}  •  Accuracy: {acc:F1}%  •  Max Streak: {_maxStreak}";
+            ResultsDetailText.Text = $"Notes Hit: {_notesHit:N0} / {total:N0}  •  Missed: {_notesMissed:N0}";
+            PostSongResultsOverlay.Visibility = Visibility.Visible;
+            if (fc)
+            {
+                AudioWaveformAndSfxService.PlayFcFanfare();
+                AppConfig.Current.LifetimeStats.TotalFullCombos++;
+                AppConfig.UnlockTrophy("FirstFullCombo");
+                AppConfig.Save();
+            }
+        }
+        StopPlayback(keepResultsVisible: showResults);
     }
+
+    private void ResultsReplayBtn_Click(object sender, RoutedEventArgs e)
+    {
+        PostSongResultsOverlay.Visibility = Visibility.Collapsed;
+        ResetPlayStats();
+        _currentTimeSec = _loopASec ?? 0;
+        PlayPauseBtn_Click(sender, e);
+    }
+
+    private void ResultsCloseBtn_Click(object sender, RoutedEventArgs e) => PostSongResultsOverlay.Visibility = Visibility.Collapsed;
 
     // ==================== A->B SOLO LOOPER & PRACTICE SPEED ====================
     private void SetLoopABtn_Click(object sender, RoutedEventArgs e)
@@ -288,56 +460,117 @@ public partial class HighwayPreviewWindow : Window
         }
     }
 
-    // ==================== PLAYABLE INPUT (KEYBOARD + XINPUT GUITAR) ====================
+    private void SavePlayScoreIfMeaningful()
+    {
+        if (_hasRecordedScoreThisRun || _mode != "play" || string.IsNullOrWhiteSpace(_songId) || _notesHit < 15) return;
+        int total = Math.Max(1, _notesHit + _notesMissed);
+        double pct = _notesHit * 100.0 / total;
+        bool isFc = _notesMissed == 0 && _notesHit >= Math.Max(15, _activeNotes.Count - 2);
+        var diff = DifficultyCombo.SelectedItem?.ToString() ?? "Expert";
+        AppConfig.Current.LifetimeStats.TotalNotesHit += _notesHit;
+        if (AppConfig.RecordHighScore(_songId, _score, pct, _maxStreak, isFc, diff))
+        {
+            _hasRecordedScoreThisRun = true;
+            ScoreRecorded?.Invoke();
+        }
+    }
+
+    // ==================== PLAYABLE INPUT (KEYBOARD + DUALSENSE EDGE / PS / XBOX / GUITAR) ====================
     private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (_mode != "play") return;
         int fretHit = -1;
-        if (e.Key == Key.A) { _keyFrets[0] = true; fretHit = 0; }
-        else if (e.Key == Key.S) { _keyFrets[1] = true; fretHit = 1; }
-        else if (e.Key == Key.J) { _keyFrets[2] = true; fretHit = 2; }
-        else if (e.Key == Key.K) { _keyFrets[3] = true; fretHit = 3; }
-        else if (e.Key == Key.L) { _keyFrets[4] = true; fretHit = 4; }
-        else if (e.Key == Key.Space || e.Key == Key.Enter || e.Key == Key.Up || e.Key == Key.Down)
+        for (int i = 0; i < 5; i++)
+        {
+            if (e.Key == _boundFretKeys[i]) { _keyFrets[i] = true; fretHit = i; }
+        }
+        if (e.Key == Key.RightShift)
+        {
+            TryActivateStarPower();
+            return;
+        }
+        if (e.Key == _boundStrumKey || e.Key == Key.Enter || e.Key == Key.Up || e.Key == Key.Down)
         {
             e.Handled = true;
             TriggerStrumHitCheck();
             return;
         }
 
-        // Allow convenient tap-to-hit on keyboard if playing fast
         if (fretHit >= 0 && !e.IsRepeat)
             TryHitSingleFretOrHopo(fretHit);
     }
 
     private void Window_KeyUp(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (e.Key == Key.A) _keyFrets[0] = false;
-        else if (e.Key == Key.S) _keyFrets[1] = false;
-        else if (e.Key == Key.J) _keyFrets[2] = false;
-        else if (e.Key == Key.K) _keyFrets[3] = false;
-        else if (e.Key == Key.L) _keyFrets[4] = false;
+        for (int i = 0; i < 5; i++)
+            if (e.Key == _boundFretKeys[i]) _keyFrets[i] = false;
     }
 
     private void PollPlayableController()
     {
-        ushort btns = 0;
-        if (XInputNative.TryGetFirstConnectedState(out _, out var state))
-            btns = state.Gamepad.wButtons;
+        var snap = UnifiedControllerService.Poll();
 
-        _heldFrets[0] = _keyFrets[0] || (btns & XInputNative.A) != 0;
-        _heldFrets[1] = _keyFrets[1] || (btns & XInputNative.B) != 0;
-        _heldFrets[2] = _keyFrets[2] || (btns & XInputNative.Y) != 0;
-        _heldFrets[3] = _keyFrets[3] || (btns & XInputNative.X) != 0;
-        _heldFrets[4] = _keyFrets[4] || (btns & XInputNative.LEFT_SHOULDER) != 0;
+        if (snap.Connected)
+        {
+            PlayControllerHint.Text = snap.EffectiveGamepadMode
+                ? $"🎮 {snap.DeviceName} • {(snap.IsPlayStation ? "L2/L1/R1/R2/✕" : "LT/LB/RB/RT/A")} Auto-Strum"
+                : $"🎸 {snap.DeviceName} • Guitar Strum Mode";
+        }
+        else
+        {
+            PlayControllerHint.Text = $"⌨️ Keys: {string.Join(" ", _boundFretKeys)} + {_boundStrumKey} • Plug in DualSense/Xbox/Guitar";
+        }
 
-        bool strumPressed = ((btns & (XInputNative.DPAD_UP | XInputNative.DPAD_DOWN)) != 0) &&
-                            ((_prevXInputBtns & (XInputNative.DPAD_UP | XInputNative.DPAD_DOWN)) == 0);
-        if (strumPressed) TriggerStrumHitCheck();
-        _prevXInputBtns = btns;
+        for (int i = 0; i < 5; i++)
+            _heldFrets[i] = _keyFrets[i] || (snap.Connected && snap.Frets[i]);
+
+        if (snap.Connected)
+        {
+            // Official GH3 Gamepad Mode: Auto-Strum on Fret Press edge (works seamlessly on DualSense Edge & Xbox pads!)
+            if (snap.EffectiveGamepadMode)
+            {
+                bool anyFreshPress = false;
+                for (int i = 0; i < 5; i++)
+                {
+                    if (snap.Frets[i] && !_prevPadFrets[i])
+                    {
+                        anyFreshPress = true;
+                        TryHitSingleFretOrHopo(i);
+                    }
+                }
+                // Also support chord auto-strum when 2+ frets are pressed together
+                if (anyFreshPress && _heldFrets.Count(x => x) >= 2)
+                    TriggerStrumHitCheck();
+            }
+
+            // Guitar Strum Bar OR optional D-Pad strum on gamepad
+            bool strumNow = snap.StrumUp || snap.StrumDown;
+            if (strumNow && !_prevPadStrum)
+                TriggerStrumHitCheck();
+            _prevPadStrum = strumNow;
+
+            // Star Power Activation (Create / Share / Back / Guitar Tilt)
+            if (snap.StarPowerPressed && !_prevPadSp)
+                TryActivateStarPower();
+            _prevPadSp = snap.StarPowerPressed;
+
+            for (int i = 0; i < 5; i++) _prevPadFrets[i] = snap.Frets[i];
+        }
+
+        // Drain active Star Power smoothly (~12 seconds per full bar)
+        if (_starPowerActive && _isPlaying)
+        {
+            _starPowerCharge -= 0.14;
+            if (_starPowerCharge <= 0)
+            {
+                _starPowerCharge = 0;
+                _starPowerActive = false;
+            }
+            UpdatePlayHud();
+        }
 
         // Mark notes that passed well behind the strike line as missed
-        double offsetSec = _offsetShiftMs / 1000.0;
+        double offsetSec = (_offsetShiftMs + AppConfig.Current.CalibrationOffsetMs) / 1000.0;
         foreach (var n in _activeNotes)
         {
             double t = n.TimeSeconds + offsetSec;
@@ -346,6 +579,7 @@ public partial class HighwayPreviewWindow : Window
                 _missedNotes.Add(n);
                 _notesMissed++;
                 _streak = 0;
+                _rockMeterVal = Math.Max(0, _rockMeterVal - 3.5);
                 UpdatePlayHud();
             }
             if (t > _currentTimeSec + 0.2) break;
@@ -355,18 +589,18 @@ public partial class HighwayPreviewWindow : Window
     private void TryHitSingleFretOrHopo(int fret)
     {
         if (!_isPlaying) return;
-        double offsetSec = _offsetShiftMs / 1000.0;
+        double offsetSec = (_offsetShiftMs + AppConfig.Current.CalibrationOffsetMs) / 1000.0;
         var hit = _activeNotes.FirstOrDefault(n =>
             !_hitNotes.Contains(n) && !_missedNotes.Contains(n) &&
             n.Fret == fret &&
-            Math.Abs((n.TimeSeconds + offsetSec) - _currentTimeSec) <= 0.10);
+            Math.Abs((n.TimeSeconds + offsetSec) - _currentTimeSec) <= 0.11);
         if (hit != null) RegisterNoteHit(hit);
     }
 
     private void TriggerStrumHitCheck()
     {
         if (!_isPlaying) return;
-        double offsetSec = _offsetShiftMs / 1000.0;
+        double offsetSec = (_offsetShiftMs + AppConfig.Current.CalibrationOffsetMs) / 1000.0;
         var windowNotes = _activeNotes.Where(n =>
             !_hitNotes.Contains(n) && !_missedNotes.Contains(n) &&
             Math.Abs((n.TimeSeconds + offsetSec) - _currentTimeSec) <= 0.11).ToList();
@@ -399,10 +633,14 @@ public partial class HighwayPreviewWindow : Window
         _notesHit++;
         _streak++;
         if (_streak > _maxStreak) _maxStreak = _streak;
-        int mult = Math.Min(4, 1 + _streak / 10);
+        int baseMult = Math.Min(4, 1 + _streak / 10);
+        int mult = _starPowerActive ? baseMult * 2 : baseMult;
         _score += 50 * mult;
-        if (n.Fret >= 0 && n.Fret <= 4) _hitFlashUntil[n.Fret] = _currentTimeSec + 0.14;
-        else for (int i = 0; i < 5; i++) _hitFlashUntil[i] = _currentTimeSec + 0.14;
+        _rockMeterVal = Math.Min(100.0, _rockMeterVal + 2.0);
+        if (n.InStarPower && !_starPowerActive)
+            _starPowerCharge = Math.Min(100.0, _starPowerCharge + 8.5);
+        if (n.Fret >= 0 && n.Fret <= 4) _hitFlashUntil[n.Fret] = _currentTimeSec + 0.16;
+        else for (int i = 0; i < 5; i++) _hitFlashUntil[i] = _currentTimeSec + 0.16;
         UpdatePlayHud();
     }
 
@@ -587,7 +825,7 @@ public partial class HighwayPreviewWindow : Window
         StopPlayback();
     }
 
-    private void StopPlayback()
+    private void StopPlayback(bool keepResultsVisible = false)
     {
         _isPlaying = false;
         _currentTimeSec = _loopASec ?? 0;
@@ -595,7 +833,7 @@ public partial class HighwayPreviewWindow : Window
         _fallbackClock.Reset();
         SeekSlider.Value = _currentTimeSec;
         PlayPauseBtn.Content = "▶ Play";
-        if (_mode == "play") ResetPlayStats();
+        if (_mode == "play" && !keepResultsVisible) ResetPlayStats();
         RenderHighwayFrame();
     }
 
@@ -708,8 +946,8 @@ public partial class HighwayPreviewWindow : Window
 
         HighwayCanvas.Children.Clear();
 
-        double offsetSec = _offsetShiftMs / 1000.0;
-        bool inSpNow = _chart.StarPower.Any(sp => (_currentTimeSec - offsetSec) >= sp.StartSec && (_currentTimeSec - offsetSec) <= sp.EndSec);
+        double offsetSec = (_offsetShiftMs + AppConfig.Current.CalibrationOffsetMs) / 1000.0;
+        bool inSpNow = _starPowerActive || _chart.StarPower.Any(sp => (_currentTimeSec - offsetSec) >= sp.StartSec && (_currentTimeSec - offsetSec) <= sp.EndSec);
         StarPowerBadge.Visibility = inSpNow ? Visibility.Visible : Visibility.Collapsed;
 
         int npsTotal;
@@ -755,7 +993,7 @@ public partial class HighwayPreviewWindow : Window
         double topY = 24.0;
         double strikeY = h - 54.0;
         double lookaheadSec = 1.65 / Math.Max(0.5, _speedMultiplier);
-        double offsetSec = _offsetShiftMs / 1000.0;
+        double offsetSec = (_offsetShiftMs + AppConfig.Current.CalibrationOffsetMs) / 1000.0;
         double scaleFactor = Math.Clamp(botHalfW / 260.0, 0.58, 1.0);
 
         // Perspective fretboard polygon

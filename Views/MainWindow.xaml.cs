@@ -50,6 +50,7 @@ public partial class MainWindow : Window
     private readonly LibraryHealthService _libraryHealth;
     private readonly TunnelAndMeshService _tunnel;
     private readonly CareerSaveScoreService _careerScores;
+    private readonly ChartStudioToolsService _studioTools;
     private readonly int _port;
 
     private readonly DispatcherTimer _stageAnimTimer = new() { Interval = TimeSpan.FromMilliseconds(33) };
@@ -146,6 +147,8 @@ public partial class MainWindow : Window
         _discordRpc = discordRpc;
         _tunnel = tunnelService ?? new TunnelAndMeshService(port, logger);
         _careerScores = careerScores ?? new CareerSaveScoreService(gh3, saves, logger);
+        _studioTools = new ChartStudioToolsService(creator, compiler, logger);
+        _security.DownloadApprovalCallback = PromptHostDownloadApprovalAsync;
         _albumMeta = new AlbumArtMetadataService(logger);
         _practiceAudio = new PracticeAudioService(compiler, demucs, logger);
         _highwaySkins = new HighwaySkinService(gh3, logger);
@@ -394,14 +397,17 @@ public partial class MainWindow : Window
             }
         }
 
-        // 4. Iconic GH3 Rock Meter live needle animation + subtle beat bounce during audio preview
+        // 4. Iconic GH3 Rock Meter live needle animation + REAL beat-reactive bounce during audio preview!
         if (RockMeterNeedleRotate != null)
         {
+            double realEnergy = (_isPlayerPlaying && _player.NaturalDuration.HasTimeSpan)
+                ? AudioWaveformAndSfxService.SampleEnergyAt(_activeWaveform, _player.Position.TotalSeconds, _player.NaturalDuration.TimeSpan.TotalSeconds)
+                : 0.5;
             double beatBounce = _isPlayerPlaying
-                ? Math.Sin(_animPhase * 3.2) * 6.5
+                ? (realEnergy - 0.35) * 18.0 + Math.Sin(_animPhase * 3.0) * 3.0
                 : Math.Sin(_animPhase * 0.85) * 2.2;
             double desired = Math.Clamp(_rockMeterTargetAngle + beatBounce, -52, 54);
-            _rockMeterCurrentAngle += (desired - _rockMeterCurrentAngle) * 0.16;
+            _rockMeterCurrentAngle += (desired - _rockMeterCurrentAngle) * 0.22;
             RockMeterNeedleRotate.Angle = _rockMeterCurrentAngle;
         }
 
@@ -526,10 +532,15 @@ public partial class MainWindow : Window
         double gap = 2.2;
         double maxH = 26.0;
 
+        double energyBoost = (_isPlayerPlaying && _player.NaturalDuration.HasTimeSpan)
+            ? AudioWaveformAndSfxService.SampleEnergyAt(_activeWaveform, _player.Position.TotalSeconds, _player.NaturalDuration.TimeSpan.TotalSeconds)
+            : 0.5;
+
         for (int i = 0; i < bars; i++)
         {
+            double wave = Math.Abs(Math.Sin(_animPhase * (1.8 + (i % 5) * 0.45) + i * 0.75) * Math.Cos(_animPhase * 0.9 + i * 0.3));
             double level = _isPlayerPlaying
-                ? 0.22 + 0.78 * Math.Abs(Math.Sin(_animPhase * (1.8 + (i % 5) * 0.45) + i * 0.75) * Math.Cos(_animPhase * 0.9 + i * 0.3))
+                ? Math.Clamp(0.16 + energyBoost * (0.45 + 0.55 * wave), 0.12, 1.0)
                 : 0.12;
             double bh = Math.Max(3.0, level * maxH);
             var color = VizFretColors[Math.Clamp(i / 3, 0, 4)];
@@ -566,6 +577,18 @@ public partial class MainWindow : Window
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         bool ctrl = (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) != 0;
+        if (ctrl && e.Key == System.Windows.Input.Key.K)
+        {
+            OpenCommandPalette();
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == System.Windows.Input.Key.Escape && CommandPaletteOverlay != null && CommandPaletteOverlay.Visibility == Visibility.Visible)
+        {
+            CloseCommandPalette();
+            e.Handled = true;
+            return;
+        }
         if (ctrl && e.Key == System.Windows.Input.Key.F)
         {
             NavCustoms.IsChecked = true;
@@ -635,6 +658,17 @@ public partial class MainWindow : Window
 
         try
         {
+            // 100ms Pre-Flight Health Check before launching Guitar Hero III
+            if (!string.IsNullOrWhiteSpace(_gh3.GamePath))
+            {
+                try { CustomsPakService.RepairCustomsPakIfCorrupted(_gh3.GamePath, _logger); } catch { }
+            }
+            bool coreOk = File.Exists(Path.Combine(_gh3.GamePath ?? "", "PLUGINS", "core.dll"));
+            ShowStageToast("🎸 LAUNCHING GUITAR HERO III!",
+                $"{(coreOk ? "BetterGH3 core.dll Verified" : "Vanilla GH3")} • {_allSongs.Count} Customs Armed • Career Score Watcher Active",
+                "#22C55E");
+            AudioWaveformAndSfxService.PlayCompilePowerChord();
+
             StopAudioPreview();
             Process.Start(new ProcessStartInfo
             {
@@ -980,9 +1014,12 @@ public partial class MainWindow : Window
             }
 
             _player.Open(new Uri(playablePath));
+            _player.Volume = Math.Clamp(AppConfig.Current.AudioPreviewVolume, 0.0, 1.0);
+            if (PlayerVolumeSlider != null) PlayerVolumeSlider.Value = _player.Volume;
             _player.Play();
             _isPlayerPlaying = true;
             _playerTimer.Start();
+            LoadWaveformForPreviewAsync(playablePath);
 
             AudioPlayerBar.Visibility = Visibility.Visible;
             PlayerTrackTitle.Text = isGuitarStem ? $"{trackTitle} [Guitar Stem]" : trackTitle;
@@ -1060,6 +1097,7 @@ public partial class MainWindow : Window
         PlayerSeekSlider.Maximum = Math.Max(1, dur.TotalSeconds);
         PlayerSeekSlider.Value = pos.TotalSeconds;
         PlayerTimeText.Text = $"{(int)pos.TotalMinutes}:{pos.Seconds:D2} / {(int)dur.TotalMinutes}:{dur.Seconds:D2}";
+        RenderAudioWaveformBar();
     }
 
     private void PlayerPlayPauseBtn_Click(object sender, RoutedEventArgs e)
@@ -1435,27 +1473,72 @@ public partial class MainWindow : Window
             return;
         }
 
-        for (int idx = 0; idx < list.Count; idx++)
-        {
-            var card = BuildSongCard(list[idx]);
-            SongsListPanel.Children.Add(card);
+        bool compact = AppConfig.Current.CompactSetlistView;
+        string groupMode = AppConfig.Current.GroupByMode ?? "None";
+        int animIdx = 0;
 
-            // Staggered Setlist Card Cascade (first 14 visible cards)
-            if (AppConfig.Current.EnableUiAnimations && idx < 14)
+        void AddSongVisual(CustomSongInfo s)
+        {
+            var card = compact ? BuildCompactSongRow(s) : BuildSongCard(s);
+            SongsListPanel.Children.Add(card);
+            if (AppConfig.Current.EnableUiAnimations && animIdx < 14)
             {
                 try
                 {
                     var tt = new TranslateTransform(0, 12);
                     card.RenderTransform = tt;
                     card.Opacity = 0;
-                    var delay = TimeSpan.FromMilliseconds(idx * 22);
-                    var dur = TimeSpan.FromMilliseconds(210);
+                    var delay = TimeSpan.FromMilliseconds(animIdx * 20);
+                    var dur = TimeSpan.FromMilliseconds(195);
                     var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut };
                     card.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 1, dur) { BeginTime = delay, EasingFunction = ease });
                     tt.BeginAnimation(TranslateTransform.YProperty, new System.Windows.Media.Animation.DoubleAnimation(12, 0, dur) { BeginTime = delay, EasingFunction = ease });
                 }
                 catch { }
             }
+            animIdx++;
+        }
+
+        if (groupMode.Equals("Artist", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var grp in list.GroupBy(s => string.IsNullOrWhiteSpace(s.Artist) ? "Unknown Artist" : s.Artist.Trim(), StringComparer.OrdinalIgnoreCase).OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                SongsListPanel.Children.Add(new TextBlock
+                {
+                    Text = $"🎸 {grp.Key} ({grp.Count()})",
+                    FontSize = 13,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = (WpfBrush)FindResource("AccentFlameText"),
+                    Margin = new Thickness(4, 10, 0, 6)
+                });
+                foreach (var s in grp) AddSongVisual(s);
+            }
+        }
+        else if (groupMode.Equals("Tier", StringComparison.OrdinalIgnoreCase))
+        {
+            int ResolveTier(CustomSongInfo s)
+            {
+                if (_sparklineCache.TryGetValue(s.SongId, out var sp))
+                    return Math.Clamp(sp.Tier, 1, 8);
+                return 3;
+            }
+            foreach (var grp in list.GroupBy(ResolveTier).OrderBy(g => g.Key))
+            {
+                var tierName = ChartStudioToolsService.VenueTierNames[Math.Clamp(grp.Key - 1, 0, 7)];
+                SongsListPanel.Children.Add(new TextBlock
+                {
+                    Text = $"🏟️ {tierName} ({grp.Count()})",
+                    FontSize = 13,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = (WpfBrush)FindResource("AccentFlameText"),
+                    Margin = new Thickness(4, 10, 0, 6)
+                });
+                foreach (var s in grp) AddSongVisual(s);
+            }
+        }
+        else
+        {
+            foreach (var s in list) AddSongVisual(s);
         }
     }
 
@@ -1954,6 +2037,28 @@ public partial class MainWindow : Window
         stack.Children.Add(recompileChk);
 
         var btns = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
+        var exportChBtn = new System.Windows.Controls.Button { Content = "Export CH .zip", Style = (Style)FindResource("OutlineButton"), Margin = new Thickness(0, 0, 6, 0), ToolTip = "Export this song cleanly for Clone Hero / YARG" };
+        exportChBtn.Click += (_, _) =>
+        {
+            var sfd = new Microsoft.Win32.SaveFileDialog { Title = "Export to Clone Hero / YARG (.zip)", Filter = "Clone Hero Song Archive (*.zip)|*.zip", FileName = $"{song.Artist} - {song.Title}.zip" };
+            if (sfd.ShowDialog() == true)
+            {
+                var (ok, msg) = ChartStudioToolsService.ExportToCloneHeroZip(song, sfd.FileName);
+                if (ok) ShowStageToast("📦 CLONE HERO EXPORT!", msg, "#22C55E");
+                else WpfMessageBox.Show(msg, "Export Clone Hero", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        };
+        var scaleDiffBtn = new System.Windows.Controls.Button { Content = "Scale Diffs (Fill E/M/H)", Style = (Style)FindResource("BlueButton"), Margin = new Thickness(0, 0, 6, 0), ToolTip = "Generate balanced progressive Hard, Medium & Easy tracks on this song" };
+        scaleDiffBtn.Click += async (_, _) =>
+        {
+            scaleDiffBtn.IsEnabled = false;
+            scaleDiffBtn.Content = "Scaling...";
+            var (ok, msg) = await _studioTools.ScaleChartDifficultyAsync(song.ProjectDirectory, "FillMissingDiffs", recompile: true);
+            scaleDiffBtn.IsEnabled = true;
+            scaleDiffBtn.Content = "Scale Diffs (Fill E/M/H)";
+            if (ok) ShowStageToast("🎚️ DIFFICULTIES SCALED!", msg, "#22C55E");
+            else WpfMessageBox.Show(msg, "Difficulty Scaler", MessageBoxButton.OK, MessageBoxImage.Warning);
+        };
         var saveBtn = new System.Windows.Controls.Button { Content = "Save & Apply", Style = (Style)FindResource("FlameButton") };
         saveBtn.Click += async (_, _) =>
         {
@@ -1969,6 +2074,8 @@ public partial class MainWindow : Window
             if (ok) ShowStageToast("★ SONG UPDATED!", msg, "#22C55E");
             else WpfMessageBox.Show(msg, "Update Error", MessageBoxButton.OK, MessageBoxImage.Error);
         };
+        btns.Children.Add(exportChBtn);
+        btns.Children.Add(scaleDiffBtn);
         btns.Children.Add(saveBtn);
         stack.Children.Add(btns);
 
@@ -2108,7 +2215,7 @@ public partial class MainWindow : Window
     private void OpenHighwayPreview(string title, string artist, string chartPath, string? audioPath, string? projectDir, string? songId = null)
     {
         StopAudioPreview();
-        var win = new HighwayPreviewWindow(title, artist, chartPath, audioPath, projectDir, _chartDoctor, songId) { Owner = this };
+        var win = new HighwayPreviewWindow(title, artist, chartPath, audioPath, projectDir, _chartDoctor, songId, _studioTools) { Owner = this };
         win.SongRecompiled += () => Dispatcher.Invoke(() => { _sparklineCache.Remove(chartPath); RefreshSongsList(); });
         win.ScoreRecorded += () => Dispatcher.Invoke(RefreshSongsList);
         win.Show();
@@ -4014,7 +4121,7 @@ public partial class MainWindow : Window
         var meshes = _tunnel.DetectMeshInterfaces();
         if (meshes.Count > 0)
         {
-            var summary = string.Join("  •  ", meshes.Select(m => $"{m.Provider}: {m.SyncUrl}"));
+            var summary = string.Join("  •  ", meshes.Select(m => $"{m.Provider}: {MaskIfPrivate(m.SyncUrl)}"));
             MeshNetworkSummaryText.Text = $"✓ Mesh VPN Detected (Zero Port-Forwarding!): {summary}";
             MeshNetworkSummaryText.Foreground = (WpfBrush)FindResource("CardSuccessTitle");
         }
@@ -4026,7 +4133,7 @@ public partial class MainWindow : Window
 
         if (_tunnel.IsTunnelActive && !string.IsNullOrWhiteSpace(_tunnel.ActiveTunnelUrl))
         {
-            TunnelStatusText.Text = $"✓ HTTPS Quick Tunnel Active: {_tunnel.ActiveTunnelUrl}";
+            TunnelStatusText.Text = $"✓ HTTPS Quick Tunnel Active: {MaskIfPrivate(_tunnel.ActiveTunnelUrl)}";
             TunnelStatusText.Foreground = (WpfBrush)FindResource("CardSuccessTitle");
             StartTunnelBtn.Content = "⏹ Stop HTTPS Tunnel";
             StartTunnelBtn.Style = (Style)FindResource("DangerButton");
@@ -4058,7 +4165,7 @@ public partial class MainWindow : Window
             RefreshMeshAndTunnelStatus();
             if (ok)
             {
-                ShowStageToast("⚡ HTTPS TUNNEL READY!", $"Zero-config encrypted URL: {urlOrErr}", "#22C55E");
+                ShowStageToast("⚡ HTTPS TUNNEL READY!", $"Zero-config encrypted URL: {MaskIfPrivate(urlOrErr)}", "#22C55E");
             }
             else
             {
@@ -4080,12 +4187,14 @@ public partial class MainWindow : Window
 
     private void RefreshNetworkSummary()
     {
-        var pub = _tunnel.IsTunnelActive && !string.IsNullOrWhiteSpace(_tunnel.ActiveTunnelUrl)
+        var pubRaw = _tunnel.IsTunnelActive && !string.IsNullOrWhiteSpace(_tunnel.ActiveTunnelUrl)
             ? _tunnel.ActiveTunnelUrl!
             : (string.IsNullOrEmpty(_nat.PublicIp) ? "Detecting..." : $"{_nat.PublicIp}:{_nat.ExternalPort ?? _port}");
+        var pub = pubRaw == "Detecting..." ? pubRaw : MaskIfPrivate(pubRaw);
+        var pinDisplay = AppConfig.Current.StreamerPrivacyMode ? "••••••" : _security.PairingPin;
         var mode = AppConfig.Current.P2pOnlineEnabled ? "Online" : "OFFLINE MODE";
         P2pNetworkSummary.Text = $"[{mode}] Public / NAT Address: {pub}  •  UPnP / NAT-PMP: {(_nat.IsMapped ? $"Port Forwarded ({_nat.MappingMethod})" : _nat.MappingMethod)}";
-        P2pPinSummary.Text = $"Your Session Pairing PIN (View-Only): {_security.PairingPin}  •  Song Downloads: Trusted Friends / Expiring Invites Only";
+        P2pPinSummary.Text = $"Your Session Pairing PIN (View-Only): {pinDisplay}  •  Song Downloads: Trusted Friends / Expiring Invites Only";
         UpdateLobbyCounters();
     }
 
@@ -4168,15 +4277,29 @@ public partial class MainWindow : Window
             var token = root.TryGetProperty("token", out var t) ? t.GetString() ?? "" : "";
             var host = root.TryGetProperty("host", out var h) ? h.GetString() ?? "Friend" : "Friend";
 
-            if (string.IsNullOrWhiteSpace(addr))
+            if (!SecurityService.ValidatePeerUrl(addr, out var safeBaseUrl, out var urlErr))
             {
-                WpfMessageBox.Show("Invite code did not contain a valid peer address.", "Invalid Invite Code", MessageBoxButton.OK, MessageBoxImage.Warning);
+                WpfMessageBox.Show($"Security Block: {urlErr}", "Blocked Invite URL", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            PeerAddressBox.Text = addr;
+            string authLabel = token.StartsWith("INV-", StringComparison.OrdinalIgnoreCase) ? "4-Hour Expiring Invite Token"
+                             : token.Length > 10 ? "Trusted Friend Token"
+                             : "View-Only Session PIN";
+            var confirm = WpfMessageBox.Show(
+                $"Connect to Lobby Invite?\n\n" +
+                $"Host: {host}\n" +
+                $"Address: {safeBaseUrl}\n" +
+                $"Auth Type: {authLabel}\n\n" +
+                $"Proceed with Challenge-HMAC encrypted connection?",
+                "Confirm Peer Invite",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            if (confirm != MessageBoxResult.Yes) return;
+
+            PeerAddressBox.Text = safeBaseUrl;
             PeerPinBox.Text = token;
-            PeerCompareStatus.Text = $"Loaded invite from {host} ({addr}) — connecting...";
+            PeerCompareStatus.Text = $"Loaded verified invite from {host} ({safeBaseUrl}) — connecting...";
             ComparePeerBtn_Click(sender, e);
         }
         catch (Exception ex)
@@ -4198,7 +4321,11 @@ public partial class MainWindow : Window
         var secret = PeerPinBox.Text.Trim();
         if (string.IsNullOrEmpty(addr)) return;
 
-        var baseUrl = addr.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? addr.TrimEnd('/') : $"http://{addr.TrimEnd('/')}";
+        if (!SecurityService.ValidatePeerUrl(addr, out var baseUrl, out var urlErr))
+        {
+            PeerCompareStatus.Text = $"Security Block: {urlErr}";
+            return;
+        }
         PeerCompareStatus.Text = $"Connecting to {baseUrl}...";
         LobbyMatchBanner.Visibility = Visibility.Collapsed;
         PeerSongsPanel.Children.Clear();
@@ -4207,8 +4334,43 @@ public partial class MainWindow : Window
         {
             using var resp = await SendChallengeHmacGetAsync(baseUrl, "/api/manifest", secret, TimeSpan.FromSeconds(15));
             resp.EnsureSuccessStatusCode();
-            var json = await resp.Content.ReadAsStringAsync();
-            var remote = JsonSerializer.Deserialize<LibraryManifest>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var rawBytes = await resp.Content.ReadAsByteArrayAsync();
+
+            // Mutual Host Identity Verification (ECDSA P-256 Signature + SSH-style TOFU Fingerprint Pinning)
+            if (resp.Headers.TryGetValues("X-GH3-Host-PubKey", out var pkVals) &&
+                resp.Headers.TryGetValues("X-GH3-Host-Signature", out var sigVals))
+            {
+                var pubKey = pkVals.FirstOrDefault() ?? "";
+                var sig = sigVals.FirstOrDefault() ?? "";
+                if (!SecurityService.VerifyHostSignature(pubKey, rawBytes, sig, out var hostFp))
+                {
+                    PeerCompareStatus.Text = "⚠️ SECURITY BLOCK: Peer manifest ECDSA signature failed verification (possible tampering)!";
+                    return;
+                }
+                var pinStatus = SecurityService.CheckOrPinPeerFingerprint(baseUrl, hostFp, out var prevFp);
+                if (pinStatus == "MISMATCH")
+                {
+                    var allowNew = WpfMessageBox.Show(
+                        $"⚠️ WARNING: PEER HOST IDENTITY CHANGED!\n\n" +
+                        $"Peer: {baseUrl}\n" +
+                        $"Previous Fingerprint: {prevFp}\n" +
+                        $"New Fingerprint:      {hostFp}\n\n" +
+                        $"This could mean your friend reinstalled Windows, OR someone is intercepting this address.\n\n" +
+                        $"Trust and pin the new identity?",
+                        "Host Identity Verification Warning",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+                    if (allowNew != MessageBoxResult.Yes)
+                    {
+                        PeerCompareStatus.Text = "Connection aborted due to Host Identity mismatch.";
+                        return;
+                    }
+                    AppConfig.Current.PinnedPeerFingerprints[baseUrl.TrimEnd('/').ToLowerInvariant()] = hostFp;
+                    AppConfig.Save();
+                }
+            }
+
+            var remote = JsonSerializer.Deserialize<LibraryManifest>(rawBytes, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             if (remote == null || remote.Songs == null)
             {
@@ -4409,6 +4571,10 @@ public partial class MainWindow : Window
 
             var encBytes = await resp.Content.ReadAsByteArrayAsync();
             var zipBytes = _security.DecryptPayload(encBytes, _lastPeerSecret);
+
+            // Binary Magic-Byte Validation before writing anything to Guitar Hero III
+            if (!SecurityService.ValidateCompiledSongPackageBytes(zipBytes, out var binErr))
+                return (false, $"Security Block: {binErr}");
 
             // If recipient doesn't have DATA\customs.pak.xen yet, pull initial template before merging
             if (!File.Exists(_gh3.CustomsPakPath))
@@ -4655,6 +4821,8 @@ public partial class MainWindow : Window
     // ==================== SECURITY & PRIVACY DASHBOARD ====================
     private void RefreshSecurityAuditPanel()
     {
+        if (HostFingerprintText != null)
+            HostFingerprintText.Text = $"Host ECDSA P-256 Fingerprint: {_security.HostPublicKeyFingerprint}  •  DPAPI Token Vault: Active";
         if (SecurityBlockedPanel == null || SecurityAuditBox == null) return;
         SecurityBlockedPanel.Children.Clear();
 
@@ -4876,6 +5044,12 @@ public partial class MainWindow : Window
         SettingsNormalizeDefaultChk.IsChecked = AppConfig.Current.NormalizeAudioLoudness;
         CrNormalizeLoudnessChk.IsChecked = AppConfig.Current.NormalizeAudioLoudness;
         SettingsAnimationsChk.IsChecked = AppConfig.Current.EnableUiAnimations;
+        if (SettingsSfxChk != null) SettingsSfxChk.IsChecked = AppConfig.Current.EnableSoundEffects;
+        if (SettingsRequireDownloadApprovalChk != null) SettingsRequireDownloadApprovalChk.IsChecked = AppConfig.Current.RequireHostDownloadApproval;
+        if (PlayerVolumeSlider != null) PlayerVolumeSlider.Value = Math.Clamp(AppConfig.Current.AudioPreviewVolume, 0.0, 1.0);
+        if (CompactViewBtn != null) CompactViewBtn.Content = AppConfig.Current.CompactSetlistView ? "▦ Cards" : "☰ Compact";
+        if (GroupByCombo != null) GroupByCombo.SelectedIndex = (AppConfig.Current.GroupByMode ?? "None") switch { "Artist" => 1, "Tier" => 2, _ => 0 };
+        ApplyStreamerPrivacyVisuals();
         SettingsLobbyCapBox.Text = AppConfig.Current.MaxLobbyAutoSyncSongs.ToString();
         SettingsAutoRollbackChk.IsChecked = AppConfig.Current.AutoRollbackOnFailedUpdate;
         SettingsOverlayEnabledChk.IsChecked = AppConfig.Current.EnableInGameOverlay;

@@ -1,0 +1,52 @@
+<Window x:Class="GH3_Sync.Views.CalibrationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="GH3-Sync — Audio / Video Lag Calibration Mini-Game"
+        Width="660" Height="440"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="#090A0F"
+        Foreground="#F8FAFC"
+        KeyDown="Window_KeyDown">
+
+    <Grid Margin="22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,14">
+            <TextBlock Text="🎯 GH3 Audio / Video Lag Calibration" FontSize="20" FontWeight="Bold" Foreground="#F8FAFC"/>
+            <TextBlock Text="Tap SPACE or press ANY fret/strum on your DualSense Edge, Xbox controller, or Guitar on every beat click (12 beats) to measure your exact hardware lag."
+                       FontSize="12" Foreground="#94A3B8" TextWrapping="Wrap" Margin="0,3,0,0"/>
+        </StackPanel>
+
+        <Border Grid.Row="1" Background="#11131B" BorderBrush="#262B3D" BorderThickness="1.5" CornerRadius="12" Padding="18">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <Canvas x:Name="CalibCanvas" Grid.Row="0" Height="175" Background="#070A12" ClipToBounds="True"/>
+
+                <StackPanel Grid.Row="1" Margin="0,14,0,0">
+                    <TextBlock x:Name="CalibStatusText" Text="Click 'Start Calibration' — listen to the 120 BPM clicks &amp; tap in rhythm!"
+                               FontSize="13" FontWeight="SemiBold" Foreground="#FDBA74" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="CalibResultText" Text="Current Saved Calibration: 0 ms"
+                               FontSize="12" FontFamily="Consolas" Foreground="#7DD3FC" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <DockPanel Grid.Row="2" Margin="0,14,0,0">
+            <StackPanel Orientation="Horizontal">
+                <Button x:Name="StartCalibBtn" Content="▶ Start Calibration" Padding="16,8" Background="#F97316" Foreground="White" BorderThickness="0" FontWeight="Bold" Cursor="Hand" Click="StartCalibBtn_Click"/>
+                <Button x:Name="ApplyCalibBtn" Content="✓ Apply Calibration" Padding="14,8" Margin="8,0,0,0" IsEnabled="False" Background="#059669" Foreground="White" BorderThickness="0" FontWeight="Bold" Cursor="Hand" Click="ApplyCalibBtn_Click"/>
+                <Button Content="Reset 0 ms" Padding="12,8" Margin="8,0,0,0" Background="#1E2436" Foreground="#CBD5E1" BorderBrush="#334155" BorderThickness="1" Cursor="Hand" Click="ResetCalibBtn_Click"/>
+            </StackPanel>
+            <Button DockPanel.Dock="Right" Content="Close" Padding="16,8" Background="#1E2436" Foreground="#E2E8F0" BorderBrush="#334155" BorderThickness="1" Cursor="Hand" Click="CloseBtn_Click"/>
+        </DockPanel>
+    </Grid>
+</Window>
