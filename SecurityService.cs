@@ -62,7 +62,7 @@ public class SecurityService
         if (string.IsNullOrWhiteSpace(expectedHex) || !File.Exists(filePath)) return true;
         var cleanExpected = expectedHex.Trim().Replace("sha256:", "", StringComparison.OrdinalIgnoreCase).ToLowerInvariant();
         using var sha = SHA256.Create();
-        using var fs = File.OpenRead(filePath);
+        using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         var actual = Convert.ToHexString(sha.ComputeHash(fs)).ToLowerInvariant();
         return FixedTimeEquals(actual, cleanExpected);
     }

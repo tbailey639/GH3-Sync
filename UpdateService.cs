@@ -200,33 +200,41 @@ public class UpdateService
             resp.EnsureSuccessStatusCode();
 
             var totalBytes = resp.Content.Headers.ContentLength ?? updateInfo.InstallerSizeBytes;
-            await using var src = await resp.Content.ReadAsStreamAsync(ct);
-            await using var dst = new FileStream(targetFile, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete, 81920, useAsync: true);
-
-            var buffer = new byte[81920];
-            long downloaded = 0;
-            int read;
-            int lastPct = -1;
-
-            while ((read = await src.ReadAsync(buffer, ct)) > 0)
+            await using (var src = await resp.Content.ReadAsStreamAsync(ct))
             {
-                await dst.WriteAsync(buffer.AsMemory(0, read), ct);
-                downloaded += read;
-
-                if (totalBytes > 0)
+                var dst = new FileStream(targetFile, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete, 81920, useAsync: true);
+                try
                 {
-                    int pct = (int)Math.Min(100, (downloaded * 100L) / totalBytes);
-                    if (pct != lastPct)
+                    var buffer = new byte[81920];
+                    long downloaded = 0;
+                    int read;
+                    int lastPct = -1;
+
+                    while ((read = await src.ReadAsync(buffer, ct)) > 0)
                     {
-                        lastPct = pct;
-                        var dlMb = downloaded / (1024.0 * 1024.0);
-                        var totMb = totalBytes / (1024.0 * 1024.0);
-                        onProgress?.Invoke(pct, $"Downloading update... {pct}% ({dlMb:F1} / {totMb:F1} MB)");
+                        await dst.WriteAsync(buffer.AsMemory(0, read), ct);
+                        downloaded += read;
+
+                        if (totalBytes > 0)
+                        {
+                            int pct = (int)Math.Min(100, (downloaded * 100L) / totalBytes);
+                            if (pct != lastPct)
+                            {
+                                lastPct = pct;
+                                var dlMb = downloaded / (1024.0 * 1024.0);
+                                var totMb = totalBytes / (1024.0 * 1024.0);
+                                onProgress?.Invoke(pct, $"Downloading update... {pct}% ({dlMb:F1} / {totMb:F1} MB)");
+                            }
+                        }
                     }
+
+                    await dst.FlushAsync(ct);
+                }
+                finally
+                {
+                    await dst.DisposeAsync();
                 }
             }
-
-            await dst.FlushAsync(ct);
 
             var info = new FileInfo(targetFile);
             if (!info.Exists || info.Length < 1024 * 1024)
