@@ -4,6 +4,17 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.3.1] - 2026-11-18
+
+### Bug Fixes
+* **Fixed Honeycomb Compiler Permissions Error (`Access to the path ...\tools\compiler\Backups\GH3 is denied`):**
+  - When installed to `C:\Program Files\GH3-Sync`, standard non-elevated user accounts lack write permissions to create `Backups\GH3` in `Program Files`.
+  - Added `EnsureWritableCompilerDirectory()` in `HoneycombCompilerService`: automatically detects protected/read-only compiler roots and mirrors the compiler binaries & templates to `%APPDATA%\GH3-Sync\tools\compiler`, where full user write and backup rights are guaranteed without UAC prompts.
+  - Added Inno Setup `[Dirs]` rules with `Permissions: users-modify` for `{app}\tools`, `{app}\tools\compiler`, and `{app}\tools\compiler\Backups\GH3`.
+* **Fixed In-App Update File-Locking Sharing Violation:** Disposed download FileStream (`dst`) before hash verification and opened checksum reader with `FileShare.ReadWrite | FileShare.Delete` to prevent updater self-locking collisions.
+
+---
+
 ## [v1.0.3] - 2026-11-18
 
 ### Bug Fixes

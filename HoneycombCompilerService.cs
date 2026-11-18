@@ -76,7 +76,14 @@ public class HoneycombCompilerService
     /// </summary>
     public static string FindHoneycombDirectory(string? preferredPath = null, string? gamePath = null)
     {
-        // 0. Bundled internal compiler tools inside GH3-Sync (Zero separate install required!)
+        // 0. User writable AppData compiler directory (preferred for reliable non-admin write access)
+        var appDataCompiler = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GH3-Sync", "tools", "compiler");
+        if (Directory.Exists(appDataCompiler) && IsValidHoneycombDirectory(appDataCompiler))
+        {
+            return appDataCompiler;
+        }
+
+        // 1. Bundled internal compiler tools inside GH3-Sync (Zero separate install required!)
         string[] bundledCandidates = new[]
         {
             Path.Combine(AppContext.BaseDirectory, "tools", "compiler"),
@@ -87,7 +94,10 @@ public class HoneycombCompilerService
         foreach (var bundled in bundledCandidates)
         {
             if (Directory.Exists(bundled) && IsValidHoneycombDirectory(bundled))
-                return bundled;
+            {
+                // Ensure write access (mirrors to user AppData if bundled directory is read-only / Program Files)
+                return EnsureWritableCompilerDirectory(bundled);
+            }
         }
 
         // 1. Explicitly preferred path
@@ -182,6 +192,83 @@ public class HoneycombCompilerService
         return File.Exists(Path.Combine(path, "Honeycomb-GUI.dll")) ||
                File.Exists(Path.Combine(path, "GH-Toolkit-Core.dll")) ||
                File.Exists(Path.Combine(path, "Honeycomb-GUI.exe"));
+    }
+
+    /// <summary>
+    /// If the compiler directory is located in a read-only or protected directory (such as Program Files),
+    /// synchronizes the compiler binaries and templates into %APPDATA%\GH3-Sync\tools\compiler
+    /// where full user write/backup access is guaranteed without UAC elevation.
+    /// </summary>
+    public static string EnsureWritableCompilerDirectory(string sourceDir, Action<string>? log = null)
+    {
+        if (string.IsNullOrWhiteSpace(sourceDir) || !Directory.Exists(sourceDir))
+            return sourceDir;
+
+        // Test if sourceDir/Backups/GH3 is writable
+        bool canWrite = false;
+        try
+        {
+            var testFolder = Path.Combine(sourceDir, "Backups", "GH3");
+            Directory.CreateDirectory(testFolder);
+            var testFile = Path.Combine(testFolder, $".write_test_{Guid.NewGuid():N}");
+            File.WriteAllText(testFile, "ok");
+            File.Delete(testFile);
+            canWrite = true;
+        }
+        catch
+        {
+            canWrite = false;
+        }
+
+        if (canWrite)
+            return sourceDir;
+
+        // The compiler is located in a protected or read-only directory (e.g. C:\Program Files\GH3-Sync).
+        // Mirror the compiler tools into %APPDATA%\GH3-Sync\tools\compiler for unrestricted user write access.
+        try
+        {
+            var userCompilerDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "GH3-Sync", "tools", "compiler"
+            );
+
+            log?.Invoke($"[COMPILER] Bundled directory is protected. Mirroring compiler to user AppData for write access: {userCompilerDir}");
+            Directory.CreateDirectory(userCompilerDir);
+            Directory.CreateDirectory(Path.Combine(userCompilerDir, "Backups", "GH3"));
+            Directory.CreateDirectory(Path.Combine(userCompilerDir, "Replacements"));
+
+            CopyDirectoryRecursive(sourceDir, userCompilerDir);
+
+            if (IsValidHoneycombDirectory(userCompilerDir))
+            {
+                EnsureFfmpeg(userCompilerDir, log);
+                return userCompilerDir;
+            }
+        }
+        catch (Exception ex)
+        {
+            log?.Invoke($"[COMPILER] Warning: Failed to mirror compiler to AppData: {ex.Message}");
+        }
+
+        return sourceDir;
+    }
+
+    private static void CopyDirectoryRecursive(string sourceDir, string targetDir)
+    {
+        Directory.CreateDirectory(targetDir);
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            var destFile = Path.Combine(targetDir, Path.GetFileName(file));
+            if (!File.Exists(destFile) || new FileInfo(file).LastWriteTimeUtc > new FileInfo(destFile).LastWriteTimeUtc)
+            {
+                try { File.Copy(file, destFile, overwrite: true); } catch { }
+            }
+        }
+        foreach (var subDir in Directory.GetDirectories(sourceDir))
+        {
+            var dirName = Path.GetFileName(subDir);
+            CopyDirectoryRecursive(subDir, Path.Combine(targetDir, dirName));
+        }
     }
 
     /// <summary>
@@ -419,6 +506,9 @@ public class HoneycombCompilerService
             Log(result.Message);
             return result;
         }
+
+        // Guarantee write permissions for non-admin execution (mirroring to AppData if needed)
+        honeycombDir = EnsureWritableCompilerDirectory(honeycombDir, Log);
 
         EnsureFfmpeg(honeycombDir, Log);
 

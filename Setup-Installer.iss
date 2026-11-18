@@ -2,7 +2,7 @@
 ; GH3-Sync: Guitar Hero III Custom Song Creator, Clone Hero Converter & P2P Synchronizer
 
 #define MyAppName "GH3-Sync"
-#define MyAppVersion "1.0.3"
+#define MyAppVersion "1.3.1"
 #define MyAppPublisher "Mad Scientist (tbailey639)"
 #define MyAppURL "https://github.com/tbailey639/GH3-Sync"
 #define MyAppExeName "GH3-Sync.exe"
@@ -36,6 +36,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
+[Dirs]
+Name: "{app}\tools"; Permissions: users-modify
+Name: "{app}\tools\compiler"; Permissions: users-modify
+Name: "{app}\tools\compiler\Backups"; Permissions: users-modify
+Name: "{app}\tools\compiler\Backups\GH3"; Permissions: users-modify
+Name: "{app}\tools\compiler\Replacements"; Permissions: users-modify
+
 [Files]
 Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Assets\app_icon.ico"; DestDir: "{app}\Assets"; Flags: ignoreversion
@@ -43,7 +50,7 @@ Source: "Assets\gh3_sync_logo.png"; DestDir: "{app}\Assets"; Flags: ignoreversio
 Source: "dist\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "CREDITS.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "tools\compiler\*"; DestDir: "{app}\tools\compiler"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "tools\compiler\*"; DestDir: "{app}\tools\compiler"; Flags: ignoreversion recursesubdirs createallsubdirs; Permissions: users-modify
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\Assets\app_icon.ico"
