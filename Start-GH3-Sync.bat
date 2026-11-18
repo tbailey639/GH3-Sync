@@ -1,18 +1,11 @@
 @echo off
-title GH3-Sync Server
+title GH3-Sync Beta 5
 cd /d "%~dp0"
-echo Starting GH3-Sync Beta 4...
 if exist "GH3-Sync.exe" (
-    start http://localhost:7373
-    "GH3-Sync.exe"
+    start "" "GH3-Sync.exe"
 ) else if exist "dist\GH3-Sync.exe" (
-    start http://localhost:7373
-    "dist\GH3-Sync.exe"
-) else if exist "bin\Release\net9.0-windows\GH3-Sync.exe" (
-    start http://localhost:7373
-    "bin\Release\net9.0-windows\GH3-Sync.exe"
+    start "" "dist\GH3-Sync.exe"
 ) else (
-    start http://localhost:7373
-    dotnet run -c Release
+    echo GH3-Sync.exe not found! Run dotnet publish first.
+    pause
 )
-pause

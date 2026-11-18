@@ -15,11 +15,11 @@ public class SongCreationRequest
     public string Album { get; set; } = "";
     public int Year { get; set; } = DateTime.Now.Year;
     public string Genre { get; set; } = "Rock";
-    public string Charter { get; set; } = "Antigravity";
+    public string Charter { get; set; } = "ONOGAMI AI Creator";
     public int DiffGuitar { get; set; } = 4;
     public int DiffRhythm { get; set; } = 3;
     public int PreviewStartMs { get; set; } = 5000;
-    public int Bpm { get; set; } = 130;
+    public double Bpm { get; set; } = 130.0;
     public bool AutoDetectBpm { get; set; } = true;
     public bool SeparateStemsWithDemucs { get; set; } = false;
     public bool AutoGenerateChart { get; set; } = false;
@@ -42,6 +42,8 @@ public class CreatedSongResult
     public string FsbFilePath { get; set; } = "";
     public double DetectedBpm { get; set; }
     public bool StemsSeparated { get; set; }
+    public int TranscribedNoteCount { get; set; }
+    public string ChartingEngineUsed { get; set; } = "";
 }
 
 public class SongCreatorService
@@ -76,9 +78,7 @@ public class SongCreatorService
         }
 
         if (!string.IsNullOrWhiteSpace(AppConfig.Current.CustomSongsPath) && Directory.Exists(AppConfig.Current.CustomSongsPath))
-        {
             return AppConfig.Current.CustomSongsPath;
-        }
 
         if (!string.IsNullOrWhiteSpace(AppConfig.Current.GamePath) && Directory.Exists(AppConfig.Current.GamePath))
         {
@@ -105,14 +105,25 @@ public class SongCreatorService
         return appDataSongs;
     }
 
-    public CreatedSongResult CreateSongFromOnogamiMethod(
+    public Task<CreatedSongResult> CreateSongFromFilesAsync(
         SongCreationRequest meta,
-        byte[] audioBytes,
-        string audioFileName,
-        byte[]? chartBytes = null,
-        string? chartFileName = null)
+        string audioFilePath,
+        string? chartFilePath = null,
+        Action<int, string>? onProgress = null)
     {
-        return CreateSongFromOnogamiMethodAsync(meta, audioBytes, audioFileName, chartBytes, chartFileName).GetAwaiter().GetResult();
+        if (string.IsNullOrWhiteSpace(audioFilePath) || !File.Exists(audioFilePath))
+            return Task.FromResult(new CreatedSongResult { Success = false, Message = "Audio file not found." });
+
+        var audioBytes = File.ReadAllBytes(audioFilePath);
+        byte[]? chartBytes = null;
+        string? chartName = null;
+        if (!string.IsNullOrWhiteSpace(chartFilePath) && File.Exists(chartFilePath))
+        {
+            chartBytes = File.ReadAllBytes(chartFilePath);
+            chartName = Path.GetFileName(chartFilePath);
+        }
+
+        return CreateSongFromOnogamiMethodAsync(meta, audioBytes, Path.GetFileName(audioFilePath), chartBytes, chartName, onProgress);
     }
 
     public async Task<CreatedSongResult> CreateSongFromOnogamiMethodAsync(
@@ -120,7 +131,8 @@ public class SongCreatorService
         byte[] audioBytes,
         string audioFileName,
         byte[]? chartBytes = null,
-        string? chartFileName = null)
+        string? chartFileName = null,
+        Action<int, string>? onProgress = null)
     {
         if (string.IsNullOrWhiteSpace(meta.Title))
             return new CreatedSongResult { Success = false, Message = "Song title is required." };
@@ -131,67 +143,108 @@ public class SongCreatorService
 
         try
         {
-            // 1. Create Target Directory
+            onProgress?.Invoke(5, "Creating ONOGAMI song project directory...");
+
             var cleanTitle = SanitizeFileName(meta.Title);
             var cleanArtist = SanitizeFileName(meta.Artist);
             var dirName = $"{cleanArtist} - {cleanTitle}";
             var targetDir = Path.Combine(_defaultSongsDir, dirName);
+            Directory.CreateDirectory(targetDir);
 
-            if (!Directory.Exists(targetDir))
-            {
-                Directory.CreateDirectory(targetDir);
-            }
-
-            // 2. Save Audio File
+            // 1. Save Audio File
             var audioExt = Path.GetExtension(audioFileName);
             if (string.IsNullOrEmpty(audioExt)) audioExt = ".mp3";
             var audioFullPath = Path.Combine(targetDir, $"song{audioExt.ToLowerInvariant()}");
             File.WriteAllBytes(audioFullPath, audioBytes);
 
-            // 2b. Audio Analysis & BPM Detection
-            AudioAnalysisResult? analysis = null;
-            if (_audioAnalysis != null)
+            // 2. Analyze Full Mix for BPM & Duration
+            onProgress?.Invoke(12, "Analyzing audio tempo (BPM) & guitar frequencies...");
+            AudioAnalysisResult? mixAnalysis = _audioAnalysis?.AnalyzeAudio(audioFullPath);
+            double exactBpm = meta.Bpm > 20 ? meta.Bpm : 120.0;
+            double songDuration = mixAnalysis?.DurationSeconds ?? 180.0;
+
+            if (mixAnalysis != null && mixAnalysis.Success && (meta.AutoDetectBpm || meta.Bpm <= 0))
             {
-                analysis = _audioAnalysis.AnalyzeAudio(audioFullPath);
-                if (analysis.Success && (meta.AutoDetectBpm || meta.Bpm <= 0))
+                exactBpm = mixAnalysis.Bpm;
+                meta.Bpm = exactBpm;
+                if (mixAnalysis.DownbeatOffsetMs > 0 && meta.PreviewStartMs == 5000)
                 {
-                    meta.Bpm = (int)Math.Round(analysis.Bpm);
-                    if (analysis.DownbeatOffsetMs > 0 && meta.PreviewStartMs == 5000)
-                    {
-                        meta.PreviewStartMs = (int)Math.Max(5000, analysis.DownbeatOffsetMs + 10000);
-                    }
+                    meta.PreviewStartMs = (int)Math.Max(5000, mixAnalysis.DownbeatOffsetMs + 12000);
                 }
             }
 
-            // 2c. Optional Demucs AI Stem Separation
+            // 3. Optional Demucs 6-Stem Isolation + Spotify Basic Pitch AI Transcription
             bool stemsSeparated = false;
             string guitarAudioPath = audioFullPath;
             string rhythmAudioPath = "";
             string backingAudioPath = audioFullPath;
+            List<TranscribedNote> bestNotes = new();
+            string chartingEngine = "Uploaded Chart/MIDI";
 
-            if (meta.SeparateStemsWithDemucs && _demucs != null)
+            if (meta.SeparateStemsWithDemucs && _demucs != null && _demucs.GetStatus().IsInstalled)
             {
+                onProgress?.Invoke(20, "Running Demucs 6-Stem AI (isolating Guitar, Bass, Drums, Vocals, Piano)...");
                 var stemsDir = Path.Combine(targetDir, "stems");
-                var demucsResult = await _demucs.SeparateStemsAsync(audioFullPath, stemsDir);
-                if (demucsResult.Success && !string.IsNullOrEmpty(demucsResult.GuitarTrackPath))
+                var demucsRes = await _demucs.SeparateStemsAsync(audioFullPath, stemsDir, (pct, step) =>
+                {
+                    int mapped = 20 + (int)(pct * 0.45);
+                    onProgress?.Invoke(mapped, step);
+                });
+
+                if (demucsRes.Success && !string.IsNullOrEmpty(demucsRes.GuitarTrackPath))
                 {
                     stemsSeparated = true;
-                    guitarAudioPath = demucsResult.GuitarTrackPath;
-                    rhythmAudioPath = demucsResult.BassTrackPath;
-                    backingAudioPath = !string.IsNullOrEmpty(demucsResult.VocalsTrackPath) && !string.IsNullOrEmpty(demucsResult.DrumsTrackPath)
-                        ? $"{demucsResult.VocalsTrackPath};{demucsResult.DrumsTrackPath}"
-                        : audioFullPath;
+                    guitarAudioPath = demucsRes.GuitarTrackPath;
+                    rhythmAudioPath = demucsRes.BassTrackPath;
+
+                    // Combine non-guitar stems (drums + vocals + piano + other if guitar.wav was separate) into backing
+                    var backingList = new List<string>();
+                    if (!string.IsNullOrEmpty(demucsRes.DrumsTrackPath)) backingList.Add(demucsRes.DrumsTrackPath);
+                    if (!string.IsNullOrEmpty(demucsRes.VocalsTrackPath)) backingList.Add(demucsRes.VocalsTrackPath);
+                    if (!string.IsNullOrEmpty(demucsRes.PianoTrackPath)) backingList.Add(demucsRes.PianoTrackPath);
+                    if (!string.IsNullOrEmpty(demucsRes.OtherTrackPath) &&
+                        !string.Equals(demucsRes.OtherTrackPath, demucsRes.GuitarTrackPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        backingList.Add(demucsRes.OtherTrackPath);
+                    }
+                    backingAudioPath = backingList.Count > 0 ? string.Join(";", backingList) : audioFullPath;
+
+                    if (demucsRes.TranscribedGuitarNotes.Count >= 15)
+                    {
+                        bestNotes = demucsRes.TranscribedGuitarNotes;
+                        chartingEngine = "Demucs 6-Stem + Spotify Basic Pitch AI";
+                    }
+                    else if (_audioAnalysis != null)
+                    {
+                        onProgress?.Invoke(66, "Extracting pitch contours from isolated guitar.wav...");
+                        var stemAnalysis = _audioAnalysis.AnalyzeAudio(demucsRes.GuitarTrackPath);
+                        if (stemAnalysis.Success && stemAnalysis.TranscribedNotes.Count >= 10)
+                        {
+                            bestNotes = stemAnalysis.TranscribedNotes;
+                            chartingEngine = "Demucs 6-Stem + FFT/YIN Guitar Pitch Engine";
+                        }
+                    }
                 }
             }
 
-            // 3. Handle Chart (Use provided OR Auto-Generate like ONOGAMI)
+            // Fallback to FFT/YIN pitched notes from full mix if AI stems weren't used
+            if (bestNotes.Count == 0 && mixAnalysis != null && mixAnalysis.TranscribedNotes.Count > 0)
+            {
+                bestNotes = mixAnalysis.TranscribedNotes;
+                chartingEngine = "FFT Guitar-Bandpass + YIN Pitch Engine";
+            }
+
+            // 4. Handle Chart (Use uploaded OR build true pitch-mapped chart!)
+            onProgress?.Invoke(70, "Building 5-fret Guitar Hero III chart & MIDI...");
             string chartFullPath;
             string midiFullPath = Path.Combine(targetDir, "notes.mid");
+
             if (chartBytes != null && chartBytes.Length > 0 && !meta.AutoGenerateChart)
             {
                 var chartExt = Path.GetExtension(chartFileName ?? ".chart").ToLowerInvariant();
                 chartFullPath = Path.Combine(targetDir, $"notes{chartExt}");
                 File.WriteAllBytes(chartFullPath, chartBytes);
+                chartingEngine = "Uploaded Chart/MIDI";
 
                 if (chartExt == ".mid" || chartExt == ".midi")
                 {
@@ -199,38 +252,21 @@ public class SongCreatorService
                 }
                 else if (chartExt == ".chart")
                 {
-                    try
-                    {
-                        var hDir = HoneycombCompilerService.FindHoneycombDirectory();
-                        if (!string.IsNullOrEmpty(hDir))
-                        {
-                            HoneycombCompilerService.ConvertChartToMid(chartFullPath, hDir);
-                        }
-                    }
-                    catch { }
+                    TryConvertChart(chartFullPath);
                 }
             }
             else
             {
-                // Dynamic Audio-Driven Onset & Rhythmic Chart Generation
                 chartFullPath = Path.Combine(targetDir, "notes.chart");
-                var chartContent = GenerateDynamicChart(meta, analysis);
+                var chartContent = MidiToGh3ChartMapper.BuildChartFromNotes(
+                    meta, bestNotes, exactBpm, songDuration, chartingEngine);
                 File.WriteAllText(chartFullPath, chartContent);
-
-                try
-                {
-                    var hDir = HoneycombCompilerService.FindHoneycombDirectory();
-                    if (!string.IsNullOrEmpty(hDir))
-                    {
-                        HoneycombCompilerService.ConvertChartToMid(chartFullPath, hDir);
-                    }
-                }
-                catch { }
+                TryConvertChart(chartFullPath);
             }
 
             var chosenMidiPath = File.Exists(midiFullPath) ? midiFullPath : "";
 
-            // 4. Generate song.ini
+            // 5. Generate song.ini
             var iniPath = Path.Combine(targetDir, "song.ini");
             var iniSb = new StringBuilder();
             iniSb.AppendLine("[song]");
@@ -246,7 +282,7 @@ public class SongCreatorService
             iniSb.AppendLine("icon = onogami_creator");
             File.WriteAllText(iniPath, iniSb.ToString());
 
-            // 5. Generate .ghproj (The ONOGAMI template for Honeycomb)
+            // 6. Generate .ghproj
             var ghprojName = $"{meta.Title}.ghproj";
             var ghprojFullPath = Path.Combine(targetDir, ghprojName);
             var cleanSongId = SanitizeSongId(cleanTitle);
@@ -344,10 +380,7 @@ public class SongCreatorService
                 easyOpen = false
             };
 
-            var ghprojJson = JsonSerializer.Serialize(projData, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(ghprojFullPath, ghprojJson);
-
-            // Register this song ID and project directory as created by ONOGAMI creator
+            File.WriteAllText(ghprojFullPath, JsonSerializer.Serialize(projData, new JsonSerializerOptions { WriteIndented = true }));
             AppConfig.RegisterCreatedSong(cleanSongId, targetDir);
 
             var result = new CreatedSongResult
@@ -359,14 +392,17 @@ public class SongCreatorService
                 ProjectDirectory = targetDir,
                 GhprojPath = ghprojFullPath,
                 CreatedWithOnogamiCreator = true,
-                DetectedBpm = meta.Bpm,
+                DetectedBpm = exactBpm,
                 StemsSeparated = stemsSeparated,
-                Message = $"Successfully created '{meta.Title}' with ONOGAMI Song Creator!"
+                TranscribedNoteCount = bestNotes.Count,
+                ChartingEngineUsed = chartingEngine,
+                Message = $"Successfully created '{meta.Title}' ({chartingEngine}, {exactBpm:F1} BPM)!"
             };
 
-            // Automated Honeycomb Compilation
+            // 7. Automated Bundled Honeycomb Compilation
             if (meta.AutoCompile && _compiler != null)
             {
+                onProgress?.Invoke(82, "Compiling chart PAK & encrypted FSB audio soundbank into Guitar Hero III...");
                 var compileResult = await _compiler.CompileSongProjectAsync(ghprojFullPath);
                 result.CompiledSuccessfully = compileResult.Success;
                 result.CompilationMessage = compileResult.Message;
@@ -376,17 +412,17 @@ public class SongCreatorService
                 if (compileResult.Success)
                 {
                     if (!string.IsNullOrEmpty(compileResult.SongId))
-                    {
                         result.SongId = compileResult.SongId;
-                    }
-                    result.Message = $"Successfully created and compiled '{meta.Title}' directly into Guitar Hero III (Ready to Play)!";
+
+                    result.Message = $"Compiled & installed '{meta.Title}' directly into Guitar Hero III! ({chartingEngine}, {exactBpm:F1} BPM, {(stemsSeparated ? "6-Stem Mute-on-Miss Audio" : "Single Mix")})";
                 }
                 else
                 {
-                    result.Message = $"Song created at '{targetDir}'. Honeycomb compilation note: {compileResult.Message}";
+                    result.Message = $"Project created at '{targetDir}'. Compiler note: {compileResult.Message}";
                 }
             }
 
+            onProgress?.Invoke(100, "Done!");
             return result;
         }
         catch (Exception ex)
@@ -399,169 +435,15 @@ public class SongCreatorService
         }
     }
 
-    /// <summary>
-    /// Generates dynamic, music-driven 5-fret charts with section events,
-    /// power chords, melodically shifting fret progressions, Star Power phrases,
-    /// and sustains synced to detected audio onsets and energy peaks.
-    /// </summary>
-    private static string GenerateDynamicChart(SongCreationRequest meta, AudioAnalysisResult? analysis)
+    private static void TryConvertChart(string chartPath)
     {
-        var sb = new StringBuilder();
-        int bpmMicro = Math.Max(60, Math.Min(300, meta.Bpm)) * 1000;
-        int resolution = 192; // Standard Neversoft GH3 resolution (192 ticks per beat)
-
-        sb.AppendLine("[Song]");
-        sb.AppendLine("{");
-        sb.AppendLine($"  Name = \"{meta.Title}\"");
-        sb.AppendLine($"  Artist = \"{meta.Artist}\"");
-        sb.AppendLine($"  Charter = \"{meta.Charter}\"");
-        sb.AppendLine($"  Album = \"{meta.Album}\"");
-        sb.AppendLine($"  Year = \", {meta.Year}\"");
-        sb.AppendLine($"  Offset = {Math.Round(analysis?.DownbeatOffsetMs ?? 0.0, 1)}");
-        sb.AppendLine($"  Resolution = {resolution}");
-        sb.AppendLine("  Player2 = rhythm");
-        sb.AppendLine($"  Difficulty = {meta.DiffGuitar}");
-        sb.AppendLine($"  PreviewStart = {meta.PreviewStartMs}");
-        sb.AppendLine($"  PreviewEnd = {meta.PreviewStartMs + 30000}");
-        sb.AppendLine($"  Genre = \"{meta.Genre.ToLowerInvariant()}\"");
-        sb.AppendLine("  MediaType = \"cd\"");
-        sb.AppendLine("  MusicStream = \"song.mp3\"");
-        sb.AppendLine("}");
-
-        sb.AppendLine("[SyncTrack]");
-        sb.AppendLine("{");
-        sb.AppendLine("  0 = TS 4");
-        sb.AppendLine($"  0 = B {bpmMicro}");
-        sb.AppendLine("}");
-
-        sb.AppendLine("[Events]");
-        sb.AppendLine("{");
-        sb.AppendLine("  768 = E \"section Intro\"");
-        sb.AppendLine("  3840 = E \"section Verse 1\"");
-        sb.AppendLine("  11520 = E \"section Chorus 1\"");
-        sb.AppendLine("  19200 = E \"section Verse 2\"");
-        sb.AppendLine("  26880 = E \"section Solo\"");
-        sb.AppendLine("  26880 = E solo");
-        sb.AppendLine("  38400 = E soloend");
-        sb.AppendLine("  38400 = E \"section Chorus 2\"");
-        sb.AppendLine("  46080 = E \"section Outro\"");
-        sb.AppendLine("}");
-
-        // Build notes from audio transients if available
-        List<int> onsetTicks = new();
-        List<float> onsetEnergies = new();
-
-        if (analysis != null && analysis.OnsetTimestampsSeconds.Count > 10)
+        try
         {
-            var offsetSec = analysis.DownbeatOffsetMs / 1000.0;
-            var ticksPerSec = resolution * (meta.Bpm / 60.0);
-
-            for (int i = 0; i < analysis.OnsetTimestampsSeconds.Count; i++)
-            {
-                var timeSec = analysis.OnsetTimestampsSeconds[i];
-                if (timeSec < offsetSec) continue;
-
-                var rawTick = (int)Math.Round((timeSec - offsetSec) * ticksPerSec);
-                if (rawTick < 768) continue; // Start after 1 intro bar
-
-                // Quantize to 16th-note grid (48 ticks)
-                var quantized = ((rawTick + 24) / 48) * 48;
-
-                if (!onsetTicks.Contains(quantized))
-                {
-                    onsetTicks.Add(quantized);
-                    onsetEnergies.Add(analysis.OnsetEnergies[i]);
-                }
-            }
+            var hDir = HoneycombCompilerService.FindHoneycombDirectory();
+            if (!string.IsNullOrEmpty(hDir))
+                HoneycombCompilerService.ConvertChartToMid(chartPath, hDir);
         }
-
-        // Fallback procedural rhythm grid if no transients
-        if (onsetTicks.Count < 20)
-        {
-            onsetTicks.Clear();
-            onsetEnergies.Clear();
-            int cur = 768;
-            for (int i = 0; i < 300; i++)
-            {
-                onsetTicks.Add(cur);
-                onsetEnergies.Add(0.5f + (float)Math.Sin(i * 0.3) * 0.4f);
-                cur += (i % 4 == 3) ? 96 : 192;
-            }
-        }
-
-        // Generate 4 difficulties: Expert, Hard, Medium, Easy
-        GenerateDifficulty(sb, "ExpertSingle", onsetTicks, onsetEnergies, fretSpread: 5, chordChance: 0.28f, densityStep: 1);
-        GenerateDifficulty(sb, "HardSingle", onsetTicks, onsetEnergies, fretSpread: 4, chordChance: 0.15f, densityStep: 2);
-        GenerateDifficulty(sb, "MediumSingle", onsetTicks, onsetEnergies, fretSpread: 3, chordChance: 0.05f, densityStep: 4);
-        GenerateDifficulty(sb, "EasySingle", onsetTicks, onsetEnergies, fretSpread: 2, chordChance: 0.0f, densityStep: 8);
-
-        return sb.ToString();
-    }
-
-    private static void GenerateDifficulty(
-        StringBuilder sb,
-        string trackName,
-        List<int> ticks,
-        List<float> energies,
-        int fretSpread,
-        float chordChance,
-        int densityStep)
-    {
-        sb.AppendLine($"[{trackName}]");
-        sb.AppendLine("{");
-
-        int noteIndex = 0;
-        int lastFret = 0;
-        int direction = 1;
-
-        for (int i = 0; i < ticks.Count; i += densityStep)
-        {
-            int tick = ticks[i];
-            float energy = energies[i];
-
-            // Melodic progression: walking and leaping across available frets
-            if (direction > 0)
-            {
-                lastFret++;
-                if (lastFret >= fretSpread - 1) direction = -1;
-            }
-            else
-            {
-                lastFret--;
-                if (lastFret <= 0) direction = 1;
-            }
-
-            int fret = Math.Clamp(lastFret, 0, fretSpread - 1);
-
-            // Sustain calculation: if gap to next note >= 2 beats (384 ticks)
-            int sustain = 0;
-            if (i + densityStep < ticks.Count)
-            {
-                int gap = ticks[i + densityStep] - tick;
-                if (gap >= 384) sustain = gap - 96;
-            }
-
-            // High energy chord placement
-            if (energy > 0.75f && chordChance > 0 && fret < fretSpread - 1 && noteIndex % 3 == 0)
-            {
-                sb.AppendLine($"  {tick} = N {fret} {sustain}");
-                sb.AppendLine($"  {tick} = N {fret + 1} {sustain}");
-            }
-            else
-            {
-                sb.AppendLine($"  {tick} = N {fret} {sustain}");
-            }
-
-            // Star Power phrases every 32 measures (~6144 ticks)
-            if (noteIndex % 64 == 0)
-            {
-                sb.AppendLine($"  {tick} = S 2 768");
-            }
-
-            noteIndex++;
-        }
-
-        sb.AppendLine("}");
+        catch { }
     }
 
     private static string SanitizeFileName(string input)
@@ -571,7 +453,7 @@ public class SongCreatorService
         foreach (var c in input)
         {
             if (!invalid.Contains(c) && c != '\'' && c != '\"') sb.Append(c);
-            else if (c == '\'' || c == '\"') sb.Append("");
+            else if (c == '\'' || c == '\"') continue;
             else sb.Append('_');
         }
         var res = sb.ToString().Trim();
@@ -582,9 +464,7 @@ public class SongCreatorService
     {
         var sb = new StringBuilder();
         foreach (var c in title)
-        {
             if (char.IsLetterOrDigit(c)) sb.Append(char.ToLowerInvariant(c));
-        }
         var baseStr = sb.ToString();
         if (baseStr.Length > 12) baseStr = baseStr.Substring(0, 12);
         if (string.IsNullOrEmpty(baseStr)) baseStr = "custom";

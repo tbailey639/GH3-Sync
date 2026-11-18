@@ -13,14 +13,16 @@ public class AudioAnalysisResult
     public double DurationSeconds { get; set; } = 0.0;
     public List<double> OnsetTimestampsSeconds { get; set; } = new();
     public List<float> OnsetEnergies { get; set; } = new();
+    public List<TranscribedNote> TranscribedNotes { get; set; } = new();
     public bool Success { get; set; }
     public string Message { get; set; } = "";
 }
 
 /// <summary>
-/// High-accuracy audio analysis engine for ONOGAMI Song Creator.
-/// Detects exact BPM, downbeat timing, and transient onsets from audio files
-/// using spectral flux and autocorrelation via FFmpeg PCM decoding.
+/// Pure-C# DSP Audio Analysis Engine for ONOGAMI Song Creator.
+/// Uses Cooley-Tukey FFT guitar-bandpass spectral flux (130 Hz - 3200 Hz),
+/// adaptive onset peaking, autocorrelation BPM detection, and YIN pitch estimation
+/// so even without the AI engine installed, notes follow real musical pitch & rhythm.
 /// </summary>
 public class AudioAnalysisService
 {
@@ -31,9 +33,6 @@ public class AudioAnalysisService
         _logger = logger;
     }
 
-    /// <summary>
-    /// Analyzes an audio file to detect BPM, downbeat offset, and rhythmic onsets.
-    /// </summary>
     public AudioAnalysisResult AnalyzeAudio(string audioFilePath, string? ffmpegPath = null)
     {
         var result = new AudioAnalysisResult();
@@ -56,46 +55,92 @@ public class AudioAnalysisService
 
         try
         {
-            // 1. Decode audio to 22050 Hz mono 16-bit PCM float samples via FFmpeg stdout
             const int sampleRate = 22050;
-            var samples = DecodeAudioToMonoSamples(audioFilePath, resolvedFfmpeg, sampleRate, maxSeconds: 180);
+            var samples = DecodeAudioToMonoSamples(audioFilePath, resolvedFfmpeg, sampleRate, maxSeconds: 420);
 
-            if (samples.Count < sampleRate * 5)
+            if (samples.Length < sampleRate * 3)
             {
                 result.Message = "Audio file too short or failed to decode.";
                 return result;
             }
 
-            result.DurationSeconds = (double)samples.Count / sampleRate;
+            result.DurationSeconds = (double)samples.Length / sampleRate;
 
-            // 2. Compute onset energy envelope using Short-Time Spectral Energy (50 fps)
-            const int frameSize = 1024;
-            const int hopSize = 441; // ~50 frames per second
-            var fps = (double)sampleRate / hopSize;
+            // 1. Compute Guitar-Bandpass (130 Hz - 3200 Hz) Spectral Flux using FFT
+            const int fftSize = 1024;
+            const int hopSize = 256; // ~86.13 fps (~11.6 ms precision!)
+            double fps = (double)sampleRate / hopSize;
 
-            var onsetEnvelope = ComputeOnsetEnvelope(samples, frameSize, hopSize);
-            if (onsetEnvelope.Length < 100)
+            var (flux, bandEnergy, chordfulness) = ComputeGuitarSpectralFlux(samples, sampleRate, fftSize, hopSize);
+
+            if (flux.Length < 100)
             {
                 result.Bpm = 120.0;
                 result.Success = true;
-                result.Message = "Audio too short for precise tempo analysis; defaulted to 120 BPM.";
+                result.Message = "Audio too short for full analysis; defaulted to 120 BPM.";
                 return result;
             }
 
-            // 3. Autocorrelate onset envelope over plausible tempo range (70 - 200 BPM)
-            var detectedBpm = DetectBpmFromAutocorrelation(onsetEnvelope, fps);
-            result.Bpm = Math.Round(detectedBpm, 1);
+            // 2. Autocorrelate flux for accurate BPM
+            result.Bpm = Math.Round(DetectBpmFromAutocorrelation(flux, fps), 1);
+            double beatIntervalSec = 60.0 / result.Bpm;
+            result.DownbeatOffsetMs = Math.Round(DetectDownbeatOffsetMs(flux, fps, beatIntervalSec), 1);
 
-            // 4. Detect downbeat offset (time to first prominent beat)
-            var beatIntervalSec = 60.0 / result.Bpm;
-            var downbeatMs = DetectDownbeatOffsetMs(onsetEnvelope, fps, beatIntervalSec);
-            result.DownbeatOffsetMs = Math.Round(downbeatMs, 1);
+            // 3. Adaptive local peak picking for guitar transients
+            var peakFrames = PickAdaptiveOnsets(flux, fps);
 
-            // 5. Extract significant onsets for dynamic note generation
-            ExtractOnsets(onsetEnvelope, fps, result.OnsetTimestampsSeconds, result.OnsetEnergies);
+            // 4. Estimate actual musical MIDI pitch (YIN) & sustain length at every onset!
+            for (int p = 0; p < peakFrames.Count; p++)
+            {
+                int frame = peakFrames[p];
+                double startSec = frame / fps;
+                float energy = flux[frame];
+
+                result.OnsetTimestampsSeconds.Add(startSec);
+                result.OnsetEnergies.Add(energy);
+
+                int sampleStart = frame * hopSize;
+                // Offset slightly forward (15ms) past the pick attack transient into the pitched ring-out
+                int pitchSampleStart = Math.Min(samples.Length - 1024, sampleStart + (int)(sampleRate * 0.015));
+                if (pitchSampleStart < 0) pitchSampleStart = 0;
+
+                double freqHz = EstimatePitchYin(samples, pitchSampleStart, 1024, sampleRate);
+                int midiPitch = FrequencyToMidi(freqHz);
+
+                // Estimate true sustain end by tracking when guitar band energy drops below 35% of onset energy
+                int nextPeakFrame = (p + 1 < peakFrames.Count) ? peakFrames[p + 1] : flux.Length - 1;
+                float sustainThreshold = bandEnergy[frame] * 0.38f;
+                int endFrame = frame + 4;
+                while (endFrame < nextPeakFrame && endFrame < bandEnergy.Length && bandEnergy[endFrame] >= sustainThreshold)
+                {
+                    endFrame++;
+                }
+
+                double endSec = Math.Max(startSec + 0.08, endFrame / fps);
+
+                result.TranscribedNotes.Add(new TranscribedNote
+                {
+                    StartSec = startSec,
+                    EndSec = endSec,
+                    MidiPitch = midiPitch,
+                    Amplitude = Math.Clamp(energy, 0.2f, 1.0f)
+                });
+
+                // If spectral chordfulness is high (strong power chord harmonics), emit upper 5th note
+                if (chordfulness[frame] > 0.65f && energy > 0.50f)
+                {
+                    result.TranscribedNotes.Add(new TranscribedNote
+                    {
+                        StartSec = startSec,
+                        EndSec = endSec,
+                        MidiPitch = Math.Min(88, midiPitch + 7),
+                        Amplitude = Math.Clamp(energy * 0.85f, 0.2f, 1.0f)
+                    });
+                }
+            }
 
             result.Success = true;
-            result.Message = $"Detected {result.Bpm} BPM (Downbeat offset: {result.DownbeatOffsetMs} ms, {result.OnsetTimestampsSeconds.Count} note transients).";
+            result.Message = $"Detected {result.Bpm} BPM ({result.OnsetTimestampsSeconds.Count} pitched guitar onsets, {result.DurationSeconds:F1}s).";
             _logger?.LogInfo($"[AUDIO ANALYSIS] {Path.GetFileName(audioFilePath)}: {result.Message}");
             return result;
         }
@@ -108,9 +153,9 @@ public class AudioAnalysisService
         }
     }
 
-    private static List<float> DecodeAudioToMonoSamples(string audioPath, string ffmpegPath, int targetRate, int maxSeconds)
+    private static float[] DecodeAudioToMonoSamples(string audioPath, string ffmpegPath, int targetRate, int maxSeconds)
     {
-        var samples = new List<float>();
+        var samples = new List<float>(targetRate * 180);
 
         var psi = new ProcessStartInfo
         {
@@ -123,10 +168,10 @@ public class AudioAnalysisService
         };
 
         using var proc = Process.Start(psi);
-        if (proc == null) return samples;
+        if (proc == null) return Array.Empty<float>();
 
         using var stream = proc.StandardOutput.BaseStream;
-        var buffer = new byte[8192];
+        var buffer = new byte[16384];
         int bytesRead;
 
         while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
@@ -138,44 +183,204 @@ public class AudioAnalysisService
             }
         }
 
-        proc.WaitForExit(15000);
-        return samples;
+        proc.WaitForExit(20000);
+        return samples.ToArray();
     }
 
-    private static float[] ComputeOnsetEnvelope(List<float> samples, int frameSize, int hopSize)
+    private static (float[] Flux, float[] BandEnergy, float[] Chordfulness) ComputeGuitarSpectralFlux(
+        float[] samples, int sampleRate, int fftSize, int hopSize)
     {
-        var numFrames = (samples.Count - frameSize) / hopSize;
-        if (numFrames <= 0) return Array.Empty<float>();
+        int numFrames = Math.Max(0, (samples.Length - fftSize) / hopSize);
+        var flux = new float[numFrames];
+        var bandEnergy = new float[numFrames];
+        var chordfulness = new float[numFrames];
+        if (numFrames == 0) return (flux, bandEnergy, chordfulness);
 
-        var energy = new float[numFrames];
+        // Precompute Hann window
+        var window = new float[fftSize];
+        for (int i = 0; i < fftSize; i++)
+            window[i] = 0.5f * (1f - MathF.Cos(2f * MathF.PI * i / (fftSize - 1)));
+
+        // Guitar harmonic frequency bins: 130 Hz (just above kick fundamental) to 3200 Hz (below hi-hat hiss)
+        int minBin = Math.Max(1, (int)(130.0 * fftSize / sampleRate));
+        int maxBin = Math.Min(fftSize / 2 - 1, (int)(3200.0 * fftSize / sampleRate));
+
+        var prevMag = new float[fftSize / 2];
+        var re = new float[fftSize];
+        var im = new float[fftSize];
+
+        float maxFlux = 1e-6f;
+
         for (int f = 0; f < numFrames; f++)
         {
             int start = f * hopSize;
-            float sumSquares = 0;
-            for (int i = 0; i < frameSize; i++)
+            for (int i = 0; i < fftSize; i++)
             {
-                var val = samples[start + i];
-                sumSquares += val * val;
+                re[i] = samples[start + i] * window[i];
+                im[i] = 0f;
             }
-            energy[f] = MathF.Sqrt(sumSquares / frameSize);
+
+            FftInPlace(re, im);
+
+            float frameFlux = 0f;
+            float frameBandSum = 0f;
+            int activePeaks = 0;
+            float maxBinMag = 1e-6f;
+
+            for (int b = minBin; b <= maxBin; b++)
+            {
+                float mag = MathF.Sqrt(re[b] * re[b] + im[b] * im[b]);
+                // Log-compress magnitude so loud & quiet sections both respond musically
+                float logMag = MathF.Log10(1f + 10f * mag);
+                float diff = logMag - prevMag[b];
+                if (diff > 0f) frameFlux += diff;
+                prevMag[b] = logMag;
+
+                frameBandSum += mag;
+                if (mag > maxBinMag) maxBinMag = mag;
+            }
+
+            // Estimate spectral richness (chords spread energy across many bins vs single-note spike)
+            float avgMag = frameBandSum / Math.Max(1, maxBin - minBin + 1);
+            for (int b = minBin + 1; b < maxBin; b++)
+            {
+                float mag = MathF.Sqrt(re[b] * re[b] + im[b] * im[b]);
+                if (mag > maxBinMag * 0.35f) activePeaks++;
+            }
+
+            flux[f] = frameFlux;
+            bandEnergy[f] = avgMag;
+            chordfulness[f] = Math.Clamp(activePeaks / 18.0f, 0f, 1f);
+            if (frameFlux > maxFlux) maxFlux = frameFlux;
         }
 
-        // Half-wave rectified first difference (spectral flux / energy surge)
-        var onsets = new float[numFrames];
-        for (int f = 1; f < numFrames; f++)
+        // Normalize flux to 0..1
+        for (int f = 0; f < numFrames; f++) flux[f] /= maxFlux;
+        return (flux, bandEnergy, chordfulness);
+    }
+
+    private static List<int> PickAdaptiveOnsets(float[] flux, double fps)
+    {
+        var peaks = new List<int>();
+        int halfWin = Math.Max(6, (int)(fps * 0.18)); // ~360ms local sliding average window
+        int minGapFrames = Math.Max(4, (int)(fps * 0.085)); // min 85ms between guitar strikes
+        int lastPeak = -minGapFrames;
+
+        for (int i = 2; i < flux.Length - 2; i++)
         {
-            var diff = energy[f] - energy[f - 1];
-            onsets[f] = diff > 0 ? diff : 0;
+            float val = flux[i];
+            if (val < 0.07f) continue;
+
+            // Local maximum check
+            if (val <= flux[i - 1] || val < flux[i + 1] || val <= flux[i - 2] || val < flux[i + 2])
+                continue;
+
+            if (i - lastPeak < minGapFrames) continue;
+
+            // Compute local mean around frame i (adapts to quiet verses vs loud choruses!)
+            int lo = Math.Max(0, i - halfWin);
+            int hi = Math.Min(flux.Length - 1, i + halfWin);
+            float sum = 0f;
+            for (int k = lo; k <= hi; k++) sum += flux[k];
+            float localMean = sum / (hi - lo + 1);
+
+            if (val > localMean * 1.65f + 0.04f)
+            {
+                peaks.Add(i);
+                lastPeak = i;
+            }
         }
 
-        return onsets;
+        return peaks;
+    }
+
+    /// <summary>
+    /// YIN pitch estimator (de Cheveigné & Kawahara) restricted to guitar range (80 Hz - 1100 Hz).
+    /// </summary>
+    private static double EstimatePitchYin(float[] samples, int start, int windowSize, int sampleRate)
+    {
+        int half = windowSize / 2;
+        if (start + windowSize >= samples.Length) return 220.0;
+
+        int minTau = Math.Max(2, sampleRate / 1100); // ~1100 Hz (C#6)
+        int maxTau = Math.Min(half - 1, sampleRate / 80); // ~80 Hz (E2 low guitar string)
+
+        var diff = new float[maxTau + 1];
+        for (int tau = 1; tau <= maxTau; tau++)
+        {
+            float s = 0f;
+            for (int j = 0; j < half; j++)
+            {
+                float d = samples[start + j] - samples[start + j + tau];
+                s += d * d;
+            }
+            diff[tau] = s;
+        }
+
+        // Cumulative mean normalized difference function (CMNDF)
+        var cmndf = new float[maxTau + 1];
+        cmndf[0] = 1f;
+        float runningSum = 0f;
+        for (int tau = 1; tau <= maxTau; tau++)
+        {
+            runningSum += diff[tau];
+            cmndf[tau] = runningSum > 1e-8f ? diff[tau] * tau / runningSum : 1f;
+        }
+
+        const float yinThreshold = 0.22f;
+        int bestTau = -1;
+
+        for (int tau = minTau; tau < maxTau; tau++)
+        {
+            if (cmndf[tau] < yinThreshold)
+            {
+                while (tau + 1 < maxTau && cmndf[tau + 1] < cmndf[tau])
+                    tau++;
+                bestTau = tau;
+                break;
+            }
+        }
+
+        if (bestTau < 0)
+        {
+            float minVal = float.MaxValue;
+            bestTau = minTau;
+            for (int tau = minTau; tau <= maxTau; tau++)
+            {
+                if (cmndf[tau] < minVal)
+                {
+                    minVal = cmndf[tau];
+                    bestTau = tau;
+                }
+            }
+        }
+
+        // Parabolic interpolation for sub-sample frequency precision
+        double betterTau = bestTau;
+        if (bestTau > minTau && bestTau < maxTau)
+        {
+            float s0 = cmndf[bestTau - 1];
+            float s1 = cmndf[bestTau];
+            float s2 = cmndf[bestTau + 1];
+            float denom = 2f * (2f * s1 - s2 - s0);
+            if (MathF.Abs(denom) > 1e-6f)
+                betterTau = bestTau + (s2 - s0) / denom;
+        }
+
+        return betterTau > 0 ? sampleRate / betterTau : 220.0;
+    }
+
+    private static int FrequencyToMidi(double freqHz)
+    {
+        if (freqHz <= 20.0) return 48;
+        int midi = (int)Math.Round(69.0 + 12.0 * Math.Log2(freqHz / 440.0));
+        return Math.Clamp(midi, 36, 88);
     }
 
     private static double DetectBpmFromAutocorrelation(float[] envelope, double fps)
     {
-        // Plausible tempo bounds in Guitar Hero / modern rock
-        const double minBpm = 70.0;
-        const double maxBpm = 200.0;
+        const double minBpm = 72.0;
+        const double maxBpm = 196.0;
 
         int minLag = (int)(fps * 60.0 / maxBpm);
         int maxLag = (int)(fps * 60.0 / minBpm);
@@ -183,18 +388,23 @@ public class AudioAnalysisService
         if (maxLag >= envelope.Length) maxLag = envelope.Length - 1;
         if (minLag >= maxLag) return 120.0;
 
+        // Analyze up to first 90 seconds for fast, accurate autocorrelation
+        int limit = Math.Min(envelope.Length, (int)(fps * 90.0));
         double bestCorr = -1;
         int bestLag = (int)(fps * 60.0 / 120.0);
 
         for (int lag = minLag; lag <= maxLag; lag++)
         {
             double sum = 0;
-            int count = envelope.Length - lag;
+            int count = limit - lag;
+            if (count <= 0) continue;
             for (int i = 0; i < count; i++)
-            {
                 sum += envelope[i] * envelope[i + lag];
-            }
-            double corr = sum / count;
+
+            // Slight perceptual weight favoring 95-155 BPM (avoids half/double octave traps)
+            double candBpm = (fps * 60.0) / lag;
+            double weight = 1.0 - 0.12 * Math.Abs(Math.Log2(candBpm / 122.0));
+            double corr = (sum / count) * weight;
 
             if (corr > bestCorr)
             {
@@ -203,24 +413,17 @@ public class AudioAnalysisService
             }
         }
 
-        var detectedBpm = (fps * 60.0) / bestLag;
-
-        // Check for common half-tempo / double-tempo octave errors
-        // Normalize typical rock songs into the 85 - 170 BPM sweet spot
-        if (detectedBpm < 80.0) detectedBpm *= 2.0;
-        else if (detectedBpm > 185.0) detectedBpm /= 2.0;
-
-        return detectedBpm;
+        double bpm = (fps * 60.0) / bestLag;
+        if (bpm < 78.0) bpm *= 2.0;
+        else if (bpm > 186.0) bpm /= 2.0;
+        return bpm;
     }
 
     private static double DetectDownbeatOffsetMs(float[] envelope, double fps, double beatIntervalSec)
     {
-        int searchFrames = (int)(fps * Math.Min(4.0, beatIntervalSec * 2));
-        if (searchFrames > envelope.Length) searchFrames = envelope.Length;
-
+        int searchFrames = Math.Min(envelope.Length, (int)(fps * Math.Min(4.0, beatIntervalSec * 2)));
         int peakFrame = 0;
-        float maxVal = 0;
-
+        float maxVal = 0f;
         for (int i = 0; i < searchFrames; i++)
         {
             if (envelope[i] > maxVal)
@@ -229,29 +432,54 @@ public class AudioAnalysisService
                 peakFrame = i;
             }
         }
-
-        var timeSec = peakFrame / fps;
-        return timeSec * 1000.0;
+        return (peakFrame / fps) * 1000.0;
     }
 
-    private static void ExtractOnsets(float[] envelope, double fps, List<double> timestamps, List<float> energies)
+    private static void FftInPlace(float[] re, float[] im)
     {
-        if (envelope.Length == 0) return;
-
-        float maxVal = envelope.Max();
-        if (maxVal <= 0.0001f) return;
-
-        float threshold = maxVal * 0.18f; // Dynamic onset sensitivity threshold
-
-        for (int i = 2; i < envelope.Length - 2; i++)
+        int n = re.Length;
+        int j = 0;
+        for (int i = 0; i < n; i++)
         {
-            var cur = envelope[i];
-            if (cur > threshold &&
-                cur > envelope[i - 1] && cur > envelope[i - 2] &&
-                cur >= envelope[i + 1] && cur >= envelope[i + 2])
+            if (i < j)
             {
-                timestamps.Add(i / fps);
-                energies.Add(cur / maxVal);
+                (re[i], re[j]) = (re[j], re[i]);
+                (im[i], im[j]) = (im[j], im[i]);
+            }
+            int m = n >> 1;
+            while (m >= 1 && j >= m)
+            {
+                j -= m;
+                m >>= 1;
+            }
+            j += m;
+        }
+
+        for (int len = 2; len <= n; len <<= 1)
+        {
+            float ang = -2f * MathF.PI / len;
+            float wLenRe = MathF.Cos(ang);
+            float wLenIm = MathF.Sin(ang);
+            int halfLen = len >> 1;
+
+            for (int i = 0; i < n; i += len)
+            {
+                float wRe = 1f, wIm = 0f;
+                for (int k = 0; k < halfLen; k++)
+                {
+                    int u = i + k;
+                    int v = u + halfLen;
+                    float tRe = re[v] * wRe - im[v] * wIm;
+                    float tIm = re[v] * wIm + im[v] * wRe;
+                    re[v] = re[u] - tRe;
+                    im[v] = im[u] - tIm;
+                    re[u] += tRe;
+                    im[u] += tIm;
+
+                    float nextWRe = wRe * wLenRe - wIm * wLenIm;
+                    wIm = wRe * wLenIm + wIm * wLenRe;
+                    wRe = nextWRe;
+                }
             }
         }
     }

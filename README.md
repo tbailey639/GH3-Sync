@@ -6,21 +6,19 @@
 
 ## 🌟 Key Features
 
-### 1. 🖥️ Native Windows 11 Desktop Application (WebView2)
-* **Dedicated Windows 11 Desktop Window:** Launches as a standalone native desktop app with immersive dark mode framing, hardware acceleration, and system tray minimization.
-* **No External Browser Needed:** Runs smoothly in its own dedicated window without popping up random browser tabs.
+### 1. 🖥️ True Native Windows 11 Desktop App (Guitar Hero III: Legends of Rock Theme)
+* **100% Native Windows 11 WPF Application:** Zero browser tabs, zero HTML, zero WebView2 — built natively in .NET 10 WPF with Windows 11 rounded dark title bars, system tray minimization, and native file pickers.
+* **Custom GH3 Emblem & Animated Intro:** Includes a custom fiery metallic 5-fret emblem for the app, taskbar, installer, and desktop shortcut, plus an animated Star Power 5-fret splash intro!
+* **Automatic Startup Update Checker & 1-Click Updater:** Checks GitHub Releases automatically upon opening and includes a live **"Check Updates / Update Now"** button that downloads and installs updates seamlessly.
 
-### 2. ⚡ Bundled Compiler Toolkit (Zero Separate Install Required)
-* **Built-in Honeycomb Engine:** Includes the complete `GH-Toolkit-Core`, Neversoft QB byte compilers, and FSB soundbank tools directly inside the application.
-* **No Honeycomb Setup Needed:** Players no longer need to download or configure external Honeycomb installations—compilation works 100% out of the box.
+### 2. ⚡ Bundled Honeycomb Compiler Toolkit (Zero Separate Install Required)
+* **Built-in Compilation Engine:** Bundles `GH-Toolkit-Core`, `Honeycomb-GUI.dll`, Neversoft QB byte compilers, `keys.txt`, FFmpeg, and FSB soundbank tools directly inside the installer.
+* **Individual Song Deletion:** Every song card in **My Customs** includes a **🗑️ Delete** button that safely backs up career saves, wipes `.pak.xen`, `.fsb.xen`, `.dat.xen`, previews, and optionally deletes the source ONOGAMI project folder & stems!
 
-### 3. 🎵 Automated BPM & Audio-Driven Charting
-* **Instant BPM Detection:** High-speed spectral flux and autocorrelation engine analyzes uploaded MP3/WAV audio to detect exact BPM and downbeat offsets.
-* **Dynamic Onset Transients:** Replaces repetitive pattern loops with note placement matched to actual music transients, energy-based power chords, Star Power phrases, and natural sustain tails.
-
-### 4. 🤖 Demucs AI Multi-Track Stem Isolation
-* **Meta Demucs Deep Learning:** Separates single-track audio into 4 isolated stems: Lead Guitar (`other.wav`), Bass, Drums, and Vocals.
-* **Mute-on-Miss Gameplay:** Routes the guitar stem to the game's solo track so only the guitar cuts out when you miss a note in Guitar Hero III!
+### 3. 🤖 Demucs 6-Stem (`htdemucs_6s`) + Spotify `Basic Pitch` AI Charting
+* **1-Click In-App AI Engine Installer:** Open **AI & Tools Manager** and click **1-Click Install AI Engine** to automatically install portable Python 3.11 + PyTorch + Meta Demucs 6-Stem + Spotify Basic Pitch into `%APPDATA%\GH3-Sync\tools\ai\` — zero Python or terminal commands required!
+* **True 6-Stem Guitar Isolation:** `htdemucs_6s` extracts a dedicated **`guitar.wav`** stem (plus `bass`, `drums`, `vocals`, `piano`, `other`) for authentic **mute-on-miss** Guitar Hero III gameplay.
+* **Real Musical Pitch-Mapped Charts (No More Repeating Patterns!):** Spotify `Basic Pitch` (plus a built-in pure-C# **FFT Guitar-Bandpass + YIN Pitch** engine for zero-download use) maps real guitar pitches, repeated riffs on the same fret, 2-note power chords, Star Power phrases, and true sustain lengths!
 
 ### 5. 👥 Friends, "Trusted Friend" System & Public Internet Connectivity
 * **Automatic IP Sharing (Trusted Friends):** When you mark a friend as **Trusted**, their address is automatically discovered and resolved in real time via LAN UDP beacons (port 7374), UPnP / NAT-PMP external mappings, and the Central Admin Hub. No manual IP exchange or PIN entry needed!
@@ -52,7 +50,7 @@
 | **Beta 2** | Direct peer song downloads (`.gh3song` / standalone packages). | • Still required external manual Honeycomb compilation.<br>• External connections required manual port forwarding.<br>• Created songs were not automatically verified in-game. |
 | **Beta 3** | Automated UPnP / NAT-PMP port mapping, public IP resolution, DDNS support. | • ONOGAMI custom songs still generated uncompiled project folders.<br>• Required clicking into Honeycomb to build `.pak.xen` and `.fsb.xen`. |
 | **Beta 4** | Automated headless Honeycomb compilation directly into GH3 (`.pak.xen` + `.fsb.xen`), 1-click in-game ready status, action button fix. | • **No Automatic BPM Detection**: Users had to enter the BPM manually.<br>• **Procedural Repeating Chart**: Auto-generated charts used a fixed rhythmic pattern rather than listening to actual guitar transients.<br>• **Single Mix Audio**: Required multi-track stems uploaded manually to mute guitar on miss.<br>• **Constant BPM Only**: Variable tempo maps / time signature changes not yet detected. |
-| **Beta 5** *(Current)* | **Native Windows 11 Desktop App (WebView2)**, **Bundled Compiler Engine** (zero separate Honeycomb install), **Automated BPM & Onset Detection**, **Demucs AI Stem Isolation**, and full Credits system. | • Demucs AI stem separation requires ~1.2 GB model weights when downloaded.<br>• Live variable tempo drift mapping is planned for future updates. |
+| **Beta 5** *(Current)* | **True Native Windows 11 WPF App** (zero browser/HTML), **GH3 Legends of Rock Theme**, **Custom Logo & Animated Intro**, **Bundled Compiler**, **1-Click Demucs 6-Stem + Spotify Basic Pitch AI Installer**, **Real Pitch-Mapped Charts**, **Individual Song Deletion**, and **Auto-Updater (checks on open)**. | • First-time AI Engine download requires ~700 MB – 1.2 GB disk space (optional; built-in FFT/YIN pitch charting works out of the box).<br>• Variable mid-song tempo drift map is planned for future updates. |
 
 ---
 
@@ -61,16 +59,16 @@
 GH3-Sync is built with immense gratitude to the open-source community, reverse engineers, and developers whose work powers custom rhythm gaming:
 
 * **[Honeycomb-GUI & GH-Toolkit-Core](https://github.com/AddyMills/Honeycomb-GUI):** Created by **AddyMills** & Neversoft reverse engineers. Powers the headless `.pak.xen` chart compiler, QB bytecode serialization, and CRC checksum tables (`keys.txt`).
-* **[Demucs](https://github.com/facebookresearch/demucs):** Created by **Alexandre Défossez et al. (Meta AI Research)**. Powers state-of-the-art deep learning stem separation (Guitar, Bass, Drums, Vocals).
+* **[Demucs (`htdemucs_6s`)](https://github.com/facebookresearch/demucs):** Created by **Alexandre Défossez et al. (Meta AI Research)**. Powers state-of-the-art 6-stem deep learning stem separation (`guitar.wav`, `bass`, `drums`, `vocals`, `piano`, `other`).
+* **[Basic Pitch](https://github.com/spotify/basic-pitch):** Created by **Spotify Audio Intelligence Lab**. Lightweight neural pitch-to-MIDI guitar transcription engine.
 * **[BetterGH3](https://github.com/marchellodev/BetterGH3):** Developed by the **BetterGH3 Modding Team**. The premier quality-of-life mod for Guitar Hero III PC.
 * **[FFmpeg](https://ffmpeg.org/):** Industry-standard audio downmixing, stem extraction, and raw PCM transient analysis.
 * **[FMOD Sound System](https://www.fmod.com/):** FMOD sound engine and FSB3 soundbank assembly utilities.
-* **[Microsoft WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/):** Native Windows 11 desktop application window hosting.
-* **[Aubio](https://aubio.org/):** Fast audio onset and tempo detection algorithms.
+* **[python-build-standalone](https://github.com/astral-sh/python-build-standalone):** Maintained by **Astral**, powering the 1-click zero-setup portable Python 3.11 AI runtime.
 * **[NAudio](https://github.com/naudio/NAudio) & [DryWetMidi](https://github.com/melanchall/drywetmidi):** .NET audio transcoding and MIDI note track serialization.
 * **Moonscraper & Reaper Community:** For standardizing `.chart` and `.mid` custom rhythm game formats.
 
-For full license notices, visit **[CREDITS.md](file:///G:/Guitar%20Hero%20Songs/GH3-Sync/CREDITS.md)**.
+For full license notices, visit **[CREDITS.md](CREDITS.md)**.
 
 ---
 

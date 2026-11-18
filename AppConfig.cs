@@ -50,7 +50,7 @@ public class FeedbackItem
 
 public class AppConfigData
 {
-    public string AppVersion { get; set; } = "1.4.0-beta.4";
+    public string AppVersion { get; set; } = UpdateService.CurrentAppVersion;
     public string Username { get; set; } = "Player_" + Random.Shared.Next(1000, 9999);
     public string FriendCode { get; set; } = "";
     public string GamePath { get; set; } = "";
@@ -303,6 +303,25 @@ public static class AppConfig
                 }
             }
 
+            if (changed) Save();
+        }
+    }
+
+    public static void UnregisterCreatedSong(string songId, string? targetDir = null)
+    {
+        lock (_lock)
+        {
+            bool changed = false;
+            if (!string.IsNullOrWhiteSpace(songId))
+            {
+                int removed = Current.CreatedSongIds.RemoveAll(s => s.Equals(songId, StringComparison.OrdinalIgnoreCase));
+                if (removed > 0) changed = true;
+            }
+            if (!string.IsNullOrWhiteSpace(targetDir) && Current.CreatedSongDirectories != null)
+            {
+                int removed = Current.CreatedSongDirectories.RemoveAll(d => d.Equals(targetDir, StringComparison.OrdinalIgnoreCase));
+                if (removed > 0) changed = true;
+            }
             if (changed) Save();
         }
     }

@@ -843,4 +843,158 @@ public class Gh3Service
             return "";
         }
     }
+
+    public class DeleteSongResult
+    {
+        public bool Success { get; set; }
+        public List<string> DeletedItems { get; set; } = new();
+        public List<string> Warnings { get; set; } = new();
+        public string Message { get; set; } = "";
+    }
+
+    /// <summary>
+    /// Safely removes a custom song and ALL related compiled game files (.pak.xen, .fsb.xen, .dat.xen, previews, scripts),
+    /// config registrations, and optionally the ONOGAMI source project folder & stems.
+    /// Automatically protects vanilla GH3 songs and backs up career saves first.
+    /// </summary>
+    public DeleteSongResult DeleteCustomSong(
+        CustomSongInfo song,
+        bool deleteProjectFolder = true,
+        SaveManager? saveManager = null,
+        SyncLogger? logger = null)
+    {
+        var result = new DeleteSongResult();
+
+        if (song == null || string.IsNullOrWhiteSpace(song.SongId))
+        {
+            result.Message = "Invalid song selection.";
+            return result;
+        }
+
+        if (IsVanillaSong(song.SongId))
+        {
+            result.Message = $"Safety block: '{song.SongId}' is a vanilla Guitar Hero III song and cannot be deleted.";
+            return result;
+        }
+
+        try
+        {
+            // 1. Auto-backup career saves first
+            try
+            {
+                saveManager?.BackupCurrentSaves($"Before-Delete-{song.SongId}");
+            }
+            catch (Exception ex)
+            {
+                result.Warnings.Add($"Career save backup note: {ex.Message}");
+            }
+
+            string id = song.SongId.Trim();
+
+            // 2. Delete all matching files in DATA/SONGS (and Staging/SONGS)
+            foreach (var songsDir in new[] { SongsPath, Path.Combine(StagingPath, "SONGS") })
+            {
+                if (!Directory.Exists(songsDir)) continue;
+                try
+                {
+                    foreach (var file in Directory.GetFiles(songsDir))
+                    {
+                        var name = Path.GetFileName(file);
+                        if (name.Equals($"{id}_song.pak.xen", StringComparison.OrdinalIgnoreCase) ||
+                            name.Equals($"{id}_song.pab.xen", StringComparison.OrdinalIgnoreCase) ||
+                            name.Equals($"{id}_song_scripts.pak.xen", StringComparison.OrdinalIgnoreCase) ||
+                            name.Equals($"{id}.pak.xen", StringComparison.OrdinalIgnoreCase) ||
+                            name.StartsWith($"{id}_song.", StringComparison.OrdinalIgnoreCase))
+                        {
+                            File.Delete(file);
+                            result.DeletedItems.Add(file);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    result.Warnings.Add($"Error cleaning {songsDir}: {ex.Message}");
+                }
+            }
+
+            // 3. Delete all matching files in DATA/MUSIC (and Staging/MUSIC)
+            foreach (var musicDir in new[] { MusicPath, Path.Combine(StagingPath, "MUSIC") })
+            {
+                if (!Directory.Exists(musicDir)) continue;
+                try
+                {
+                    foreach (var file in Directory.GetFiles(musicDir))
+                    {
+                        var name = Path.GetFileName(file);
+                        if (name.Equals($"{id}.fsb.xen", StringComparison.OrdinalIgnoreCase) ||
+                            name.Equals($"{id}.dat.xen", StringComparison.OrdinalIgnoreCase) ||
+                            name.Equals($"{id}_preview.fsb.xen", StringComparison.OrdinalIgnoreCase) ||
+                            name.Equals($"{id}_preview.dat.xen", StringComparison.OrdinalIgnoreCase) ||
+                            name.StartsWith($"{id}_", StringComparison.OrdinalIgnoreCase) &&
+                            (name.EndsWith(".fsb.xen", StringComparison.OrdinalIgnoreCase) ||
+                             name.EndsWith(".dat.xen", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            File.Delete(file);
+                            result.DeletedItems.Add(file);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    result.Warnings.Add($"Error cleaning {musicDir}: {ex.Message}");
+                }
+            }
+
+            // 4. Delete source ONOGAMI project directory & stems if requested
+            string? projectDir = !string.IsNullOrWhiteSpace(song.ProjectDirectory)
+                ? song.ProjectDirectory
+                : FindProjectDirectory(id);
+
+            if (deleteProjectFolder && !string.IsNullOrWhiteSpace(projectDir) && Directory.Exists(projectDir))
+            {
+                var normProj = Path.GetFullPath(projectDir).TrimEnd('\\', '/');
+                var normGame = !string.IsNullOrEmpty(GamePath) ? Path.GetFullPath(GamePath).TrimEnd('\\', '/') : "";
+                var normDocs = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)).TrimEnd('\\', '/');
+
+                // Strict safety check: never delete game root, Documents root, or drive root
+                bool isSafeSubfolder =
+                    normProj.Length > 10 &&
+                    !normProj.Equals(normGame, StringComparison.OrdinalIgnoreCase) &&
+                    !normProj.Equals(normDocs, StringComparison.OrdinalIgnoreCase) &&
+                    !normProj.EndsWith("\\Custom_Songs", StringComparison.OrdinalIgnoreCase) &&
+                    !normProj.EndsWith("\\Guitar Hero Songs", StringComparison.OrdinalIgnoreCase);
+
+                if (isSafeSubfolder)
+                {
+                    try
+                    {
+                        Directory.Delete(normProj, recursive: true);
+                        result.DeletedItems.Add(normProj + " (entire project folder & stems)");
+                    }
+                    catch (Exception ex)
+                    {
+                        result.Warnings.Add($"Could not delete project folder '{normProj}': {ex.Message}");
+                    }
+                }
+                else
+                {
+                    result.Warnings.Add($"Skipped deleting protected parent folder '{normProj}'.");
+                }
+            }
+
+            // 5. Remove tracking entry from config.json
+            AppConfig.UnregisterCreatedSong(id, projectDir);
+
+            result.Success = true;
+            result.Message = $"Successfully removed '{song.Title}' ({result.DeletedItems.Count} item(s) deleted).";
+            logger?.LogInfo($"[DELETE SONG] {result.Message}");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            result.Message = $"Failed to delete song '{song.Title}': {ex.Message}";
+            logger?.LogWarn($"[DELETE SONG] {result.Message}");
+            return result;
+        }
+    }
 }

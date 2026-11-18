@@ -4,7 +4,46 @@ All notable changes to the GH3-Sync project are documented in this file.
 
 ---
 
+## [Beta 5] - 2026-11-17
+
+### 🌟 Major Native Windows 11 Redesign & AI Charting Engine
+* **True Native Windows 11 Desktop App (No Browser / No HTML / No WebView2):**
+  * Completely rebuilt the user interface as a 100% native Windows 11 WPF desktop application in .NET 10 with immersive Windows 11 dark rounded title bars, system tray minimization, and native file/folder pickers.
+  * Styled with a custom **Guitar Hero III: Legends of Rock** dark obsidian, crimson, molten flame, and 5-fret gem theme.
+* **Custom GH3-Sync Logo, Shortcut Icons & Animated Intro:**
+  * Designed a custom fiery metallic 5-fret GH3-Sync emblem embedded as the application icon, taskbar icon, system tray icon, Windows Installer icon, and Desktop/Start Menu shortcut icon.
+  * Added an animated Guitar Hero III splash intro screen with sequenced Star Power 5-fret highway gems on startup.
+* **1-Click In-App AI Engine Installer (Demucs 6-Stem + Spotify Basic Pitch):**
+  * Added the **AI & Tools Manager** tab with a **1-Click Install AI Engine** button and live progress bar.
+  * Automatically downloads and configures a self-contained portable Python 3.11 runtime + PyTorch + Meta **Demucs 6-Stem (`htdemucs_6s`)** + **Spotify Basic Pitch** into `%APPDATA%\GH3-Sync\tools\ai\` — zero Python or terminal commands required.
+  * Extracts a dedicated **`guitar.wav`** stem (plus bass, drums, vocals, piano, other) for authentic **mute-on-miss** multi-track audio in Guitar Hero III.
+* **Real Musical Pitch-Mapped Charting (Replaces Repeating 4–5 Note Pattern):**
+  * Built `MidiToGh3ChartMapper` + upgraded `AudioAnalysisService` with **Cooley-Tukey FFT guitar-bandpass (130–3200 Hz)** and **YIN pitch detection**.
+  * Repeated guitar notes stay on the **same fret**, rising/falling melodies map naturally across Green–Orange, polyphonic strums generate 2-note power chords, and real note durations produce authentic sustains + automatic Star Power & Guitar Solo markers.
+* **Complete Bundled Honeycomb Compiler (`tools/compiler`):**
+  * Bundled all 112 Honeycomb & GH-Toolkit-Core runtime files, `keys.txt`, blank audio pads, and FFmpeg straight into the installer — zero external Honeycomb installation required!
+* **Individual Custom Song Removal (`🗑️ Delete`):**
+  * Added a Delete button on every custom song card with a confirmation dialog and optional `[✓] Also delete source ONOGAMI project folder & stems` checkbox.
+  * Automatically backs up career saves, protects vanilla GH3 songs, and cleanly wipes `.pak.xen`, `.fsb.xen`, `.dat.xen`, previews, config entries, and project files.
+* **Automatic Startup Update Checker & Working Update Button:**
+  * Checks GitHub Releases automatically upon opening GH3-Sync and displays a glowing update banner + header button when a newer version is available.
+  * Downloads `GH3-Sync-Setup.exe` with a live progress bar, launches the installer cleanly, and exits so upgrades apply seamlessly.
+* **Full Credits & Open-Source Attribution:**
+  * Added `CREDITS.md`, updated `README.md`, and added an in-app **Credits & Open-Source Acknowledgments** section crediting AddyMills (Honeycomb-GUI / GH-Toolkit-Core), Meta AI Research (Demucs), Spotify (Basic Pitch), BetterGH3 Team, FFmpeg, FMOD, NAudio, DryWetMidi, and the custom charting community.
+
+### ⚠️ Known Limitations (What Doesn't Work Yet)
+* First-time download of the optional Demucs 6-Stem + Basic Pitch AI Engine requires ~700 MB – 1.2 GB of disk space and takes a few minutes depending on internet speed (the built-in FFT/YIN pitch charter works immediately without downloading).
+* Mid-song variable tempo drift maps (dynamic tempo changes for unquantized live recordings) are planned for a future update.
+
+---
+
 ## [Beta 4] - 2026-11-15
+
+### ⚠️ Known Limitations in Beta 4 (Fixed in Beta 5)
+* Browser/web-based UI instead of a true native Windows 11 desktop application.
+* Auto-generated charts used a fixed repeating 4–5 note pattern instead of real pitch transcription.
+* No in-app 1-click installer for Demucs stem separation.
+* No individual song delete button or automatic startup updater.
 
 ### 🌟 New Features & Enhancements
 * **Automated Honeycomb Compiler Pipeline in ONOGAMI Creator:**

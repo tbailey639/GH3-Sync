@@ -1,4 +1,6 @@
-﻿using System.Net;
+﻿using System.IO;
+using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 using System.Text.Json;
 using System.IO.Compression;
@@ -37,6 +39,7 @@ var audioAnalysisService = new AudioAnalysisService(syncLogger);
 var demucsService = new DemucsService(syncLogger);
 var creatorService = new SongCreatorService(compilerService, audioAnalysisService, demucsService);
 var natService = new NatPortMappingService(port, syncLogger);
+var updateService = new UpdateService(syncLogger);
 
 builder.Services.AddSingleton(gh3Service);
 builder.Services.AddSingleton(syncLogger);
@@ -48,6 +51,7 @@ builder.Services.AddSingleton(demucsService);
 builder.Services.AddSingleton(creatorService);
 builder.Services.AddSingleton(saveManager);
 builder.Services.AddSingleton(natService);
+builder.Services.AddSingleton(updateService);
 builder.Services.AddHttpClient();
 
 var app = builder.Build();
@@ -1226,8 +1230,8 @@ app.MapGet("/api/export-pack", (Gh3Service gh3, SyncLogger logger) =>
 });
 
 Console.WriteLine("=================================================");
-Console.WriteLine("  🎸 GH3-Sync Beta 4 | P2P Synchronizer, Friends & ONOGAMI");
-Console.WriteLine($"  Local Web Dashboard: http://localhost:{port}");
+Console.WriteLine("  🎸 GH3-Sync Beta 5 | Native Windows 11 Desktop App");
+Console.WriteLine($"  P2P Sync Listener:   http://localhost:{port}");
 Console.WriteLine($"  LAN Address:         http://{GetLocalIpAddress()}:{port}");
 Console.WriteLine($"  Public / NAT Address: {GetBestPublicOrLanAddress()}");
 Console.WriteLine($"  Active Profile:      {friendService.Profile.Username} [{friendService.Profile.FriendCode}]");
@@ -1242,26 +1246,68 @@ if (isHeadless)
 }
 else
 {
-    await app.StartAsync();
-    try
+    var uiDone = new TaskCompletionSource<bool>();
+
+    var uiThread = new Thread(() =>
     {
-        ApplicationConfiguration.Initialize();
-        var mainWin = new MainWindow($"http://localhost:{port}", syncLogger);
-        Application.Run(mainWin);
-        await app.StopAsync();
-    }
-    catch (Exception ex)
-    {
-        syncLogger.LogWarn($"[DESKTOP] Desktop window fallback to browser/console: {ex.Message}");
         try
         {
-            Process.Start(new ProcessStartInfo
+            var wpfApp = new System.Windows.Application
             {
-                FileName = $"http://localhost:{port}",
-                UseShellExecute = true
-            });
+                ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown
+            };
+
+            wpfApp.Startup += async (_, _) =>
+            {
+                var splash = new GH3_Sync.Views.SplashWindow();
+                splash.Show();
+                splash.UpdateProgress(20, "Starting background P2P sync listener...");
+
+                await app.StartAsync();
+                splash.UpdateProgress(55, "Verifying BetterGH3 & bundled Honeycomb compiler...");
+                await Task.Delay(550);
+
+                splash.UpdateProgress(85, "Initializing Native Windows 11 Legends of Rock UI...");
+                var mainWin = new GH3_Sync.Views.MainWindow(
+                    gh3Service,
+                    syncLogger,
+                    securityService,
+                    friendService,
+                    saveManager,
+                    compilerService,
+                    audioAnalysisService,
+                    demucsService,
+                    creatorService,
+                    natService,
+                    updateService,
+                    port);
+
+                await Task.Delay(450);
+                splash.UpdateProgress(100, "Ready to Rock!");
+                await Task.Delay(250);
+
+                wpfApp.MainWindow = mainWin;
+                mainWin.Closed += (_, _) => wpfApp.Shutdown();
+                mainWin.Show();
+                await splash.FadeOutAndCloseAsync();
+            };
+
+            wpfApp.Run();
         }
-        catch { }
-        await app.WaitForShutdownAsync();
-    }
+        catch (Exception ex)
+        {
+            syncLogger.LogError("Native WPF startup failed", ex);
+        }
+        finally
+        {
+            uiDone.TrySetResult(true);
+        }
+    });
+
+    uiThread.SetApartmentState(ApartmentState.STA);
+    uiThread.IsBackground = false;
+    uiThread.Start();
+
+    await uiDone.Task;
+    await app.StopAsync();
 }

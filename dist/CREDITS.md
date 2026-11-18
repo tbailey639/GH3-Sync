@@ -23,17 +23,22 @@
 
 ## 🤖 Audio & AI Engines
 
-### 4. [Demucs](https://github.com/facebookresearch/demucs) (Deep Extractor for Music Sources)
+### 4. [Demucs](https://github.com/facebookresearch/demucs) (Deep Extractor for Music Sources — `htdemucs_6s`)
 * **Authors:** Alexandre Défossez, Nicolas Usunier, Gabriel Synnaeve, Yossi Adi (*Meta AI Research*)
 * **License:** MIT License
-* **Usage in GH3-Sync:** State-of-the-art music source separation neural network. Splits single-track audio into 4 isolated multi-track stems: Lead Guitar (`other.wav`), Bass (`bass.wav`), Drums (`drums.wav`), and Vocals (`vocals.wav`), enabling interactive mute-on-miss Guitar Hero gameplay.
+* **Usage in GH3-Sync:** State-of-the-art 6-stem neural music source separation. Splits single-track audio into 6 isolated multi-track stems: Lead Guitar (`guitar.wav`), Bass (`bass.wav`), Drums (`drums.wav`), Vocals (`vocals.wav`), Piano (`piano.wav`), and Other (`other.wav`), enabling interactive mute-on-miss Guitar Hero gameplay.
 
-### 5. [FFmpeg](https://ffmpeg.org/)
+### 5. [Basic Pitch](https://github.com/spotify/basic-pitch)
+* **Authors:** Rachel Bittner, Juan José Bosch, David Rubinstein, Gabriel Meseguer-Brocal, Sebastian Ewert (*Spotify Audio Intelligence Lab*)
+* **License:** Apache 2.0 / MIT
+* **Usage in GH3-Sync:** Lightweight neural audio-to-MIDI transcription model used to extract real musical guitar pitches, chords, exact millisecond timestamps, and sustain lengths from the isolated `guitar.wav` stem.
+
+### 6. [FFmpeg](https://ffmpeg.org/)
 * **Authors:** Fabrice Bellard & the FFmpeg Project Contributors
 * **License:** LGPL / GPL
-* **Usage in GH3-Sync:** High-speed audio downmixing, stem extraction, format conversion (`.mp3`, `.ogg`, `.wav`), and raw PCM stream analysis for real-time BPM detection.
+* **Usage in GH3-Sync:** High-speed audio downmixing, stem extraction, format conversion (`.mp3`, `.ogg`, `.wav`), and raw PCM stream analysis for real-time FFT/YIN BPM & pitch detection.
 
-### 6. [FMOD Sound System](https://www.fmod.com/)
+### 7. [FMOD Sound System](https://www.fmod.com/)
 * **Creator:** Firelight Technologies Pty Ltd.
 * **Usage in GH3-Sync:** FSB3 audio container assembly and FMOD multi-channel bank encoding.
 
@@ -41,9 +46,13 @@
 
 ## 💻 .NET Libraries & Runtime Components
 
-### 7. [Microsoft WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
-* **Developer:** Microsoft Corporation
-* **Usage in GH3-Sync:** Embeds the native Windows 11 desktop application window with hardware acceleration, system tray minimization, and modern dark-mode framing.
+### 8. [.NET 10 & Windows Presentation Foundation (WPF)](https://dotnet.microsoft.com/)
+* **Developer:** Microsoft Corporation & .NET Foundation
+* **Usage in GH3-Sync:** Powers the 100% native Windows 11 desktop application window, Guitar Hero III Legends of Rock UI, animated splash intro, Windows 11 dark title bar, and native file/folder pickers.
+
+### 9. [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
+* **Maintainer:** Astral (Gregory Szorc & contributors)
+* **Usage in GH3-Sync:** Powers the 1-click zero-setup portable Python 3.11 runtime installed inside `%APPDATA%\GH3-Sync\tools\ai\` for Demucs & Basic Pitch.
 
 ### 8. [NAudio](https://github.com/naudio/NAudio)
 * **Author:** Mark Heath
