@@ -8,6 +8,12 @@ using System.Threading.Tasks;
 
 namespace GH3_Sync;
 
+public class SongAudioMixConfig
+{
+    public string AudioMixMode { get; set; } = "StudioMaster"; // StudioMaster, IsolatedStems, HybridBlend
+    public string LeadFocus { get; set; } = "Guitar";          // Guitar, KeysSynth, Bass, Vocals, MultiLead
+}
+
 public class SongCreationRequest
 {
     public string Title { get; set; } = "";
@@ -22,8 +28,9 @@ public class SongCreationRequest
     public double Bpm { get; set; } = 130.0;
     public bool AutoDetectBpm { get; set; } = true;
     public bool UseVariableTempoMap { get; set; } = true;
-    public string ChartFeel { get; set; } = "Standard"; // Casual, Standard, Shredder
-    public string InstrumentFocus { get; set; } = "Guitar"; // Guitar, Bass, Vocals
+    public string ChartFeel { get; set; } = "Standard";         // Casual, Standard, Shredder
+    public string InstrumentFocus { get; set; } = "Auto";       // Auto, Guitar, Keys / Synth / Sax, Bass, Vocals
+    public string AudioMixMode { get; set; } = "Auto";          // Auto, StudioMaster, IsolatedStems, HybridBlend
     public double GuitarVolumeDb { get; set; } = 0.0;
     public double BandVolumeDb { get; set; } = 0.0;
     public bool SeparateStemsWithDemucs { get; set; } = false;
@@ -48,7 +55,12 @@ public class CreatedSongResult
     public double DetectedBpm { get; set; }
     public bool StemsSeparated { get; set; }
     public int TranscribedNoteCount { get; set; }
+    public int BassNoteCount { get; set; }
+    public int RepeatedRiffsMatched { get; set; }
+    public int ForcedMarkersApplied { get; set; }
     public string ChartingEngineUsed { get; set; } = "";
+    public string AudioModeUsed { get; set; } = "";
+    public string StemEnergySummary { get; set; } = "";
 }
 
 public class SongCreatorService
@@ -178,73 +190,66 @@ public class SongCreatorService
                 }
             }
 
-            // 3. Optional Demucs 6-Stem Isolation + Spotify Basic Pitch Transcription
+            // 3. Optional Demucs 6-Stem Isolation + Librosa Beat/Section Engine + Multi-Instrument Basic Pitch AI
             bool stemsSeparated = false;
-            string guitarAudioPath = audioFullPath;
+            string guitarAudioPath = ""; // Blank guitar pad by default for clean Studio Master audio (Beat It style)
             string rhythmAudioPath = "";
             string backingAudioPath = audioFullPath;
             List<TranscribedNote> bestNotes = new();
+            List<TranscribedNote> bassNotes = new();
             List<double>? bestBeats = mixAnalysis?.BeatTimestampsSeconds;
+            List<double>? measureEnergies = null;
+            List<DetectedMusicalSection>? detectedSections = null;
+            bool isStudioConstantTempo = true;
+            bool isGuitarDominant = true;
+            string resolvedLeadFocus = meta.InstrumentFocus ?? "Auto";
+            string stemEnergySummary = "";
             string chartingEngine = "Uploaded Chart/MIDI";
 
             if (meta.SeparateStemsWithDemucs && _demucs != null && _demucs.GetStatus().IsInstalled)
             {
-                onProgress?.Invoke(20, "Separating Guitar, Bass, Drums, Vocals & Piano stems (Demucs 6-Stem)...");
+                onProgress?.Invoke(18, "Separating Guitar, Bass, Drums, Vocals & Piano stems (Demucs 6-Stem)...");
                 var stemsDir = Path.Combine(targetDir, "stems");
-                var demucsRes = await _demucs.SeparateStemsAsync(audioFullPath, stemsDir, (pct, step) =>
-                {
-                    int mapped = 20 + (int)(pct * 0.45);
-                    onProgress?.Invoke(mapped, step);
-                });
+                var demucsRes = await _demucs.SeparateStemsAsync(
+                    audioFullPath,
+                    stemsDir,
+                    (pct, step) =>
+                    {
+                        int mapped = 18 + (int)(pct * 0.50);
+                        onProgress?.Invoke(mapped, step);
+                    },
+                    default,
+                    meta.InstrumentFocus ?? "Auto");
 
                 if (demucsRes.Success && !string.IsNullOrEmpty(demucsRes.GuitarTrackPath))
                 {
                     stemsSeparated = true;
-                    guitarAudioPath = demucsRes.GuitarTrackPath;
-                    rhythmAudioPath = demucsRes.BassTrackPath;
+                    isGuitarDominant = demucsRes.IsGuitarDominant;
+                    isStudioConstantTempo = demucsRes.IsStudioConstantTempo;
+                    resolvedLeadFocus = demucsRes.ResolvedLeadFocus;
+                    stemEnergySummary = demucsRes.StemEnergySummary;
+                    measureEnergies = demucsRes.MeasureEnergies;
+                    detectedSections = demucsRes.DetectedSections;
 
-                    // Combine non-guitar stems into backing
-                    var backingList = new List<string>();
-                    if (!string.IsNullOrEmpty(demucsRes.DrumsTrackPath)) backingList.Add(demucsRes.DrumsTrackPath);
-                    if (!string.IsNullOrEmpty(demucsRes.VocalsTrackPath)) backingList.Add(demucsRes.VocalsTrackPath);
-                    if (!string.IsNullOrEmpty(demucsRes.PianoTrackPath)) backingList.Add(demucsRes.PianoTrackPath);
-                    if (!string.IsNullOrEmpty(demucsRes.OtherTrackPath) &&
-                        !string.Equals(demucsRes.OtherTrackPath, demucsRes.GuitarTrackPath, StringComparison.OrdinalIgnoreCase))
+                    // Prefer Librosa precision beat tracker & BPM on drums/mix!
+                    if (demucsRes.PreciseBpm >= 55 && demucsRes.PreciseBpm <= 230 && (meta.AutoDetectBpm || meta.Bpm <= 0))
                     {
-                        backingList.Add(demucsRes.OtherTrackPath);
+                        exactBpm = demucsRes.PreciseBpm;
+                        meta.Bpm = exactBpm;
                     }
-                    backingAudioPath = backingList.Count > 0 ? string.Join(";", backingList) : audioFullPath;
-
-                    // Prefer drums.wav for rock-solid dynamic variable beat tracking!
-                    if (meta.UseVariableTempoMap && _audioAnalysis != null && !string.IsNullOrEmpty(demucsRes.DrumsTrackPath) && File.Exists(demucsRes.DrumsTrackPath))
+                    if (demucsRes.PreciseBeatTimes.Count >= 8)
                     {
-                        var drumAnalysis = _audioAnalysis.AnalyzeAudio(demucsRes.DrumsTrackPath);
-                        if (drumAnalysis.Success && drumAnalysis.BeatTimestampsSeconds.Count >= 8)
-                            bestBeats = drumAnalysis.BeatTimestampsSeconds;
+                        bestBeats = demucsRes.PreciseBeatTimes;
                     }
 
-                    // Select stem matching user's InstrumentFocus (Guitar / Bass / Vocals)
-                    string focusStem = (meta.InstrumentFocus ?? "Guitar").ToLowerInvariant() switch
-                    {
-                        "bass" when !string.IsNullOrEmpty(demucsRes.BassTrackPath) => demucsRes.BassTrackPath,
-                        "vocals" when !string.IsNullOrEmpty(demucsRes.VocalsTrackPath) => demucsRes.VocalsTrackPath,
-                        _ => demucsRes.GuitarTrackPath
-                    };
-
-                    if (focusStem == demucsRes.GuitarTrackPath && demucsRes.TranscribedGuitarNotes.Count >= 15)
+                    if (demucsRes.TranscribedGuitarNotes.Count >= 12)
                     {
                         bestNotes = demucsRes.TranscribedGuitarNotes;
-                        chartingEngine = "Demucs 6-Stem + Basic Pitch";
+                        chartingEngine = $"ONOGAMI AI v2 ({resolvedLeadFocus})";
                     }
-                    else if (_audioAnalysis != null && File.Exists(focusStem))
+                    if (demucsRes.TranscribedBassNotes.Count >= 16)
                     {
-                        onProgress?.Invoke(66, $"Extracting pitch contours from isolated {Path.GetFileName(focusStem)}...");
-                        var stemAnalysis = _audioAnalysis.AnalyzeAudio(focusStem);
-                        if (stemAnalysis.Success && stemAnalysis.TranscribedNotes.Count >= 10)
-                        {
-                            bestNotes = stemAnalysis.TranscribedNotes;
-                            chartingEngine = $"Demucs 6-Stem ({meta.InstrumentFocus})";
-                        }
+                        bassNotes = demucsRes.TranscribedBassNotes;
                     }
                 }
             }
@@ -256,10 +261,51 @@ public class SongCreatorService
                 chartingEngine = "Built-in Pitch Analyzer";
             }
 
-            // 4. Handle Chart (Use uploaded OR build true pitch-mapped chart with variable tempo!)
-            onProgress?.Invoke(70, "Building 5-fret Guitar Hero III chart & MIDI...");
+            // Resolve Audio Mix Mode (Auto picks Isolated Stems for Guitar-Dominant Rock, and Studio Master for Non-Guitar/Multi-Lead!)
+            string reqAudioMode = (meta.AudioMixMode ?? "Auto").Trim();
+            string effectiveAudioMode;
+            if (reqAudioMode.Equals("StudioMaster", StringComparison.OrdinalIgnoreCase) || reqAudioMode.Contains("Studio", StringComparison.OrdinalIgnoreCase))
+            {
+                effectiveAudioMode = "StudioMaster";
+            }
+            else if (reqAudioMode.Equals("HybridBlend", StringComparison.OrdinalIgnoreCase) || reqAudioMode.Contains("Hybrid", StringComparison.OrdinalIgnoreCase))
+            {
+                effectiveAudioMode = stemsSeparated ? "HybridBlend" : "StudioMaster";
+            }
+            else if (reqAudioMode.Equals("IsolatedStems", StringComparison.OrdinalIgnoreCase) || reqAudioMode.Contains("Isolated", StringComparison.OrdinalIgnoreCase))
+            {
+                effectiveAudioMode = stemsSeparated ? "IsolatedStems" : "StudioMaster";
+            }
+            else
+            {
+                // AUTO mode: rock/metal guitar tracks get true mute-on-miss stems (ONOGAMI style);
+                // non-guitar / multi-lead tracks (like Tadow, jazz, pop, synth, hip-hop) get crystal-clear Studio Master audio (Beat It style)!
+                bool focusIsGuitar = resolvedLeadFocus.Equals("Guitar", StringComparison.OrdinalIgnoreCase);
+                effectiveAudioMode = (stemsSeparated && isGuitarDominant && focusIsGuitar) ? "IsolatedStems" : "StudioMaster";
+            }
+
+            string normalizedLeadKey = resolvedLeadFocus.ToLowerInvariant() switch
+            {
+                var s when s.Contains("multi") => "MultiLead",
+                var s when s.Contains("keys") || s.Contains("synth") || s.Contains("sax") => "KeysSynth",
+                var s when s.Contains("bass") => "Bass",
+                var s when s.Contains("vocal") => "Vocals",
+                _ => "Guitar"
+            };
+
+            // Persist audio mix choice so Honeycomb's SaveProject() never wipes it on future re-compiles!
+            var audioCfgPath = Path.Combine(targetDir, "gh3sync_audio.json");
+            File.WriteAllText(audioCfgPath, JsonSerializer.Serialize(new SongAudioMixConfig
+            {
+                AudioMixMode = effectiveAudioMode,
+                LeadFocus = normalizedLeadKey
+            }, new JsonSerializerOptions { WriteIndented = true }));
+
+            // 4. Handle Chart (Use uploaded OR build ONOGAMI AI v2 chart with Riff Memory, HOPOs, Chords & Co-Op Bass!)
+            onProgress?.Invoke(72, "Building 5-fret Guitar Hero III chart (Riff Memory + HOPOs + Chords + Co-Op Bass)...");
             string chartFullPath;
             string midiFullPath = Path.Combine(targetDir, "notes.mid");
+            var chartStats = new ChartBuildStats();
 
             if (chartBytes != null && chartBytes.Length > 0 && !meta.AutoGenerateChart)
             {
@@ -281,7 +327,17 @@ public class SongCreatorService
             {
                 chartFullPath = Path.Combine(targetDir, "notes.chart");
                 var chartContent = MidiToGh3ChartMapper.BuildChartFromNotes(
-                    meta, bestNotes, exactBpm, songDuration, chartingEngine, bestBeats);
+                    meta,
+                    bestNotes,
+                    exactBpm,
+                    songDuration,
+                    chartingEngine,
+                    bestBeats,
+                    bassNotes: bassNotes,
+                    isStudioConstantTempo: isStudioConstantTempo,
+                    measureEnergies: measureEnergies,
+                    detectedSections: detectedSections,
+                    statsOut: chartStats);
                 File.WriteAllText(chartFullPath, chartContent);
                 TryConvertChart(chartFullPath);
             }
@@ -424,6 +480,13 @@ public class SongCreatorService
             File.WriteAllText(ghprojFullPath, JsonSerializer.Serialize(projData, new JsonSerializerOptions { WriteIndented = true }));
             AppConfig.RegisterCreatedSong(cleanSongId, targetDir);
 
+            string audioModeLabel = effectiveAudioMode switch
+            {
+                "IsolatedStems" => "Isolated Lead Stem (Mute-on-Miss)",
+                "HybridBlend" => "Hybrid Studio Blend (Soft Ducking)",
+                _ => "Studio Master Audio (Cleanest Fidelity)"
+            };
+
             var result = new CreatedSongResult
             {
                 Success = true,
@@ -435,9 +498,14 @@ public class SongCreatorService
                 CreatedWithOnogamiCreator = true,
                 DetectedBpm = exactBpm,
                 StemsSeparated = stemsSeparated,
-                TranscribedNoteCount = bestNotes.Count,
+                TranscribedNoteCount = chartStats.ExpertNoteCount > 0 ? chartStats.ExpertNoteCount : bestNotes.Count,
+                BassNoteCount = chartStats.BassNoteCount,
+                RepeatedRiffsMatched = chartStats.RepeatedRiffsMatched,
+                ForcedMarkersApplied = chartStats.ForcedMarkersApplied,
                 ChartingEngineUsed = chartingEngine,
-                Message = $"Successfully created '{meta.Title}' ({chartingEngine}, {exactBpm:F1} BPM)!"
+                AudioModeUsed = audioModeLabel,
+                StemEnergySummary = stemEnergySummary,
+                Message = $"Successfully created '{meta.Title}' ({chartingEngine}, {exactBpm:F1} BPM, {audioModeLabel})!"
             };
 
             // 7. Automated Bundled Honeycomb Compilation
@@ -455,7 +523,10 @@ public class SongCreatorService
                     if (!string.IsNullOrEmpty(compileResult.SongId))
                         result.SongId = compileResult.SongId;
 
-                    result.Message = $"Compiled & installed '{meta.Title}' directly into Guitar Hero III! ({chartingEngine}, {exactBpm:F1} BPM, {(stemsSeparated ? "6-Stem Mute-on-Miss Audio" : "Single Mix")})";
+                    var extras = new List<string> { chartingEngine, $"{exactBpm:F1} BPM", audioModeLabel };
+                    if (chartStats.RepeatedRiffsMatched > 0) extras.Add($"{chartStats.RepeatedRiffsMatched} repeating riffs locked");
+                    if (chartStats.BassNoteCount > 0) extras.Add($"Co-Op Bass ({chartStats.BassNoteCount} notes)");
+                    result.Message = $"Compiled & installed '{meta.Title}' directly into Guitar Hero III! ({string.Join(" • ", extras)})";
                 }
                 else
                 {

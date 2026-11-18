@@ -55,7 +55,14 @@ public class CloneHeroImportService
         {
             string songSourceDir = sourcePath;
 
-            if (File.Exists(sourcePath) && sourcePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            if (File.Exists(sourcePath) && sourcePath.EndsWith(".sng", StringComparison.OrdinalIgnoreCase))
+            {
+                onProgress?.Invoke(10, "Unpacking Chorus Encore / Clone Hero .sng package...");
+                tempExtractDir = Path.Combine(Path.GetTempPath(), $"gh3_sng_import_{Guid.NewGuid():N}");
+                CommunityChartService.ExtractSngFile(sourcePath, tempExtractDir, _logger);
+                songSourceDir = tempExtractDir;
+            }
+            else if (File.Exists(sourcePath) && sourcePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             {
                 onProgress?.Invoke(10, "Scanning & extracting Clone Hero archive safely...");
                 tempExtractDir = Path.Combine(Path.GetTempPath(), $"gh3_ch_import_{Guid.NewGuid():N}");
@@ -134,6 +141,37 @@ public class CloneHeroImportService
                 return "";
             }
 
+            // Convert any .opus / .flac stems to .mp3 via bundled FFmpeg so Honeycomb FSB compiler handles them cleanly
+            var ffmpegExe = HoneycombCompilerService.EnsureFfmpeg(HoneycombCompilerService.FindHoneycombDirectory());
+            if (!string.IsNullOrEmpty(ffmpegExe) && File.Exists(ffmpegExe))
+            {
+                foreach (var f in Directory.GetFiles(targetDir))
+                {
+                    var fExt = Path.GetExtension(f).ToLowerInvariant();
+                    if (fExt == ".opus" || fExt == ".flac")
+                    {
+                        var mp3Out = Path.ChangeExtension(f, ".mp3");
+                        try
+                        {
+                            var psi = new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = ffmpegExe,
+                                Arguments = $"-y -i \"{f}\" -ar 48000 -b:a 192k \"{mp3Out}\"",
+                                UseShellExecute = false,
+                                CreateNoWindow = true
+                            };
+                            using var proc = System.Diagnostics.Process.Start(psi);
+                            proc?.WaitForExit(120_000);
+                            if (File.Exists(mp3Out) && new FileInfo(mp3Out).Length > 1024)
+                            {
+                                try { File.Delete(f); } catch { }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+
             string songMix = FindStem("song");
             string guitarStem = FindStem("guitar");
             string rhythmStem = FindStem("rhythm", "bass");
@@ -151,17 +189,21 @@ public class CloneHeroImportService
                 songMix = anyAudio;
             }
 
-            string finalGuitar = !string.IsNullOrEmpty(guitarStem) ? guitarStem : songMix;
+            // Clean Studio Master routing when single-track (no separate guitar stem):
+            // keep guitarPathGh3 blank so the song isn't double-played on top of itself!
+            bool hasTrueMultiStems = !string.IsNullOrEmpty(guitarStem);
+            string finalGuitar = hasTrueMultiStems ? guitarStem : "";
             string finalRhythm = rhythmStem;
             var backingList = new List<string>();
             if (!string.IsNullOrEmpty(songMix)) backingList.Add(songMix);
             if (!string.IsNullOrEmpty(drumsStem)) backingList.Add(drumsStem);
             if (!string.IsNullOrEmpty(vocalsStem)) backingList.Add(vocalsStem);
             if (!string.IsNullOrEmpty(keysStem)) backingList.Add(keysStem);
-            if (backingList.Count == 0) backingList.Add(finalGuitar);
+            if (backingList.Count == 0 && !string.IsNullOrEmpty(guitarStem)) backingList.Add(guitarStem);
 
             string finalBacking = string.Join(";", backingList.Distinct(StringComparer.OrdinalIgnoreCase));
-            string finalPreview = !string.IsNullOrEmpty(previewStem) ? previewStem : (!string.IsNullOrEmpty(songMix) ? songMix : finalGuitar);
+            string finalPreview = !string.IsNullOrEmpty(previewStem) ? previewStem : (!string.IsNullOrEmpty(songMix) ? songMix : guitarStem);
+            string audioMixMode = hasTrueMultiStems ? "IsolatedStems" : "StudioMaster";
 
             // Generate .ghproj
             string cleanId = SanitizeId(title);
@@ -276,6 +318,11 @@ public class CloneHeroImportService
             };
 
             File.WriteAllText(ghprojPath, JsonSerializer.Serialize(projData, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(Path.Combine(targetDir, "gh3sync_audio.json"), JsonSerializer.Serialize(new SongAudioMixConfig
+            {
+                AudioMixMode = audioMixMode,
+                LeadFocus = "Guitar"
+            }, new JsonSerializerOptions { WriteIndented = true }));
 
             // Mark song.ini cleanly as a Clone Hero import (not authored by Song Creator)
             var targetIni = Path.Combine(targetDir, "song.ini");

@@ -4,6 +4,24 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.4.0] - 2026-11-18
+
+### Major New Features
+* **ONOGAMI AI Charting Engine v2 (Handcrafted-Grade Auto-Charting):**
+  - **Smart Multi-Lead ("Play the Hook") & Non-Guitar Support:** Spotify Basic Pitch AI now runs across all melodic stems (`guitar`, `piano`, `other` [sax/synth/brass/strings], `bass`, and `vocals`) with instrument-tuned frequency ranges. In **Auto (Smart Multi-Lead)** mode, non-guitar or mixed-lead songs automatically follow whichever melodic stem carries the hook in each 4-bar phrase!
+  - **Librosa Precision Beat-Grid & Attack Onset Alignment:** Automatically detects whether a track uses a constant studio BPM (locking a razor-sharp grid with zero BPM wobble) vs. a live variable tempo (smooth median-filtered tempo map), snaps every note to musical subdivisions (16th / 8th-triplet / 32nd shred bursts), and pulls Basic Pitch note starts onto sharp transient pick/key/reed onsets.
+  - **2-Bar Riff & Hook Repetition Memory:** Fingerprints repeating melodic/rhythmic hooks and locks them to the exact same 5-fret pattern every time they repeat for authentic Guitar Hero muscle memory.
+  - **Real GH3 Charting Idioms:** Added 4-fret ergonomic hand-box shifting (`G-R-Y-B` / `R-Y-B-O`), authentic GH3 forced HOPO & forced strum markers (`N 5 0`), energy-driven 2-note power chords & 3-note chorus downbeat chords, authentic bar-aligned audio sections & Star Power, and an automatic 4-difficulty **Co-Op Bass track** (`PART BASS`).
+* **Game Audio Mix Modes (Studio-Clean Sound for Non-Guitar & Single-Track Songs):**
+  - Added **Auto**, **Studio Master (*Beat It* style)**, **Isolated Lead Stem (*ONOGAMI* mute-on-miss style)**, and **Hybrid Blend (Studio Clarity + Soft Ducking)** audio modes in ONOGAMI Song Creator.
+  - **Auto** automatically chooses **Isolated Lead Stem** for guitar-dominant rock/metal songs and **Studio Master** (untouched original master audio with zero Demucs warble) for non-guitar / jazz / pop / hip-hop / synth tracks!
+  - Fixed a single-track double-audio bug in `HoneycombCompilerService` and `CloneHeroImportService` where single-track songs previously routed `song.mp3` into both the guitar and backing channels simultaneously.
+* **Built-In 1-Click Community Chart Search (Chorus Encore) + Native `.sng` Support:**
+  - Search thousands of handcrafted Clone Hero / Guitar Hero charts right inside **ONOGAMI Song Creator** via `api.enchor.us`, with **⚡ 1-Click Install to GH3** or **Use Chart** (pair any handcrafted chart with your own audio).
+  - Added a pure-C# **SNGPKG v1 extractor** and automatic `.opus`/`.flac` FFmpeg transcoding so `.sng` packages work via Community Search, Import & Convert, and Drag-and-Drop.
+
+---
+
 ## [v1.3.2] - 2026-11-18
 
 ### New Features

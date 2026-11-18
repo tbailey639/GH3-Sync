@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -784,47 +786,95 @@ public class HoneycombCompilerService
         var mCombine = fsbType.GetMethod("CombineFSB3File")
             ?? throw new InvalidOperationException("Could not find CombineFSB3File method");
 
-        // Discover primary audio & isolated multi-track stems (root OR Demucs stems\htdemucs_6s\**\*.wav)
+        // Discover primary audio & isolated multi-track stems + honor gh3sync_audio.json mix mode!
         var stems = DiscoverProjectStems(projectDir);
-        if (string.IsNullOrEmpty(stems.PrimaryAudio) && string.IsNullOrEmpty(stems.GuitarStem))
+        if (string.IsNullOrEmpty(stems.PrimaryAudio) && stems.LeadStems.Count == 0)
         {
             throw new FileNotFoundException("No valid audio file found in song folder to compile soundbank.");
         }
 
-        string guitarInput = !string.IsNullOrEmpty(stems.GuitarStem) ? stems.GuitarStem : stems.PrimaryAudio;
-        string rhythmInput = stems.RhythmStem;
-        string[] backingInputs = stems.BackingStems.Count > 0
-            ? stems.BackingStems.ToArray()
-            : new[] { !string.IsNullOrEmpty(stems.PrimaryAudio) ? stems.PrimaryAudio : guitarInput };
+        string audioMode = stems.AudioMixMode; // StudioMaster, IsolatedStems, HybridBlend
         string previewInput = !string.IsNullOrEmpty(stems.PreviewStem)
             ? stems.PreviewStem
-            : (!string.IsNullOrEmpty(stems.PrimaryAudio) ? stems.PrimaryAudio : guitarInput);
-
-        if (stems.HasMultiStems)
-        {
-            log($"Multi-stem audio detected: Guitar={Path.GetFileName(guitarInput)}, Bass/Rhythm={(string.IsNullOrEmpty(rhythmInput) ? "none" : Path.GetFileName(rhythmInput))}, Backing={backingInputs.Length} stem(s)");
-        }
+            : (!string.IsNullOrEmpty(stems.PrimaryAudio) ? stems.PrimaryAudio : stems.LeadStems.FirstOrDefault() ?? "");
 
         var textGuitar = Path.Combine(projectDir, $"{songChecksum}_guitar.mp3");
         var textRhythm = Path.Combine(projectDir, $"{songChecksum}_rhythm.mp3");
         var textSong = Path.Combine(projectDir, $"{songChecksum}_song.mp3");
         var textPreview = Path.Combine(projectDir, $"{songChecksum}_preview.mp3");
+        var tempHybridLead = Path.Combine(projectDir, $"{songChecksum}_hybrid_lead.wav");
+        var tempHybridBack = Path.Combine(projectDir, $"{songChecksum}_hybrid_back.wav");
 
-        var tempFiles = new List<string> { textGuitar, textRhythm, textSong, textPreview };
+        var tempFiles = new List<string> { textGuitar, textRhythm, textSong, textPreview, tempHybridLead, tempHybridBack };
 
         try
         {
-            // 1. Guitar track (mute-on-miss channel)
-            log("Converting guitar track to CBR MP3...");
-            await (Task)mConvert.Invoke(fsbObj, new object[] { guitarInput, textGuitar })!;
+            if (audioMode.Equals("StudioMaster", StringComparison.OrdinalIgnoreCase) || !stems.HasMultiStems)
+            {
+                // Studio Master Audio (Beat It / Gently Weeps style):
+                // Untouched original master in backing, silent pad in guitar/rhythm -> ZERO Demucs warble, ZERO double-audio clipping!
+                string masterInput = !string.IsNullOrEmpty(stems.PrimaryAudio) ? stems.PrimaryAudio : stems.LeadStems.First();
+                log($"Audio Mode: Studio Master (Cleanest Fidelity) -> Backing={Path.GetFileName(masterInput)}, Guitar=silent pad");
 
-            // 2. Rhythm/bass track (uses blank audio pad automatically if rhythmInput is empty)
-            log("Preparing rhythm/bass track...");
-            await (Task)mConvert.Invoke(fsbObj, new object[] { rhythmInput, textRhythm })!;
+                await (Task)mConvert.Invoke(fsbObj, new object[] { "", textGuitar })!;
+                await (Task)mConvert.Invoke(fsbObj, new object[] { "", textRhythm })!;
+                await (Task)mConvert.Invoke(fsbObj, new object[] { masterInput, textSong })!;
+            }
+            else if (audioMode.Equals("HybridBlend", StringComparison.OrdinalIgnoreCase) && stems.LeadStems.Count > 0 && stems.BackingStems.Count > 0)
+            {
+                // Hybrid Studio Blend: 65% lead stem in playable channel + (35% lead + 100% backing) in backing channel
+                log($"Audio Mode: Hybrid Studio Blend (Lead={stems.LeadStems.Count} stem(s), Backing={stems.BackingStems.Count} stem(s))");
+                var ffmpegExe = EnsureFfmpeg(honeycombDir);
+                bool hybridBuilt = false;
 
-            // 3. Backing track (mixes drums + vocals + piano + other stems cleanly when separated)
-            log($"Mixing backing track ({backingInputs.Length} input(s))...");
-            await (Task)mMix.Invoke(fsbObj, new object[] { backingInputs, textSong, "", "", ".mp3", 48000 })!;
+                if (!string.IsNullOrEmpty(ffmpegExe) && File.Exists(ffmpegExe))
+                {
+                    hybridBuilt = BuildHybridBlendWavs(ffmpegExe, stems.LeadStems, stems.BackingStems, tempHybridLead, tempHybridBack);
+                }
+
+                if (hybridBuilt && File.Exists(tempHybridLead) && File.Exists(tempHybridBack))
+                {
+                    log("Converting hybrid playable lead channel to CBR MP3...");
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { tempHybridLead, textGuitar })!;
+                    log("Preparing rhythm/bass track...");
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { stems.RhythmStem, textRhythm })!;
+                    log("Converting hybrid studio backing channel to CBR MP3...");
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { tempHybridBack, textSong })!;
+                }
+                else
+                {
+                    // Clean fallback to Studio Master if FFmpeg filtergraph fails
+                    string masterInput = !string.IsNullOrEmpty(stems.PrimaryAudio) ? stems.PrimaryAudio : stems.LeadStems.First();
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { "", textGuitar })!;
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { "", textRhythm })!;
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { masterInput, textSong })!;
+                }
+            }
+            else
+            {
+                // Isolated Lead Stem (True Mute-on-Miss — ONOGAMI style, supports single OR multi-stem lead!)
+                log($"Audio Mode: Isolated Lead Stem (Focus={stems.LeadFocus}, Lead={stems.LeadStems.Count} stem(s), Bass={(string.IsNullOrEmpty(stems.RhythmStem) ? "none" : Path.GetFileName(stems.RhythmStem))}, Backing={stems.BackingStems.Count} stem(s))");
+
+                if (stems.LeadStems.Count == 1)
+                {
+                    log($"Converting playable lead stem ({Path.GetFileName(stems.LeadStems[0])}) to CBR MP3...");
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { stems.LeadStems[0], textGuitar })!;
+                }
+                else
+                {
+                    log($"Mixing {stems.LeadStems.Count} playable lead stems to CBR MP3...");
+                    await (Task)mMix.Invoke(fsbObj, new object[] { stems.LeadStems.ToArray(), textGuitar, "", "", ".mp3", 48000 })!;
+                }
+
+                log("Preparing rhythm/bass track...");
+                await (Task)mConvert.Invoke(fsbObj, new object[] { stems.RhythmStem, textRhythm })!;
+
+                var backingInputs = stems.BackingStems.Count > 0
+                    ? stems.BackingStems.ToArray()
+                    : new[] { !string.IsNullOrEmpty(stems.PrimaryAudio) ? stems.PrimaryAudio : stems.LeadStems[0] };
+                log($"Mixing backing track ({backingInputs.Length} input(s))...");
+                await (Task)mMix.Invoke(fsbObj, new object[] { backingInputs, textSong, "", "", ".mp3", 48000 })!;
+            }
 
             // 4. Preview track
             log("Generating preview audio...");
@@ -930,36 +980,38 @@ public class HoneycombCompilerService
         dict["midiPathGh3"] = resolvedMidi;
         dict["midiPath"] = resolvedMidi;
 
-        // 2. Resolve Audio & Multi-Stem Paths (supports both root stems and Demucs stems\htdemucs_6s\**\*.wav)
+        // 2. Resolve Audio & Multi-Stem Paths (honoring gh3sync_audio.json StudioMaster / IsolatedStems / HybridBlend)
         var stems = DiscoverProjectStems(projectDir);
         string primaryAudio = stems.PrimaryAudio;
 
-        if (stems.HasMultiStems)
+        if (stems.HasMultiStems && !stems.AudioMixMode.Equals("StudioMaster", StringComparison.OrdinalIgnoreCase))
         {
+            var primaryLead = stems.LeadStems.FirstOrDefault() ?? primaryAudio;
             var backingJoined = stems.BackingStems.Count > 0 ? string.Join(";", stems.BackingStems) : primaryAudio;
-            var previewAudio = !string.IsNullOrEmpty(stems.PreviewStem) ? stems.PreviewStem : (!string.IsNullOrEmpty(primaryAudio) ? primaryAudio : stems.GuitarStem);
+            var previewAudio = !string.IsNullOrEmpty(stems.PreviewStem) ? stems.PreviewStem : (!string.IsNullOrEmpty(primaryAudio) ? primaryAudio : primaryLead);
 
-            dict["guitarPathGh3"] = stems.GuitarStem;
+            dict["guitarPathGh3"] = primaryLead;
             dict["rhythmPathGh3"] = stems.RhythmStem;
             dict["backingPathsGh3"] = backingJoined;
             dict["previewAudioPathGh3"] = previewAudio;
-            dict["guitarPath"] = stems.GuitarStem;
+            dict["guitarPath"] = primaryLead;
             dict["bassPath"] = stems.RhythmStem;
             dict["backingPaths"] = backingJoined;
             dict["previewAudioPath"] = previewAudio;
-            dict["coopGuitarPath"] = stems.GuitarStem;
+            dict["coopGuitarPath"] = primaryLead;
             dict["coopRhythmPath"] = stems.RhythmStem;
             dict["coopBackingPaths"] = backingJoined;
             dict["isCoopAudio"] = !string.IsNullOrEmpty(stems.RhythmStem);
         }
         else
         {
-            // Single track setup: map primary audio across guitar and backing so Honeycomb audio mixer never hits inputs=0
-            dict["guitarPathGh3"] = primaryAudio;
+            // Clean Studio Master setup (Beat It / Gently Weeps style):
+            // Keep guitarPathGh3 blank (silent pad) and put untouched studio master in backing so audio never doubles or clips!
+            dict["guitarPathGh3"] = "";
             dict["rhythmPathGh3"] = "";
             dict["backingPathsGh3"] = primaryAudio;
             dict["previewAudioPathGh3"] = primaryAudio;
-            dict["guitarPath"] = primaryAudio;
+            dict["guitarPath"] = "";
             dict["bassPath"] = "";
             dict["backingPaths"] = primaryAudio;
             dict["previewAudioPath"] = primaryAudio;
@@ -1027,14 +1079,34 @@ public class HoneycombCompilerService
 
     private sealed record ProjectStemsInfo(
         string PrimaryAudio,
-        string GuitarStem,
+        List<string> LeadStems,
         string RhythmStem,
         List<string> BackingStems,
         string PreviewStem,
-        bool HasMultiStems);
+        bool HasMultiStems,
+        string AudioMixMode,
+        string LeadFocus);
 
     private static ProjectStemsInfo DiscoverProjectStems(string projectDir)
     {
+        // Read persisted GH3-Sync audio mix mode & focus if present
+        string audioMixMode = "";
+        string leadFocus = "Guitar";
+        try
+        {
+            var cfgPath = Path.Combine(projectDir, "gh3sync_audio.json");
+            if (File.Exists(cfgPath))
+            {
+                var cfg = JsonSerializer.Deserialize<SongAudioMixConfig>(File.ReadAllText(cfgPath));
+                if (cfg != null)
+                {
+                    audioMixMode = cfg.AudioMixMode ?? "";
+                    leadFocus = string.IsNullOrWhiteSpace(cfg.LeadFocus) ? "Guitar" : cfg.LeadFocus;
+                }
+            }
+        }
+        catch { }
+
         string[] audioExts = new[] { ".mp3", ".ogg", ".wav" };
         string primaryAudio = "";
         foreach (var ext in audioExts)
@@ -1076,28 +1148,143 @@ public class HoneycombCompilerService
         }
 
         string guitarStem = FindStemFile("guitar");
-        string rhythmStem = FindStemFile("rhythm", "bass");
+        string bassStem = FindStemFile("rhythm", "bass");
+        string drumsStem = FindStemFile("drums", "drums_1");
+        string vocalsStem = FindStemFile("vocals", "vocals_1");
+        string pianoStem = FindStemFile("piano", "keys");
+        string otherStem = FindStemFile("other");
+        string explicitBacking = FindStemFile("backing");
         string previewStem = FindStemFile("preview");
 
-        var backingList = new List<string>();
-        string explicitBacking = FindStemFile("backing");
-        if (!string.IsNullOrEmpty(explicitBacking)) backingList.Add(explicitBacking);
-
-        foreach (var stemName in new[] { "drums", "vocals", "piano", "keys", "other" })
+        // Route LeadStems + RhythmStem + BackingStems according to chosen LeadFocus!
+        var leadStems = new List<string>();
+        string rhythmStem = bassStem;
+        var allCandidates = new List<string>();
+        void AddIf(List<string> list, string f)
         {
-            var f = FindStemFile(stemName);
-            if (!string.IsNullOrEmpty(f) &&
-                !f.Equals(guitarStem, StringComparison.OrdinalIgnoreCase) &&
-                !f.Equals(rhythmStem, StringComparison.OrdinalIgnoreCase))
-            {
-                backingList.Add(f);
-            }
+            if (!string.IsNullOrEmpty(f) && !list.Contains(f, StringComparer.OrdinalIgnoreCase))
+                list.Add(f);
         }
 
-        bool hasMultiStems = !string.IsNullOrEmpty(guitarStem) &&
-            (backingList.Count > 0 || !string.IsNullOrEmpty(rhythmStem));
+        AddIf(allCandidates, explicitBacking);
+        AddIf(allCandidates, drumsStem);
+        AddIf(allCandidates, vocalsStem);
+        AddIf(allCandidates, pianoStem);
+        AddIf(allCandidates, otherStem);
+        AddIf(allCandidates, guitarStem);
 
-        return new ProjectStemsInfo(primaryAudio, guitarStem, rhythmStem, backingList, previewStem, hasMultiStems);
+        switch (leadFocus.ToLowerInvariant())
+        {
+            case "keyssynth":
+                AddIf(leadStems, pianoStem);
+                AddIf(leadStems, otherStem);
+                if (leadStems.Count == 0) AddIf(leadStems, guitarStem);
+                break;
+            case "bass":
+                AddIf(leadStems, bassStem);
+                rhythmStem = "";
+                break;
+            case "vocals":
+                AddIf(leadStems, vocalsStem);
+                break;
+            case "multilead":
+                AddIf(leadStems, guitarStem);
+                AddIf(leadStems, pianoStem);
+                AddIf(leadStems, otherStem);
+                if (leadStems.Count == 0) AddIf(leadStems, vocalsStem);
+                break;
+            default: // Guitar
+                AddIf(leadStems, guitarStem);
+                break;
+        }
+
+        var backingList = new List<string>();
+        foreach (var cand in allCandidates)
+        {
+            if (!leadStems.Contains(cand, StringComparer.OrdinalIgnoreCase) &&
+                !cand.Equals(rhythmStem, StringComparison.OrdinalIgnoreCase))
+            {
+                backingList.Add(cand);
+            }
+        }
+        // If Clone Hero import has song.ogg + guitar.ogg (classic CH multi-track), include song.ogg in backing
+        if (!string.IsNullOrEmpty(primaryAudio) &&
+            !leadStems.Contains(primaryAudio, StringComparer.OrdinalIgnoreCase) &&
+            !backingList.Contains(primaryAudio, StringComparer.OrdinalIgnoreCase) &&
+            backingList.Count == 0 && leadStems.Count > 0)
+        {
+            backingList.Add(primaryAudio);
+        }
+
+        bool hasMultiStems = leadStems.Count > 0 && (backingList.Count > 0 || !string.IsNullOrEmpty(rhythmStem));
+
+        if (string.IsNullOrWhiteSpace(audioMixMode))
+        {
+            audioMixMode = hasMultiStems ? "IsolatedStems" : "StudioMaster";
+        }
+
+        return new ProjectStemsInfo(primaryAudio, leadStems, rhythmStem, backingList, previewStem, hasMultiStems, audioMixMode, leadFocus);
+    }
+
+    private static bool BuildHybridBlendWavs(
+        string ffmpegExe,
+        List<string> leadStems,
+        List<string> backingStems,
+        string outLeadWav,
+        string outBackWav)
+    {
+        try
+        {
+            bool RunMix(List<(string Path, double Gain)> inputs, string outputWav)
+            {
+                if (inputs.Count == 0) return false;
+                var argsSb = new StringBuilder("-y ");
+                var filterSb = new StringBuilder();
+                var mixLabels = new List<string>();
+
+                for (int i = 0; i < inputs.Count; i++)
+                {
+                    argsSb.Append($"-i \"{inputs[i].Path}\" ");
+                    string gainStr = inputs[i].Gain.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+                    filterSb.Append($"[{i}:a]volume={gainStr}[a{i}];");
+                    mixLabels.Add($"[a{i}]");
+                }
+
+                if (inputs.Count == 1)
+                {
+                    filterSb.Append("[a0]alimiter=limit=0.98[out]");
+                }
+                else
+                {
+                    filterSb.Append($"{string.Join("", mixLabels)}amix=inputs={inputs.Count}:duration=longest:normalize=0,alimiter=limit=0.98[out]");
+                }
+
+                argsSb.Append($"-filter_complex \"{filterSb}\" -map \"[out]\" -ar 48000 -ac 2 \"{outputWav}\"");
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = ffmpegExe,
+                    Arguments = argsSb.ToString(),
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var proc = Process.Start(psi);
+                proc?.WaitForExit(180_000);
+                return File.Exists(outputWav) && new FileInfo(outputWav).Length > 1024;
+            }
+
+            // Playable channel gets 65% of lead stem(s); backing gets 35% of lead stem(s) + 100% of backing stems
+            var leadInputs = leadStems.Select(p => (p, 0.65)).ToList();
+            var backInputs = new List<(string, double)>();
+            backInputs.AddRange(leadStems.Select(p => (p, 0.35)));
+            backInputs.AddRange(backingStems.Select(p => (p, 1.00)));
+
+            return RunMix(leadInputs, outLeadWav) && RunMix(backInputs, outBackWav);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>

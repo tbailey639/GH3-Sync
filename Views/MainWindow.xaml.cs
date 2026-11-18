@@ -61,6 +61,7 @@ public partial class MainWindow : Window
     private CustomSongInfo? _previewingSong;
     private bool _previewingGuitarStem = false;
 
+    private readonly CommunityChartService _communityCharts;
     private UpdateCheckResult? _latestUpdate;
     private WinForms.NotifyIcon? _trayIcon;
     private bool _isExiting = false;
@@ -100,6 +101,7 @@ public partial class MainWindow : Window
         _tempSession = tempSession;
         _compUpdater = compUpdater;
         _port = port;
+        _communityCharts = new CommunityChartService(logger);
 
         InitializeComponent();
         ApplyTheme(AppConfig.Current.ThemeMode, save: false);
@@ -335,6 +337,11 @@ public partial class MainWindow : Window
             NavCreator.IsChecked = true;
             ModeUploadRadio.IsChecked = true;
             CrChartPathBox.Text = first;
+        }
+        else if (ext == ".sng")
+        {
+            NavImport.IsChecked = true;
+            await RunCloneHeroImportAsync(first);
         }
         else if (ext is ".gh3pack" or ".gh3song" or ".sgh")
         {
@@ -1382,6 +1389,23 @@ public partial class MainWindow : Window
             return null;
         }
 
+        string focusVal = CrFocusCombo.SelectedIndex switch
+        {
+            1 => "Guitar",
+            2 => "Keys / Synth / Sax",
+            3 => "Bass",
+            4 => "Vocals",
+            _ => "Auto"
+        };
+
+        string audioModeVal = CrAudioMixCombo.SelectedIndex switch
+        {
+            1 => "StudioMaster",
+            2 => "IsolatedStems",
+            3 => "HybridBlend",
+            _ => "Auto"
+        };
+
         return new SongCreationRequest
         {
             Title = CrTitleBox.Text.Trim(),
@@ -1395,7 +1419,8 @@ public partial class MainWindow : Window
             AutoDetectBpm = true,
             UseVariableTempoMap = CrVariableTempoChk.IsChecked == true,
             ChartFeel = (CrFeelCombo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Standard",
-            InstrumentFocus = (CrFocusCombo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Guitar",
+            InstrumentFocus = focusVal,
+            AudioMixMode = audioModeVal,
             AutoGenerateChart = autoGen,
             SeparateStemsWithDemucs = CrSeparateStemsChk.IsChecked == true && _demucs.GetStatus().IsInstalled,
             AutoCompile = CrAutoCompileChk.IsChecked == true
@@ -1491,11 +1516,17 @@ public partial class MainWindow : Window
                 CrResultBox.Background = new SolidColorBrush(WpfColor.FromRgb(13, 34, 26));
                 CrResultBox.BorderBrush = new SolidColorBrush(WpfColor.FromRgb(16, 185, 129));
                 CrResultText.Foreground = new SolidColorBrush(WpfColor.FromRgb(167, 243, 208));
-                CrResultText.Text =
-                    $"{result.Message}\n" +
-                    $"• Tempo: {result.DetectedBpm:F1} BPM ({(meta.UseVariableTempoMap ? "Dynamic Variable Tempo Map" : "Constant BPM")})\n" +
-                    $"• Feel: {meta.ChartFeel}  •  Stems: {(result.StemsSeparated ? "6-Stem Isolated Guitar" : "Single Mix")}\n" +
-                    $"• Folder: {result.ProjectDirectory}";
+                var lines = new List<string>
+                {
+                    result.Message,
+                    $"• Tempo: {result.DetectedBpm:F1} BPM  •  Feel: {meta.ChartFeel}  •  Audio: {(string.IsNullOrEmpty(result.AudioModeUsed) ? "Studio Master" : result.AudioModeUsed)}"
+                };
+                if (!string.IsNullOrWhiteSpace(result.StemEnergySummary))
+                    lines.Add($"• Stem Balance: {result.StemEnergySummary}");
+                if (result.RepeatedRiffsMatched > 0 || result.ForcedMarkersApplied > 0 || result.BassNoteCount > 0)
+                    lines.Add($"• AI Chart v2: {result.TranscribedNoteCount:N0} Lead notes • {result.RepeatedRiffsMatched} repeating riffs locked • {result.ForcedMarkersApplied} forced HOPO/strum markers{(result.BassNoteCount > 0 ? $" • Co-Op Bass ({result.BassNoteCount:N0} notes)" : "")}");
+                lines.Add($"• Folder: {result.ProjectDirectory}");
+                CrResultText.Text = string.Join("\n", lines);
                 RefreshSongsList();
             }
             else
@@ -1511,6 +1542,233 @@ public partial class MainWindow : Window
             CreateSongSubmitBtn.IsEnabled = true;
             CrProgressLabel.Text = "";
             CrProgressBar.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    // ==================== COMMUNITY CHART SEARCH (CHORUS ENCORE) ====================
+    private async void CommunitySearchBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Enter)
+        {
+            e.Handled = true;
+            await RunCommunityChartSearchAsync();
+        }
+    }
+
+    private async void CommunitySearchBtn_Click(object sender, RoutedEventArgs e)
+        => await RunCommunityChartSearchAsync();
+
+    private async Task RunCommunityChartSearchAsync()
+    {
+        var query = CommunitySearchBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            // Auto-build query from Title + Artist fields if user already filled them in!
+            var autoQ = $"{CrTitleBox.Text.Trim()} {CrArtistBox.Text.Trim()}".Trim();
+            if (!string.IsNullOrWhiteSpace(autoQ))
+            {
+                query = autoQ;
+                CommunitySearchBox.Text = query;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            CommunitySearchStatus.Text = "Type a song title or artist name to search Chorus Encore.";
+            CommunitySearchStatus.Visibility = Visibility.Visible;
+            return;
+        }
+
+        CommunitySearchBtn.IsEnabled = false;
+        CommunitySearchStatus.Text = $"Searching Chorus Encore for '{query}'...";
+        CommunitySearchStatus.Visibility = Visibility.Visible;
+        CommunityResultsPanel.Children.Clear();
+        CommunityResultsScroll.Visibility = Visibility.Collapsed;
+
+        try
+        {
+            var res = await _communityCharts.SearchChartsAsync(query);
+            CommunitySearchStatus.Text = res.Message;
+
+            if (!res.Success || res.Charts.Count == 0) return;
+
+            foreach (var ch in res.Charts)
+            {
+                var card = new Border
+                {
+                    Background = (WpfBrush)FindResource("BgCardHover"),
+                    BorderBrush = (WpfBrush)FindResource("BorderSubtle"),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(12, 8, 12, 8),
+                    Margin = new Thickness(0, 0, 0, 6)
+                };
+
+                var grid = new Grid();
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var infoStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                infoStack.Children.Add(new TextBlock
+                {
+                    Text = $"{ch.Name}  —  {ch.Artist}",
+                    FontSize = 13,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = (WpfBrush)FindResource("TextPrimary"),
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                });
+                infoStack.Children.Add(new TextBlock
+                {
+                    Text = $"Charter: {(string.IsNullOrWhiteSpace(ch.Charter) ? "Community" : ch.Charter)}  •  {ch.DurationDisplay}  •  {ch.BadgesSummary}",
+                    FontSize = 11,
+                    Foreground = (WpfBrush)FindResource("TextMuted"),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    Margin = new Thickness(0, 2, 0, 0)
+                });
+                Grid.SetColumn(infoStack, 0);
+                grid.Children.Add(infoStack);
+
+                var btnStack = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
+
+                var useChartBtn = new System.Windows.Controls.Button
+                {
+                    Content = "Use Chart",
+                    Style = (Style)FindResource("OutlineButton"),
+                    Padding = new Thickness(10, 5, 10, 5),
+                    Margin = new Thickness(0, 0, 6, 0),
+                    ToolTip = "Download chart/MIDI and load it into ONOGAMI Song Creator to pair with your own audio"
+                };
+                useChartBtn.Click += async (_, _) => await UseCommunityChartInCreatorAsync(ch);
+
+                var installBtn = new System.Windows.Controls.Button
+                {
+                    Content = "⚡ Install to GH3",
+                    Style = (Style)FindResource("GreenButton"),
+                    Padding = new Thickness(11, 5, 11, 5),
+                    ToolTip = "Download complete chart + audio and compile directly into Guitar Hero III"
+                };
+                installBtn.Click += async (_, _) => await InstallCommunityChartToGh3Async(ch);
+
+                btnStack.Children.Add(useChartBtn);
+                btnStack.Children.Add(installBtn);
+                Grid.SetColumn(btnStack, 1);
+                grid.Children.Add(btnStack);
+
+                card.Child = grid;
+                CommunityResultsPanel.Children.Add(card);
+            }
+
+            CommunityResultsScroll.Visibility = Visibility.Visible;
+        }
+        finally
+        {
+            CommunitySearchBtn.IsEnabled = true;
+        }
+    }
+
+    private async Task InstallCommunityChartToGh3Async(CommunityChartEntry chart)
+    {
+        CommunitySearchBtn.IsEnabled = false;
+        CommunityInstallProgress.Visibility = Visibility.Visible;
+        CommunityInstallProgress.Value = 5;
+        CommunitySearchStatus.Visibility = Visibility.Visible;
+
+        string? extractedDir = null;
+        try
+        {
+            var (ok, dir, msg) = await _communityCharts.DownloadAndExtractChartAsync(chart, (pct, step) => Dispatcher.Invoke(() =>
+            {
+                CommunityInstallProgress.Value = Math.Min(55, pct * 0.65);
+                CommunitySearchStatus.Text = step;
+            }));
+
+            if (!ok)
+            {
+                CommunitySearchStatus.Text = msg;
+                WpfMessageBox.Show(msg, "Community Chart Download", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            extractedDir = dir;
+            var imp = await _cloneHero.ImportFromZipOrFolderAsync(dir, autoCompile: true, (pct, step) => Dispatcher.Invoke(() =>
+            {
+                CommunityInstallProgress.Value = 55 + (pct * 0.45);
+                CommunitySearchStatus.Text = step;
+            }));
+
+            CommunitySearchStatus.Text = imp.Message;
+            if (imp.Success)
+            {
+                RefreshSongsList();
+                WpfMessageBox.Show($"Installed '{imp.Title}' by {imp.Artist} directly into Guitar Hero III!", "Community Chart Installed", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                WpfMessageBox.Show(imp.Message, "Install Note", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        finally
+        {
+            CommunityInstallProgress.Visibility = Visibility.Collapsed;
+            CommunitySearchBtn.IsEnabled = true;
+            if (!string.IsNullOrEmpty(extractedDir))
+            {
+                try { Directory.Delete(Directory.GetParent(extractedDir)!.FullName, true); } catch { }
+            }
+        }
+    }
+
+    private async Task UseCommunityChartInCreatorAsync(CommunityChartEntry chart)
+    {
+        CommunitySearchBtn.IsEnabled = false;
+        CommunityInstallProgress.Visibility = Visibility.Visible;
+        CommunityInstallProgress.Value = 10;
+        CommunitySearchStatus.Visibility = Visibility.Visible;
+
+        try
+        {
+            var (ok, dir, msg) = await _communityCharts.DownloadAndExtractChartAsync(chart, (pct, step) => Dispatcher.Invoke(() =>
+            {
+                CommunityInstallProgress.Value = pct;
+                CommunitySearchStatus.Text = step;
+            }));
+
+            if (!ok)
+            {
+                CommunitySearchStatus.Text = msg;
+                return;
+            }
+
+            var chartFile = Directory.GetFiles(dir, "notes.chart").FirstOrDefault()
+                         ?? Directory.GetFiles(dir, "notes.mid").FirstOrDefault();
+            var audioFile = Directory.GetFiles(dir).FirstOrDefault(f =>
+                Path.GetFileNameWithoutExtension(f).Equals("song", StringComparison.OrdinalIgnoreCase) &&
+                new[] { ".ogg", ".mp3", ".wav" }.Contains(Path.GetExtension(f).ToLowerInvariant()))
+                ?? Directory.GetFiles(dir).FirstOrDefault(f =>
+                new[] { ".ogg", ".mp3", ".wav" }.Contains(Path.GetExtension(f).ToLowerInvariant()));
+
+            if (!string.IsNullOrEmpty(chartFile))
+            {
+                ModeUploadRadio.IsChecked = true;
+                CrChartPathBox.Text = chartFile;
+            }
+            if (string.IsNullOrWhiteSpace(CrAudioPathBox.Text) && !string.IsNullOrEmpty(audioFile))
+            {
+                CrAudioPathBox.Text = audioFile;
+            }
+            if (!string.IsNullOrWhiteSpace(chart.Name)) CrTitleBox.Text = chart.Name;
+            if (!string.IsNullOrWhiteSpace(chart.Artist)) CrArtistBox.Text = chart.Artist;
+            if (!string.IsNullOrWhiteSpace(chart.Album)) CrAlbumBox.Text = chart.Album;
+            if (!string.IsNullOrWhiteSpace(chart.Genre)) CrGenreBox.Text = chart.Genre;
+            if (!string.IsNullOrWhiteSpace(chart.Year)) CrYearBox.Text = chart.Year;
+            if (!string.IsNullOrWhiteSpace(chart.Charter)) CrCharterBox.Text = chart.Charter;
+
+            CommunitySearchStatus.Text = $"Loaded handcrafted chart for '{chart.Name}' into ONOGAMI Creator! Select Studio Master Audio & click Create & Compile.";
+        }
+        finally
+        {
+            CommunityInstallProgress.Visibility = Visibility.Collapsed;
+            CommunitySearchBtn.IsEnabled = true;
         }
     }
 
@@ -2018,8 +2276,8 @@ public partial class MainWindow : Window
     {
         var dlg = new Microsoft.Win32.OpenFileDialog
         {
-            Title = "Select Clone Hero / YARG .zip Archive",
-            Filter = "ZIP Archives (*.zip)|*.zip|All Files (*.*)|*.*"
+            Title = "Select Clone Hero / Chorus Encore (.sng or .zip)",
+            Filter = "Clone Hero / Chorus Packages (*.sng;*.zip)|*.sng;*.zip|SNG Packages (*.sng)|*.sng|ZIP Archives (*.zip)|*.zip|All Files (*.*)|*.*"
         };
         if (dlg.ShowDialog() == true)
             await RunCloneHeroImportAsync(dlg.FileName);
