@@ -39,6 +39,26 @@ public class FriendService
     public static Func<string>? BestAddressProvider { get; set; }
     public static SignalingRelayService? SignalingRelay { get; set; }
 
+    public async Task<int> MeasurePeerPingAsync(string address)
+    {
+        if (string.IsNullOrWhiteSpace(address)) return -1;
+        try
+        {
+            var targetUrl = address.TrimEnd('/') + "/api/profile";
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2.5));
+            var req = new HttpRequestMessage(HttpMethod.Get, targetUrl);
+            var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            sw.Stop();
+            if (resp.IsSuccessStatusCode)
+            {
+                return (int)sw.ElapsedMilliseconds;
+            }
+        }
+        catch { }
+        return -1;
+    }
+
     public UserProfile Profile => new()
     {
         Username = AppConfig.Current.Username,

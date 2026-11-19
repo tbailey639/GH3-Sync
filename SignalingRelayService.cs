@@ -24,6 +24,11 @@ public class SignalingRelayService
     private Task? _backgroundTask;
     private readonly HashSet<string> _processedMessageIds = new();
 
+    public static Func<string>? ActivityStatusProvider { get; set; }
+    public event Action<string, bool>? OnPeerReadyChanged;
+    public event Action<string, int, List<string>>? OnPeerRouletteRoll;
+    public event Action<string, string, string>? OnPeerActivityUpdated;
+
     public SignalingRelayService(FriendService friends, SyncLogger? logger = null)
     {
         _friends = friends;
@@ -89,11 +94,16 @@ public class SignalingRelayService
 
         try
         {
+            var activity = ActivityStatusProvider?.Invoke() ?? "Online";
+            var showcase = AppConfig.Current.ShowcaseSongTitle ?? "";
+
             var innerJson = JsonSerializer.Serialize(new
             {
                 code = NormalizeCode(friendCode),
                 username = username ?? "Player",
                 address = address.TrimEnd('/'),
+                activity = activity,
+                showcase = showcase,
                 timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
             });
 
@@ -145,6 +155,8 @@ public class SignalingRelayService
                         string peerAddr = "";
                         string peerName = "Player";
                         string peerCode = normCode;
+                        string peerActivity = "Online";
+                        string peerShowcase = "";
 
                         try
                         {
@@ -153,16 +165,29 @@ public class SignalingRelayService
                             peerAddr = mr.TryGetProperty("address", out var a) ? a.GetString() ?? "" : "";
                             peerName = mr.TryGetProperty("username", out var u) ? u.GetString() ?? "Player" : "Player";
                             peerCode = mr.TryGetProperty("code", out var c) ? c.GetString() ?? normCode : normCode;
+                            if (mr.TryGetProperty("activity", out var ac)) peerActivity = ac.GetString() ?? "Online";
+                            if (mr.TryGetProperty("showcase", out var sh)) peerShowcase = sh.GetString() ?? "";
                         }
                         catch
                         {
                             peerAddr = ExtractField(msgText, "address");
                             peerName = ExtractField(msgText, "username");
                             peerCode = ExtractField(msgText, "code");
+                            peerActivity = ExtractField(msgText, "activity");
+                            if (string.IsNullOrWhiteSpace(peerActivity)) peerActivity = "Online";
+                            peerShowcase = ExtractField(msgText, "showcase");
                         }
 
                         if (!string.IsNullOrWhiteSpace(peerAddr) && !peerAddr.Contains("169.254."))
                         {
+                            var existingFriend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(peerCode, StringComparison.OrdinalIgnoreCase));
+                            if (existingFriend != null)
+                            {
+                                existingFriend.ActivityStatus = peerActivity;
+                                if (!string.IsNullOrWhiteSpace(peerShowcase)) existingFriend.ShowcaseSong = peerShowcase;
+                            }
+                            OnPeerActivityUpdated?.Invoke(peerCode, peerActivity, peerShowcase);
+
                             return (true, string.IsNullOrWhiteSpace(peerName) ? "Player" : peerName, peerAddr, string.IsNullOrWhiteSpace(peerCode) ? normCode : peerCode);
                         }
                     }
@@ -273,6 +298,66 @@ public class SignalingRelayService
             return false;
         }
     }
+
+    public async Task<bool> SendLobbyReadyPacketAsync(string targetCode, string myCode, bool isReady)
+    {
+        var targetTopic = CleanTopicCode(targetCode);
+        if (string.IsNullOrWhiteSpace(targetTopic)) return false;
+
+        try
+        {
+            var innerJson = JsonSerializer.Serialize(new
+            {
+                type = "LOBBY_READY_STATE",
+                senderCode = NormalizeCode(myCode),
+                isReady = isReady,
+                timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            });
+
+            var ntfyPayload = new
+            {
+                topic = $"gh3sync-req-{targetTopic}",
+                message = innerJson
+            };
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5.0));
+            var resp = await _http.PostAsJsonAsync("https://ntfy.sh", ntfyPayload, cts.Token);
+            return resp.IsSuccessStatusCode;
+        }
+        catch { return false; }
+    }
+
+    public async Task<bool> SendRouletteRollPacketAsync(string targetCode, string myCode, int seed, List<string> songIds)
+    {
+        var targetTopic = CleanTopicCode(targetCode);
+        if (string.IsNullOrWhiteSpace(targetTopic)) return false;
+
+        try
+        {
+            var innerJson = JsonSerializer.Serialize(new
+            {
+                type = "LOBBY_ROULETTE_ROLL",
+                senderCode = NormalizeCode(myCode),
+                seed = seed,
+                songIds = songIds ?? new List<string>(),
+                timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            });
+
+            var ntfyPayload = new
+            {
+                topic = $"gh3sync-req-{targetTopic}",
+                message = innerJson
+            };
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5.0));
+            var resp = await _http.PostAsJsonAsync("https://ntfy.sh", ntfyPayload, cts.Token);
+            return resp.IsSuccessStatusCode;
+        }
+        catch { return false; }
+    }
+
+    public void TriggerPeerReadyChanged(string code, bool isReady) => OnPeerReadyChanged?.Invoke(code, isReady);
+    public void TriggerPeerRouletteRoll(string code, int seed, List<string> songIds) => OnPeerRouletteRoll?.Invoke(code, seed, songIds);
 
     public async Task<bool> SendFriendAcceptPacketAsync(string senderCode, string myCode, string myUsername, string myAddress, string myToken)
     {
@@ -427,6 +512,48 @@ public class SignalingRelayService
                         {
                             _friends.ReceiveTrustUpgradeRequest(sCode, sName, sAddr, sTok);
                             _logger?.LogInfo($"[SIGNALING] Received trust upgrade request from {sName} ({sCode}) at {sAddr}");
+                        }
+                        else if (type == "LOBBY_READY_STATE" && !string.IsNullOrWhiteSpace(sCode) && !sCode.Equals(AppConfig.Current.FriendCode, StringComparison.OrdinalIgnoreCase))
+                        {
+                            bool isReady = false;
+                            try
+                            {
+                                using var msgDoc = JsonDocument.Parse(msgText);
+                                if (msgDoc.RootElement.TryGetProperty("isReady", out var rp))
+                                    isReady = rp.GetBoolean();
+                            }
+                            catch { }
+
+                            var existingFriend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(sCode, StringComparison.OrdinalIgnoreCase));
+                            if (existingFriend != null)
+                            {
+                                existingFriend.IsLobbyReady = isReady;
+                            }
+                            OnPeerReadyChanged?.Invoke(sCode, isReady);
+                            _logger?.LogInfo($"[SIGNALING] Received lobby ready state from {sCode}: {isReady}");
+                        }
+                        else if (type == "LOBBY_ROULETTE_ROLL" && !string.IsNullOrWhiteSpace(sCode) && !sCode.Equals(AppConfig.Current.FriendCode, StringComparison.OrdinalIgnoreCase))
+                        {
+                            int seed = 0;
+                            var songIds = new List<string>();
+                            try
+                            {
+                                using var msgDoc = JsonDocument.Parse(msgText);
+                                var mr = msgDoc.RootElement;
+                                if (mr.TryGetProperty("seed", out var sp)) seed = sp.GetInt32();
+                                if (mr.TryGetProperty("songIds", out var sa) && sa.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (var item in sa.EnumerateArray())
+                                    {
+                                        var sId = item.GetString();
+                                        if (!string.IsNullOrWhiteSpace(sId)) songIds.Add(sId);
+                                    }
+                                }
+                            }
+                            catch { }
+
+                            OnPeerRouletteRoll?.Invoke(sCode, seed, songIds);
+                            _logger?.LogInfo($"[SIGNALING] Received party roulette roll from {sCode} with {songIds.Count} songs (seed {seed})");
                         }
                     }
                 }

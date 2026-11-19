@@ -75,6 +75,12 @@ var syncLogger = new SyncLogger(gh3Service.GamePath);
 var securityService = new SecurityService();
 var friendService = new FriendService(baseDir);
 var signalingRelay = new SignalingRelayService(friendService, syncLogger);
+SignalingRelayService.ActivityStatusProvider = () =>
+{
+    if (System.Diagnostics.Process.GetProcessesByName("GH3").Length > 0)
+        return "Playing GH3";
+    return "In Lobby";
+};
 signalingRelay.Start();
 FriendService.SignalingRelay = signalingRelay;
 
@@ -121,6 +127,7 @@ builder.Services.AddSingleton(updateService);
 builder.Services.AddSingleton(tempSessionService);
 builder.Services.AddSingleton(componentUpdater);
 builder.Services.AddSingleton(tunnelService);
+builder.Services.AddSingleton(signalingRelay);
 builder.Services.AddSingleton(careerScores);
 builder.Services.AddHttpClient();
 
@@ -155,6 +162,8 @@ static bool IsExternalP2pRoute(string path)
     if (path.Equals("/api/friends/check-status", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/api/friends/trust-upgrade", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/api/friends/trust-upgrade-accept", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/api/lobby/ready", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/api/lobby/roulette-roll", StringComparison.OrdinalIgnoreCase)) return true;
     return false;
 }
 
@@ -949,6 +958,58 @@ app.MapPost("/api/friends/trust-upgrade-accept", async (HttpContext context, Fri
         {
             logger.LogInfo($"[FRIENDS] Remote peer {friend.Username} ({friend.FriendCode}) accepted trust upgrade! Full song sync enabled.");
         }
+    }
+
+    return Results.Ok(new { success = true });
+});
+
+// Direct P2P Lobby Ready-Up endpoint
+app.MapPost("/api/lobby/ready", async (HttpContext context, SignalingRelayService signalingRelay, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+
+    var senderCode = req.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
+    var isReady = req.TryGetProperty("isReady", out var ir) && ir.GetBoolean();
+
+    if (!string.IsNullOrWhiteSpace(senderCode))
+    {
+        var friend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(senderCode, StringComparison.OrdinalIgnoreCase));
+        if (friend != null)
+        {
+            friend.IsLobbyReady = isReady;
+        }
+        signalingRelay.TriggerPeerReadyChanged(senderCode, isReady);
+        logger.LogInfo($"[LOBBY] Peer {senderCode} sent direct ready-state: {isReady}");
+    }
+
+    return Results.Ok(new { success = true });
+});
+
+// Direct P2P Party Roulette Roll endpoint
+app.MapPost("/api/lobby/roulette-roll", async (HttpContext context, SignalingRelayService signalingRelay, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+
+    var senderCode = req.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
+    var seed = req.TryGetProperty("seed", out var sp) ? sp.GetInt32() : 0;
+    var songIds = new List<string>();
+    if (req.TryGetProperty("songIds", out var sa) && sa.ValueKind == JsonValueKind.Array)
+    {
+        foreach (var item in sa.EnumerateArray())
+        {
+            var sId = item.GetString();
+            if (!string.IsNullOrWhiteSpace(sId)) songIds.Add(sId);
+        }
+    }
+
+    if (!string.IsNullOrWhiteSpace(senderCode))
+    {
+        signalingRelay.TriggerPeerRouletteRoll(senderCode, seed, songIds);
+        logger.LogInfo($"[LOBBY] Peer {senderCode} sent direct roulette-roll with {songIds.Count} songs (seed {seed})");
     }
 
     return Results.Ok(new { success = true });

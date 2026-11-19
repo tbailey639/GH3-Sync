@@ -5,9 +5,11 @@
     <SolidColorBrush x:Key="BgStage" Color="#100607"/>
     <SolidColorBrush x:Key="BgSidebar" Color="#17090B"/>
     <SolidColorBrush x:Key="BgCard" Color="#200E11"/>
+    <SolidColorBrush x:Key="BgCardAlt" Color="#250F13"/>
     <SolidColorBrush x:Key="BgCardHover" Color="#2D1318"/>
     <SolidColorBrush x:Key="BgInput" Color="#140709"/>
     <SolidColorBrush x:Key="BorderSubtle" Color="#471C22"/>
+    <SolidColorBrush x:Key="BorderDefault" Color="#471C22"/>
     <SolidColorBrush x:Key="BorderInput" Color="#5C242B"/>
 
     <SolidColorBrush x:Key="TextPrimary" Color="#FFF7ED"/>

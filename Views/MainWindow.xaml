@@ -747,24 +747,35 @@
                         <!-- User Profile & Friend Code Card -->
                         <Border Style="{StaticResource GhCard}">
                             <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="20"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0">
+                                <StackPanel Grid.Row="0" Grid.Column="0">
                                     <TextBlock Text="Your Display Name" FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,4"/>
                                     <DockPanel>
                                         <Button DockPanel.Dock="Right" Content="Save" Style="{StaticResource FlameButton}" Margin="8,0,0,0" Click="SaveUsernameBtn_Click"/>
                                         <TextBox x:Name="ProfileUsernameBox"/>
                                     </DockPanel>
                                 </StackPanel>
-                                <StackPanel Grid.Column="2">
+                                <StackPanel Grid.Row="0" Grid.Column="2">
                                     <TextBlock Text="Your Permanent Friend Code" FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,4"/>
                                     <DockPanel>
                                         <Button DockPanel.Dock="Right" Content="📋 Copy Code" Style="{StaticResource FlameButton}" Margin="6,0,0,0" Click="CopyFriendCodeBtn_Click" ToolTip="Copy your Friend Code to share with friends"/>
                                         <Button x:Name="ToggleCodeBtn" DockPanel.Dock="Right" Content="Show" Style="{StaticResource OutlineButton}" Margin="6,0,0,0" Click="ToggleFriendCodeBtn_Click"/>
                                         <TextBox x:Name="ProfileFriendCodeBox" IsReadOnly="True" FontFamily="Consolas" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
+                                    </DockPanel>
+                                </StackPanel>
+                                <StackPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,12,0,0">
+                                    <DockPanel>
+                                        <Button x:Name="PreviewShowcaseBtn" DockPanel.Dock="Right" Content="▶ Preview" Style="{StaticResource BlueButton}" Padding="10,4" Margin="8,0,0,0" Click="PreviewShowcaseBtn_Click"/>
+                                        <TextBlock Text="🎸 Signature / Showcase Track:" FontSize="12" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <ComboBox x:Name="ProfileShowcaseCombo" SelectionChanged="ProfileShowcaseCombo_SelectionChanged"/>
                                     </DockPanel>
                                 </StackPanel>
                             </Grid>
@@ -912,6 +923,33 @@
                             </Grid>
                         </Border>
 
+                        <!-- Synchronized Match Ready-Up & Countdown Card -->
+                        <Border x:Name="LobbyReadyCard" Style="{StaticResource GhCard}" Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource AccentFlame}" BorderThickness="1.5" Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="Online Match Ready-Up" FontSize="14.5" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+                                        <Border x:Name="LocalReadyBadge" Background="#1E293B" CornerRadius="4" Padding="7,2" Margin="10,0,0,0">
+                                            <TextBlock x:Name="LocalReadyText" Text="⚪ You: Not Ready" FontSize="11" FontWeight="Bold" Foreground="#94A3B8"/>
+                                        </Border>
+                                        <Border x:Name="RemoteReadyBadge" Background="#1E293B" CornerRadius="4" Padding="7,2" Margin="6,0,0,0">
+                                            <TextBlock x:Name="RemoteReadyText" Text="⚪ Friend: Waiting" FontSize="11" FontWeight="Bold" Foreground="#94A3B8"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock x:Name="LobbyReadySubtitle" Text="When both players Ready Up, GH3-Sync counts down '3... 2... 1... ROCK!' and launches the game together!"
+                                               FontSize="11.5" Foreground="{DynamicResource TextMuted}" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="PartyRouletteBtn" Content="🎲 Party Roulette Draft" Style="{StaticResource OutlineButton}" Padding="12,7" Margin="0,0,8,0" Click="PartyRouletteBtn_Click" ToolTip="Synchronously spin a shared random setlist draft with your friend!"/>
+                                    <Button x:Name="LobbyReadyBtn" Content="🟢 Ready Up" Style="{StaticResource FlameButton}" Padding="18,7" Click="LobbyReadyBtn_Click" ToolTip="Signal you are ready to play!"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
                         <!-- Lobby Readiness Banner + Auto-Sync Action -->
                         <Border x:Name="LobbyMatchBanner" Visibility="Collapsed" CornerRadius="8" Padding="12" Margin="0,0,0,12" Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1">
                             <Grid>
@@ -924,6 +962,7 @@
                                     <TextBlock x:Name="LobbyMatchSub" Text="" FontSize="12" Foreground="{DynamicResource CardSuccessFg}" Margin="0,2,0,0"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <CheckBox x:Name="FilterMissingOnlyChk" Content="Only Show Songs I Don't Have" Margin="0,0,12,0" Checked="FilterMissingOnly_Changed" Unchecked="FilterMissingOnly_Changed" ToolTip="Hide songs you already have and show only missing tracks to sync"/>
                                     <CheckBox x:Name="ShowFullPeerLibChk" Content="Browse Full Library" Margin="0,0,12,0" Checked="ShowFullPeerLib_Changed" Unchecked="ShowFullPeerLib_Changed"/>
                                     <Button x:Name="AutoSyncLobbyBtn" Content="Auto-Sync Lobby Setlist" Style="{StaticResource GreenButton}" Click="AutoSyncLobbyBtn_Click"/>
                                 </StackPanel>
@@ -1585,6 +1624,19 @@
                 </StackPanel>
             </Border>
         </Grid>
+
+        <!-- ==================== 3-2-1 SYNCHRONIZED LAUNCH COUNTDOWN BANNER ==================== -->
+        <Border x:Name="StageCountdownOverlay" Grid.Row="0" Grid.RowSpan="5" Panel.ZIndex="998"
+                Visibility="Collapsed" Background="#F0090A14" CornerRadius="16" BorderBrush="{DynamicResource AccentFlame}" BorderThickness="2.5"
+                HorizontalAlignment="Center" VerticalAlignment="Center" Padding="48,28">
+            <Border.Effect>
+                <DropShadowEffect Color="#F97316" BlurRadius="36" ShadowDepth="0" Opacity="0.5"/>
+            </Border.Effect>
+            <StackPanel HorizontalAlignment="Center">
+                <TextBlock x:Name="StageCountdownNumber" Text="3" FontSize="72" FontWeight="Black" Foreground="{DynamicResource AccentFlameText}" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="StageCountdownSub" Text="READY TO ROCK!" FontSize="18" FontWeight="Black" Foreground="{DynamicResource TextPrimary}" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+            </StackPanel>
+        </Border>
 
         <!-- ==================== ANIMATED GH3 STAGE TOAST BANNER ==================== -->
         <Border x:Name="StageToastBanner" Grid.Row="0" Grid.RowSpan="5" Panel.ZIndex="950"

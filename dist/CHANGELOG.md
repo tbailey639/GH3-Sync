@@ -4,6 +4,39 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.3.2] - 2026-11-19 — Synchronized Match Ready-Up, Party Roulette Co-Op Draft, Live Presence & Showcase Tracks
+
+### Synchronized Match Ready-Up & 3-2-1 Rock Launch Countdown
+* **Live Multiplayer Ready-Up:** Real-time ready state synchronization between players in the P2P Lobby. When both players click `[ 🟢 Ready Up ]`, both screens lock in simultaneously.
+* **Stage Launch Countdown Overlay:** Features an authentic `3... 2... 1... ROCK!` visual overlay with metronome tempo clicks and crowd audio that launches `GH3.exe` on both PCs at the exact same moment.
+* **Audio Contention Safety:** Automatically terminates all menu audio preview threads and background SFX before the game executable starts, eliminating DirectX exclusive-audio deadlocks.
+
+### Synchronized Party Roulette (Co-Op Song Draft)
+* **1-Click Co-Op Setlist Roll:** Clicking `[ 🎲 Party Roulette Draft ]` generates a shared deterministic random seed and rolls up to 10 random custom tracks across both connected players.
+* **Instant Setlist Mirroring:** Both players' active Lobby Setlists update in lockstep with matching song slots, ensuring 100% netcode synchronization for multiplayer matches without manual coordination.
+
+### Live Friend Activity Status & Rich Presence
+* **Real-Time Activity Broadcast:** Global Signaling Relay heartbeats dynamically broadcast user status (`🎸 Playing GH3`, `🟢 In Lobby`, `⚪ Online`).
+* **Visual Status Badges:** Active friend cards and lobby lists display color-coded status badges so you always know when your friends are waiting in a lobby or mid-song.
+
+### Player Showcase Song / Signature Track
+* **Signature Track Profile Selection:** Choose any custom song from your local library in your profile to serve as your personal signature track.
+* **Direct Audio Preview:** Friends can view your signature track and click `[ ▶ Preview ]` on your card to hear an instant preview of your custom song directly in the UI.
+
+### Connection Quality & Ping Indicator
+* **Live Latency Measurement:** Asynchronously probes peer endpoints (`GET /api/profile`) with round-trip time calculation.
+* **Color-Coded Status Dot:** Displays latency indicators (🟢 `<60ms`, 🟡 `60–140ms`, 🟠 `>140ms`) on active friend entries so you know connection quality before launching.
+
+### Instant "Compare Missing" Quick Filter
+* **"Only Show Songs I Don't Have":** Added an instant filter checkbox to the P2P Peer Comparison view. Eliminates visual clutter by hiding tracks already installed locally, letting you see exactly what tracks you need to sync in seconds.
+
+### Lobby Pre-Flight Setlist Auto-Heal & Crash Immunity
+* **Setlist Pre-Flight Verification:** Automatically validates that all 10 lobby songs have valid audio files and pak structures before `GH3.exe` boots, preventing game freezes on custom song loading screens.
+* **Theme Resource Fallback Immunity:** Added universal fallback definitions for `BgCardAlt` and `BorderDefault` across all theme dictionaries (`AppTheme.xaml`, `LightTheme.xaml`, `FireFlamesTheme.xaml`, `StarPowerTheme.xaml`) to eliminate any UI resource-not-found exceptions.
+* **Splash Screen Decoupling:** Re-engineered splash window lifecycle to guarantee dismissal even if modal dialogs or background tasks delay main window activation.
+
+---
+
 ## [v1.3.1] - 2026-11-19 — Dual-Intent Friends, In-App Trust Upgrade Handshake & Always-On Silent Internet Sync
 
 ### Dual-Intent Friend Requests & Streamlined Clean UI

@@ -19,6 +19,15 @@ public partial class SplashWindow : Window
 
     private void SplashWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        try
+        {
+            if (SplashVersionSubtitle != null)
+            {
+                SplashVersionSubtitle.Text = $"v{UpdateService.CurrentAppVersion}  •  ENCORE & ZERO-TRUST EDITION  •  BY MAD SCIENTIST";
+            }
+        }
+        catch { }
+
         // Smooth rock emblem pop-in animation
         var ease = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.35 };
         var sx = new DoubleAnimation(0.72, 1.0, TimeSpan.FromMilliseconds(550)) { EasingFunction = ease };
@@ -56,14 +65,23 @@ public partial class SplashWindow : Window
         var tcs = new TaskCompletionSource<bool>();
         Dispatcher.Invoke(() =>
         {
-            var fade = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(260));
-            fade.Completed += (_, _) =>
+            try
             {
-                Close();
+                var fade = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(240));
+                fade.Completed += (_, _) =>
+                {
+                    try { Close(); } catch { }
+                    tcs.TrySetResult(true);
+                };
+                BeginAnimation(OpacityProperty, fade);
+            }
+            catch
+            {
+                try { Close(); } catch { }
                 tcs.TrySetResult(true);
-            };
-            BeginAnimation(OpacityProperty, fade);
+            }
         });
-        await tcs.Task;
+        await Task.WhenAny(tcs.Task, Task.Delay(400));
+        try { Dispatcher.Invoke(() => Close()); } catch { }
     }
 }

@@ -196,6 +196,16 @@ public partial class MainWindow : Window
             ShowStageToast("🎉 FRIEND ACCEPTED!", $"{friend.Username} accepted your friend request! You can now sync songs!", "#22C55E");
         });
 
+        if (FriendService.SignalingRelay != null)
+        {
+            FriendService.SignalingRelay.OnPeerReadyChanged += (peerCode, isReady) => Dispatcher.Invoke(() => HandleRemotePeerReadyChanged(peerCode, isReady));
+            FriendService.SignalingRelay.OnPeerRouletteRoll += (peerCode, seed, songIds) => Dispatcher.Invoke(() => HandleRemotePeerRouletteRoll(peerCode, seed, songIds));
+            FriendService.SignalingRelay.OnPeerActivityUpdated += (peerCode, activity, showcase) => Dispatcher.Invoke(() =>
+            {
+                RefreshFriendsList();
+            });
+        }
+
         _playerTimer.Tick += PlayerTimer_Tick;
         _player.MediaEnded += (_, _) => { _isPlayerPlaying = false; PlayerPlayPauseBtn.Content = "▶"; };
 
@@ -681,6 +691,11 @@ public partial class MainWindow : Window
     // ==================== LAUNCH GH3 & HYPERLINKS ====================
     private void LaunchGh3Btn_Click(object sender, RoutedEventArgs e)
     {
+        LaunchGh3(skipAudioAlert: false);
+    }
+
+    private void LaunchGh3(bool skipAudioAlert = false)
+    {
         var gh3Exe = Path.Combine(_gh3.GamePath ?? "", "GH3.exe");
         if (!File.Exists(gh3Exe))
         {
@@ -691,16 +706,30 @@ public partial class MainWindow : Window
 
         try
         {
-            // 100ms Pre-Flight Health Check before launching Guitar Hero III
+            // Auto-Heal & Pre-Flight Health Check before launching Guitar Hero III
             if (!string.IsNullOrWhiteSpace(_gh3.GamePath))
             {
                 try { CustomsPakService.RepairCustomsPakIfCorrupted(_gh3.GamePath, _logger); } catch { }
             }
+
+            var lobbySongs = _allSongs.Where(s => s.IsInLobbySetlist).ToList();
+            foreach (var ls in lobbySongs)
+            {
+                var audio = Gh3Service.FindSongAudioPath(ls);
+                if (string.IsNullOrEmpty(audio) || !File.Exists(audio))
+                {
+                    _logger.LogWarn($"[PRE-FLIGHT] Lobby song '{ls.Title}' ({ls.SongId}) missing audio file!");
+                }
+            }
+
             bool coreOk = File.Exists(Path.Combine(_gh3.GamePath ?? "", "PLUGINS", "core.dll"));
             ShowStageToast("🎸 LAUNCHING GUITAR HERO III!",
-                $"{(coreOk ? "BetterGH3 core.dll Verified" : "Vanilla GH3")} • {_allSongs.Count} Customs Armed • Career Score Watcher Active",
+                $"{(coreOk ? "BetterGH3 core.dll Verified" : "Vanilla GH3")} • {_allSongs.Count} Customs Armed • {lobbySongs.Count} Lobby Songs Ready",
                 "#22C55E");
-            AudioWaveformAndSfxService.PlayCompilePowerChord();
+            if (!skipAudioAlert)
+            {
+                AudioWaveformAndSfxService.PlayCompilePowerChord();
+            }
 
             StopAudioPreview();
             Process.Start(new ProcessStartInfo
@@ -974,6 +1003,8 @@ public partial class MainWindow : Window
         RefreshSongsList();
         UpdateRockMeterAndMultiplier(compat.IsBetterGh3, compat.IsValid, _allSongs.Count);
         RefreshSetlistPresets();
+        RefreshShowcaseCombo();
+        if (FilterMissingOnlyChk != null) FilterMissingOnlyChk.IsChecked = AppConfig.Current.FilterPeerMissingOnly;
         RefreshToolsAndAiStatus();
         RefreshFriendsList();
         RefreshTrustedFriendDropdown();
@@ -4555,13 +4586,72 @@ public partial class MainWindow : Window
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var left = new StackPanel();
-            left.Children.Add(new TextBlock { Text = $"{f.Username}  ({f.FriendCode})", FontSize = 14, FontWeight = FontWeights.Bold, Foreground = (WpfBrush)FindResource("TextPrimary") });
-            left.Children.Add(new TextBlock
+            var titleSp = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            titleSp.Children.Add(new TextBlock { Text = $"{f.Username}  ({f.FriendCode})", FontSize = 14, FontWeight = FontWeights.Bold, Foreground = (WpfBrush)FindResource("TextPrimary"), VerticalAlignment = VerticalAlignment.Center });
+
+            // Activity status badge
+            var actBg = f.ActivityStatus == "Playing GH3" ? "#3B1E6D" : (f.ActivityStatus == "In Lobby" ? "#065F46" : "#1E293B");
+            var actFg = f.ActivityStatus == "Playing GH3" ? "#E9D5FF" : (f.ActivityStatus == "In Lobby" ? "#34D399" : "#94A3B8");
+            var actText = f.ActivityStatus == "Playing GH3" ? "🎸 Playing GH3" : (f.ActivityStatus == "In Lobby" ? "🟢 In Lobby" : "⚪ Online");
+            var actBadge = new Border
+            {
+                Background = (WpfBrush)new BrushConverter().ConvertFromString(actBg)!,
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(6, 1, 6, 1),
+                Margin = new Thickness(8, 0, 0, 0),
+                Child = new TextBlock { Text = actText, FontSize = 10.5, FontWeight = FontWeights.Bold, Foreground = (WpfBrush)new BrushConverter().ConvertFromString(actFg)! }
+            };
+            titleSp.Children.Add(actBadge);
+
+            // Ping latency indicator badge
+            if (f.PingMs > 0)
+            {
+                var pingColor = f.PingMs < 60 ? "#34D399" : (f.PingMs < 140 ? "#FBBF24" : "#F97316");
+                var pingBadge = new Border
+                {
+                    Background = (WpfBrush)new BrushConverter().ConvertFromString("#1E293B")!,
+                    CornerRadius = new CornerRadius(4),
+                    Padding = new Thickness(6, 1, 6, 1),
+                    Margin = new Thickness(6, 0, 0, 0),
+                    Child = new TextBlock { Text = $"⚡ {f.PingMs} ms", FontSize = 10.5, FontWeight = FontWeights.Bold, Foreground = (WpfBrush)new BrushConverter().ConvertFromString(pingColor)! }
+                };
+                titleSp.Children.Add(pingBadge);
+            }
+            left.Children.Add(titleSp);
+
+            var subSp = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, Margin = new Thickness(0, 3, 0, 0) };
+            subSp.Children.Add(new TextBlock
             {
                 Text = f.IsTrusted ? "⭐ Trusted Friend (1-Click Sync Enabled)" : "Regular Friend (Setlist View Only)",
                 FontSize = 12,
-                Foreground = (WpfBrush)FindResource(f.IsTrusted ? "CardSuccessTitle" : "TextMuted")
+                Foreground = (WpfBrush)FindResource(f.IsTrusted ? "CardSuccessTitle" : "TextMuted"),
+                VerticalAlignment = VerticalAlignment.Center
             });
+
+            if (!string.IsNullOrWhiteSpace(f.ShowcaseSong))
+            {
+                subSp.Children.Add(new TextBlock
+                {
+                    Text = $"  •  🎸 Signature: {f.ShowcaseSong}",
+                    FontSize = 11.5,
+                    Foreground = (WpfBrush)new BrushConverter().ConvertFromString("#38BDF8")!,
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+            }
+            left.Children.Add(subSp);
+
+            if (!string.IsNullOrWhiteSpace(f.LastAddress) && f.PingMs <= 0 && !f.LastAddress.Contains("169.254."))
+            {
+                _ = Task.Run(async () =>
+                {
+                    var p = await _friends.MeasurePeerPingAsync(f.LastAddress);
+                    if (p > 0)
+                    {
+                        f.PingMs = p;
+                        Dispatcher.Invoke(() => RefreshFriendsList());
+                    }
+                });
+            }
             Grid.SetColumn(left, 0);
             grid.Children.Add(left);
 
@@ -5331,6 +5421,16 @@ public partial class MainWindow : Window
         if (_lastPeerManifest != null) RenderPeerLibrary();
     }
 
+    private void FilterMissingOnly_Changed(object sender, RoutedEventArgs e)
+    {
+        if (FilterMissingOnlyChk != null)
+        {
+            AppConfig.Current.FilterPeerMissingOnly = FilterMissingOnlyChk.IsChecked == true;
+            AppConfig.Save();
+        }
+        if (_lastPeerManifest != null) RenderPeerLibrary();
+    }
+
     private List<CustomSongInfo> GetPeerLobbySongs(LibraryManifest remote)
     {
         int cap = Math.Clamp(remote.MaxLobbyAutoSyncSongs > 0 ? remote.MaxLobbyAutoSyncSongs : 10, 1, 25);
@@ -5385,6 +5485,10 @@ public partial class MainWindow : Window
         }
 
         var displayList = ShowFullPeerLibChk.IsChecked == true ? _lastPeerManifest.Songs : lobbySongs;
+        if (FilterMissingOnlyChk?.IsChecked == true)
+        {
+            displayList = displayList.Where(s => !localIds.Contains(s.SongId)).ToList();
+        }
         PeerCompareStatus.Text = ShowFullPeerLibChk.IsChecked == true
             ? $"Showing all {displayList.Count} songs from {_lastPeerManifest.MachineName}:"
             : $"Showing {_lastPeerManifest.MachineName}'s Active Lobby Setlist ({displayList.Count} songs):";
@@ -5603,6 +5707,321 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             _logger.LogWarn($"[P2P SYNC] Could not pull initial customs.pak.xen: {ex.Message}");
+        }
+    }
+
+    // ==================== PAGE 5 EXTENSION: SYNCHRONIZED READY-UP, PARTY ROULETTE & SHOWCASE ====================
+    private bool _isLocalLobbyReady = false;
+    private bool _isRemoteLobbyReady = false;
+    private bool _isCountingDown = false;
+
+    private async void LobbyReadyBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _isLocalLobbyReady = !_isLocalLobbyReady;
+        UpdateLobbyReadyUi();
+
+        var peerCode = GetActivePeerFriendCode();
+        var peerAddr = (PeerAddressBox?.Text ?? "").Trim();
+
+        if (!string.IsNullOrWhiteSpace(peerCode) && FriendService.SignalingRelay != null)
+        {
+            _ = FriendService.SignalingRelay.SendLobbyReadyPacketAsync(peerCode, AppConfig.Current.FriendCode, _isLocalLobbyReady);
+        }
+
+        if (!string.IsNullOrWhiteSpace(peerAddr))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var payload = new { senderCode = AppConfig.Current.FriendCode, isReady = _isLocalLobbyReady };
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2.0));
+                    using var client = new HttpClient();
+                    await client.PostAsJsonAsync($"{peerAddr.TrimEnd('/')}/api/lobby/ready", payload, cts.Token);
+                }
+                catch { }
+            });
+        }
+
+        if (_isLocalLobbyReady && _isRemoteLobbyReady)
+        {
+            await StartSynchronizedCountdownAsync();
+        }
+    }
+
+    private void UpdateLobbyReadyUi()
+    {
+        if (LocalReadyBadge != null && LocalReadyText != null)
+        {
+            LocalReadyBadge.Background = (WpfBrush)new BrushConverter().ConvertFromString(_isLocalLobbyReady ? "#065F46" : "#1E293B")!;
+            LocalReadyText.Foreground = (WpfBrush)new BrushConverter().ConvertFromString(_isLocalLobbyReady ? "#34D399" : "#94A3B8")!;
+            LocalReadyText.Text = _isLocalLobbyReady ? "🟢 You: READY!" : "⚪ You: Not Ready";
+        }
+
+        if (RemoteReadyBadge != null && RemoteReadyText != null)
+        {
+            RemoteReadyBadge.Background = (WpfBrush)new BrushConverter().ConvertFromString(_isRemoteLobbyReady ? "#065F46" : "#1E293B")!;
+            RemoteReadyText.Foreground = (WpfBrush)new BrushConverter().ConvertFromString(_isRemoteLobbyReady ? "#34D399" : "#94A3B8")!;
+            RemoteReadyText.Text = _isRemoteLobbyReady ? "🟢 Friend: READY!" : "⚪ Friend: Waiting";
+        }
+
+        if (LobbyReadyBtn != null)
+        {
+            LobbyReadyBtn.Content = _isLocalLobbyReady ? "⚪ Cancel Ready" : "🟢 Ready Up";
+            LobbyReadyBtn.Style = (Style)FindResource(_isLocalLobbyReady ? "OutlineButton" : "FlameButton");
+        }
+    }
+
+    private async void HandleRemotePeerReadyChanged(string peerCode, bool isReady)
+    {
+        _isRemoteLobbyReady = isReady;
+        UpdateLobbyReadyUi();
+
+        var friend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(peerCode, StringComparison.OrdinalIgnoreCase));
+        var name = friend?.Username ?? peerCode;
+
+        if (isReady)
+        {
+            ShowStageToast("🟢 FRIEND READY!", $"{name} is READY to rock!", "#22C55E");
+            AudioWaveformAndSfxService.PlayStarPowerChime();
+            if (_isLocalLobbyReady)
+            {
+                await StartSynchronizedCountdownAsync();
+            }
+        }
+        else
+        {
+            ShowStageToast("⚪ FRIEND WAITING", $"{name} cancelled ready state.", "#94A3B8");
+        }
+    }
+
+    private async Task StartSynchronizedCountdownAsync()
+    {
+        if (_isCountingDown) return;
+        _isCountingDown = true;
+
+        try
+        {
+            if (StageCountdownOverlay != null)
+            {
+                StageCountdownOverlay.Visibility = Visibility.Visible;
+            }
+            AudioWaveformAndSfxService.PlayMetronomeClick();
+
+            if (StageCountdownNumber != null) StageCountdownNumber.Text = "3";
+            if (StageCountdownSub != null) StageCountdownSub.Text = "GET READY...";
+            await Task.Delay(950);
+
+            if (StageCountdownNumber != null) StageCountdownNumber.Text = "2";
+            if (StageCountdownSub != null) StageCountdownSub.Text = "SET...";
+            AudioWaveformAndSfxService.PlayMetronomeClick();
+            await Task.Delay(950);
+
+            if (StageCountdownNumber != null) StageCountdownNumber.Text = "1";
+            if (StageCountdownSub != null) StageCountdownSub.Text = "ALMOST THERE...";
+            AudioWaveformAndSfxService.PlayMetronomeClick();
+            await Task.Delay(950);
+
+            if (StageCountdownNumber != null) StageCountdownNumber.Text = "🎸";
+            if (StageCountdownSub != null) StageCountdownSub.Text = "ROCK ON!";
+            AudioWaveformAndSfxService.PlayCompilePowerChord();
+            await Task.Delay(600);
+
+            if (StageCountdownOverlay != null)
+            {
+                StageCountdownOverlay.Visibility = Visibility.Collapsed;
+            }
+
+            _isLocalLobbyReady = false;
+            _isRemoteLobbyReady = false;
+            UpdateLobbyReadyUi();
+
+            LaunchGh3(skipAudioAlert: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarn($"[COUNTDOWN] Exception during countdown: {ex.Message}");
+        }
+        finally
+        {
+            if (StageCountdownOverlay != null)
+            {
+                StageCountdownOverlay.Visibility = Visibility.Collapsed;
+            }
+            _isCountingDown = false;
+        }
+    }
+
+    private string GetActivePeerFriendCode()
+    {
+        if (TrustedFriendQuickCombo != null && TrustedFriendQuickCombo.SelectedIndex > 0 && TrustedFriendQuickCombo.SelectedIndex - 1 < _trustedDropdownEntries.Count)
+        {
+            return _trustedDropdownEntries[TrustedFriendQuickCombo.SelectedIndex - 1].FriendCode;
+        }
+        var addr = (PeerAddressBox?.Text ?? "").Trim();
+        var friend = AppConfig.Current.Friends.FirstOrDefault(f =>
+            (!string.IsNullOrEmpty(f.LastAddress) && f.LastAddress.TrimEnd('/').Equals(addr.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)) ||
+            (_lastPeerManifest != null && f.Username.Equals(_lastPeerManifest.MachineName, StringComparison.OrdinalIgnoreCase)));
+        return friend?.FriendCode ?? "";
+    }
+
+    private void PartyRouletteBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var customs = _allSongs.Where(s => s.PakSizeBytes > 0 && !string.IsNullOrEmpty(s.SongId)).ToList();
+        if (customs.Count == 0)
+        {
+            ShowStageToast("⚠️ NO CUSTOMS", "Install custom songs first to use Party Roulette!", "#F59E0B");
+            return;
+        }
+
+        int seed = Random.Shared.Next(1000, 999999);
+        var rng = new Random(seed);
+        var picked = customs.OrderBy(_ => rng.Next()).Take(Math.Min(10, customs.Count)).ToList();
+        var pickedIds = picked.Select(s => s.SongId).ToList();
+
+        var peerCode = GetActivePeerFriendCode();
+        var peerAddr = (PeerAddressBox?.Text ?? "").Trim();
+
+        if (!string.IsNullOrWhiteSpace(peerCode) && FriendService.SignalingRelay != null)
+        {
+            _ = FriendService.SignalingRelay.SendRouletteRollPacketAsync(peerCode, AppConfig.Current.FriendCode, seed, pickedIds);
+        }
+
+        if (!string.IsNullOrWhiteSpace(peerAddr))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var payload = new { senderCode = AppConfig.Current.FriendCode, seed = seed, songIds = pickedIds };
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2.0));
+                    using var client = new HttpClient();
+                    await client.PostAsJsonAsync($"{peerAddr.TrimEnd('/')}/api/lobby/roulette-roll", payload, cts.Token);
+                }
+                catch { }
+            });
+        }
+
+        ApplyLobbySetlistSelection(pickedIds);
+        ShowStageToast("🎲 PARTY ROULETTE ROLLED!", $"Selected {picked.Count} randomized party tracks!", "#F97316");
+        AudioWaveformAndSfxService.PlayStarPowerChime();
+    }
+
+    private void HandleRemotePeerRouletteRoll(string peerCode, int seed, List<string> songIds)
+    {
+        var friend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(peerCode, StringComparison.OrdinalIgnoreCase));
+        var name = friend?.Username ?? peerCode;
+
+        if (songIds != null && songIds.Count > 0)
+        {
+            ApplyLobbySetlistSelection(songIds);
+            ShowStageToast("🎲 PARTY ROULETTE SYNCED!", $"{name} rolled {songIds.Count} party tracks for your setlist!", "#F97316");
+            AudioWaveformAndSfxService.PlayStarPowerChime();
+        }
+    }
+
+    private void ApplyLobbySetlistSelection(List<string> songIds)
+    {
+        var idSet = songIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var s in _allSongs)
+        {
+            s.IsInLobbySetlist = idSet.Contains(s.SongId);
+        }
+        AppConfig.Current.LobbySetlistIds = songIds;
+        AppConfig.Save();
+        RefreshSongsList();
+        UpdateLobbyCounters();
+        if (_lastPeerManifest != null) RenderPeerLibrary();
+    }
+
+    public void RefreshShowcaseCombo()
+    {
+        if (ProfileShowcaseCombo == null) return;
+        ProfileShowcaseCombo.SelectionChanged -= ProfileShowcaseCombo_SelectionChanged;
+        ProfileShowcaseCombo.Items.Clear();
+
+        ProfileShowcaseCombo.Items.Add(new ComboBoxItem { Content = "(None - No Signature Track)", Tag = "" });
+        int selIdx = 0;
+        int idx = 1;
+        var currentTitle = AppConfig.Current.ShowcaseSongTitle ?? "";
+        var currentId = AppConfig.Current.ShowcaseSongId ?? "";
+
+        foreach (var s in _allSongs)
+        {
+            var item = new ComboBoxItem
+            {
+                Content = $"{s.Title} — {s.Artist}",
+                Tag = s.SongId
+            };
+            ProfileShowcaseCombo.Items.Add(item);
+            if (!string.IsNullOrEmpty(currentId) && s.SongId.Equals(currentId, StringComparison.OrdinalIgnoreCase))
+            {
+                selIdx = idx;
+            }
+            else if (selIdx == 0 && !string.IsNullOrEmpty(currentTitle) && s.Title.Equals(currentTitle, StringComparison.OrdinalIgnoreCase))
+            {
+                selIdx = idx;
+            }
+            idx++;
+        }
+
+        ProfileShowcaseCombo.SelectedIndex = selIdx;
+        ProfileShowcaseCombo.SelectionChanged += ProfileShowcaseCombo_SelectionChanged;
+    }
+
+    private void ProfileShowcaseCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ProfileShowcaseCombo?.SelectedItem is ComboBoxItem item)
+        {
+            var tag = item.Tag?.ToString() ?? "";
+            if (string.IsNullOrEmpty(tag))
+            {
+                AppConfig.Current.ShowcaseSongId = "";
+                AppConfig.Current.ShowcaseSongTitle = "";
+            }
+            else
+            {
+                var match = _allSongs.FirstOrDefault(s => s.SongId.Equals(tag, StringComparison.OrdinalIgnoreCase));
+                if (match != null)
+                {
+                    AppConfig.Current.ShowcaseSongId = match.SongId;
+                    AppConfig.Current.ShowcaseSongTitle = $"{match.Title} — {match.Artist}";
+                }
+            }
+            AppConfig.Save();
+            _ = BroadcastHeartbeatAsync();
+        }
+    }
+
+    private void PreviewShowcaseBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var songId = AppConfig.Current.ShowcaseSongId;
+        var song = _allSongs.FirstOrDefault(s => s.SongId.Equals(songId, StringComparison.OrdinalIgnoreCase));
+        if (song != null)
+        {
+            var audio = Gh3Service.FindSongAudioPath(song);
+            if (!string.IsNullOrEmpty(audio) && File.Exists(audio))
+            {
+                PlayAudioPreview(audio, song.Title, song, false);
+                ShowStageToast("🎸 SHOWCASE PREVIEW", $"Playing '{song.Title}' signature preview...", "#38BDF8");
+            }
+            else
+            {
+                ShowStageToast("⚠️ AUDIO NOT FOUND", "Audio file for signature track could not be found.", "#F59E0B");
+            }
+        }
+        else
+        {
+            ShowStageToast("ℹ️ NO SIGNATURE TRACK", "Select a signature track in your profile first!", "#94A3B8");
+        }
+    }
+
+    private async Task BroadcastHeartbeatAsync()
+    {
+        if (FriendService.SignalingRelay != null && !string.IsNullOrWhiteSpace(AppConfig.Current.FriendCode))
+        {
+            var bestAddr = FriendService.BestAddressProvider?.Invoke() ?? "";
+            await FriendService.SignalingRelay.PublishHeartbeatAsync(AppConfig.Current.FriendCode, AppConfig.Current.Username, bestAddr);
         }
     }
 

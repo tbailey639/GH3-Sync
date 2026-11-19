@@ -64,7 +64,7 @@
                     <TextBlock Text="-SYNC" FontSize="34" FontWeight="Black" Foreground="{StaticResource FlameGradient}" FontFamily="Segoe UI"/>
                 </StackPanel>
 
-                <TextBlock Text="v1.1.0  •  ENCORE &amp; ZERO-TRUST EDITION  •  BY MAD SCIENTIST"
+                <TextBlock x:Name="SplashVersionSubtitle" Text="v1.3.2  •  ENCORE &amp; ZERO-TRUST EDITION  •  BY MAD SCIENTIST"
                            FontSize="12" FontWeight="Bold" Foreground="#F59E0B"
                            HorizontalAlignment="Center" Margin="0,0,0,18"/>
 

@@ -11,6 +11,8 @@ public class UserProfile
 {
     public string Username { get; set; } = "Player";
     public string FriendCode { get; set; } = "";
+    public string ShowcaseSongTitle { get; set; } = "";
+    public string ShowcaseSongId { get; set; } = "";
 }
 
 public class FriendEntry
@@ -20,6 +22,10 @@ public class FriendEntry
     public string LastAddress { get; set; } = "";
     public bool IsTrusted { get; set; }
     public string TrustToken { get; set; } = "";
+    public string ActivityStatus { get; set; } = "Online";
+    public string ShowcaseSong { get; set; } = "";
+    public int PingMs { get; set; } = -1;
+    public bool IsLobbyReady { get; set; } = false;
     public DateTime AddedAt { get; set; } = DateTime.UtcNow;
 }
 
@@ -152,6 +158,11 @@ public class AppConfigData
     public int[] CustomPadButtonIndices { get; set; } = { -1, -1, -1, -1, -1 }; // Optional custom HID/DualSense Edge paddle indices
     public Dictionary<string, string> PinnedPeerFingerprints { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public TourStats LifetimeStats { get; set; } = new();
+
+    // v1.3.2 Features
+    public string ShowcaseSongTitle { get; set; } = "";
+    public string ShowcaseSongId { get; set; } = "";
+    public bool FilterPeerMissingOnly { get; set; } = false;
     public List<SongRequestItem> SongRequests { get; set; } = new();
     public List<FriendRequestItem> FriendRequests { get; set; } = new();
 }
