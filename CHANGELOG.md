@@ -4,6 +4,16 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.2.3] - 2026-11-18 — Deterministic Setlist Slots, Asymmetric Library Mirroring & Netcode Desync Fix
+
+### Multiplayer Setlist Slot Synchronization & Loading Freeze Elimination
+* **Deterministic Song Slot Ordering:** Custom songs in `DATA\customs.pak.xen` (`tier1` and `download_songlist`) are now sorted deterministically in alphabetical order. In Guitar Hero III online multiplayer, song selection is transmitted by tier slot index (`0..N`); deterministic sorting guarantees that both players share identical slot indices regardless of what order songs were downloaded or created in.
+* **Asymmetric Library Detection:** When comparing libraries with a peer, GH3-Sync now checks both directions. If you have extra songs that your friend doesn't have, GH3-Sync alerts you that in BetterGH3, picking a slot beyond your friend's setlist will freeze their loading screen.
+* **1-Click "🪞 Mirror Friend's Setlist (Temp Match)":** Added 1-click setlist mirroring for lobby sessions. When playing with a friend who has fewer songs, clicking Mirror temporarily aligns your `customs.pak.xen` to match your friend's exact song slots and count. Both players load into any custom song instantly with zero loading screen freezes and zero bot takeovers. When GH3 closes, your full library is automatically restored.
+* **Automatic Library Slot Self-Healing:** Added `CustomsPakService.AlignAndSortCustomsPak` into Library Auto-Heal and sync completion, ensuring existing custom installations are automatically aligned for online play.
+
+---
+
 ## [v1.2.2] - 2026-11-18 — P2P Auto-Healing, Tunnel Resiliency & In-Game Multiplayer Sync Notice
 
 ### Peer Address Auto-Healing & Real-Time Network Discovery

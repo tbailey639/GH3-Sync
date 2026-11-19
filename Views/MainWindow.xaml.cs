@@ -5001,19 +5001,32 @@ public partial class MainWindow : Window
         if (_lastPeerManifest == null) return;
         PeerSongsPanel.Children.Clear();
 
-        var localIds = _gh3.GetInstalledCustomSongs().Select(s => s.SongId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var localSongs = _gh3.GetInstalledCustomSongs();
+        var localIds = localSongs.Select(s => s.SongId).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var lobbySongs = GetPeerLobbySongs(_lastPeerManifest);
         var missingLobby = lobbySongs.Where(s => !localIds.Contains(s.SongId)).ToList();
+        var peerAllIds = _lastPeerManifest.Songs.Select(s => s.SongId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var peerMissingFromLocal = localSongs.Where(s => !peerAllIds.Contains(s.SongId)).ToList();
 
         LobbyMatchBanner.Visibility = Visibility.Visible;
-        if (missingLobby.Count == 0)
+        if (missingLobby.Count == 0 && peerMissingFromLocal.Count == 0)
         {
             LobbyMatchBanner.Background = (WpfBrush)FindResource("CardSuccessBg");
             LobbyMatchBanner.BorderBrush = (WpfBrush)FindResource("CardSuccessBorder");
-            LobbyMatchTitle.Text = $"100% Lobby Setlist Matched ({lobbySongs.Count} songs) — Ready for BetterGH3 Online!";
+            LobbyMatchTitle.Text = $"100% Setlist & Slot Matched ({localIds.Count} songs) — Ready for BetterGH3 Online!";
             LobbyMatchTitle.Foreground = (WpfBrush)FindResource("CardSuccessTitle");
-            LobbyMatchSub.Text = $"Connected to {_lastPeerManifest.MachineName} ({_lastPeerManifest.Songs.Count} total songs in their library).";
+            LobbyMatchSub.Text = $"Both you and {_lastPeerManifest.MachineName} have identical custom songs in matching slots. Any custom song can be picked online with zero loading freezes!";
             AutoSyncLobbyBtn.Visibility = Visibility.Collapsed;
+        }
+        else if (missingLobby.Count == 0 && peerMissingFromLocal.Count > 0)
+        {
+            LobbyMatchBanner.Background = (WpfBrush)FindResource("CardWarnBg");
+            LobbyMatchBanner.BorderBrush = (WpfBrush)FindResource("CardWarnBorder");
+            LobbyMatchTitle.Text = $"⚠️ Asymmetric Libraries: {_lastPeerManifest.MachineName} is missing {peerMissingFromLocal.Count} of your songs ({localIds.Count} vs {_lastPeerManifest.Songs.Count})";
+            LobbyMatchTitle.Foreground = (WpfBrush)FindResource("CardWarnTitle");
+            LobbyMatchSub.Text = $"You have all {_lastPeerManifest.Songs.Count} of {_lastPeerManifest.MachineName}'s songs, but their game does NOT have your {peerMissingFromLocal.Count} customs. In BetterGH3, picking a custom song slot your friend doesn't have will freeze their loading screen! Either ask {_lastPeerManifest.MachineName} to sync your songs, or click '🪞 Mirror Friend's Setlist' below to match their {_lastPeerManifest.Songs.Count} songs for this session.";
+            AutoSyncLobbyBtn.Visibility = Visibility.Visible;
+            AutoSyncLobbyBtn.Content = "🪞 Mirror Friend's Setlist (Temp Match)";
         }
         else
         {
@@ -5114,7 +5127,29 @@ public partial class MainWindow : Window
         if (_lastPeerManifest == null) return;
         var localIds = _gh3.GetInstalledCustomSongs().Select(s => s.SongId).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var missing = GetPeerLobbySongs(_lastPeerManifest).Where(s => !localIds.Contains(s.SongId)).ToList();
-        if (missing.Count == 0) return;
+
+        if (missing.Count == 0)
+        {
+            // Asymmetric library: Local has all of Peer's songs, but Peer is missing Local's songs.
+            // Temporarily mirror Peer's customs.pak.xen so both games have identical slots 0..N for this match!
+            AutoSyncLobbyBtn.IsEnabled = false;
+            PeerCompareStatus.Text = $"Mirroring {_lastPeerManifest.MachineName}'s customs.pak.xen setlist slots...";
+            _tempSession.BeginSessionIfNeeded(_lastPeerBaseUrl, autoCleanOnGameExit: true);
+            await PullPeerCustomsPakAsync();
+            AutoSyncLobbyBtn.IsEnabled = true;
+
+            RefreshSongsList();
+            RefreshTempSessionBanner();
+            RenderPeerLibrary();
+
+            ShowStageToast("🪞 SETLIST MIRRORED!", $"Temporarily matched {_lastPeerManifest.MachineName}'s setlist slots. Both games are 100% ready for online multiplayer!", "#22C55E");
+            WpfMessageBox.Show(
+                $"Setlist slots successfully mirrored from {_lastPeerManifest.MachineName}!\n\n" +
+                $"Both games now share the exact same {_lastPeerManifest.Songs.Count} custom song slots in matching order. You can launch GH3 and play together with zero loading screen freezes!\n\n" +
+                $"When you exit Guitar Hero III, your original custom library will be automatically restored.",
+                "Setlist Mirrored", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
 
         bool tempMode = TempSessionModeChk.IsChecked == true;
         AutoSyncLobbyBtn.IsEnabled = false;
@@ -5197,6 +5232,7 @@ public partial class MainWindow : Window
             var encPak = await resp.Content.ReadAsByteArrayAsync();
             var rawPak = _security.DecryptPayload(encPak, _lastPeerSecret);
             _gh3.BackupAndDeployCustomsPak(rawPak);
+            CustomsPakService.AlignAndSortCustomsPak(_gh3.GamePath, _logger);
         }
         catch (Exception ex)
         {

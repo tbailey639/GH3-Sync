@@ -139,6 +139,9 @@ public class LibraryHealthService
                 if (repaired) actions.Add("Repaired customs.pak.xen header");
             }
 
+            var aligned = CustomsPakService.AlignAndSortCustomsPak(_gh3.GamePath, _logger);
+            if (aligned) actions.Add("Aligned setlist song slots for multiplayer");
+
             if (report.OrphanedSongIds.Count > 0)
             {
                 _saves.BackupCurrentSaves("Before-AutoHeal-Library", "Before Auto-Heal", _gh3.GamePath);

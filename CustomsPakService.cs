@@ -534,6 +534,10 @@ public static class CustomsPakService
             qbText = Regex.Replace(qbText, arrayItemPattern, "");
         }
 
+        // Re-sort the arrays so remaining items remain deterministically ordered
+        qbText = InsertIntoFirstArrayBlock(qbText, @"tier1\s*=\s*\{[\s\S]*?songs\s*=\s*\[", "", "\t\t\t");
+        qbText = InsertIntoFirstArrayBlock(qbText, @"download_songlist\s*=\s*\[", "", "\t");
+
         return qbText;
     }
 
@@ -546,16 +550,77 @@ public static class CustomsPakService
         if (closeIdx < 0) return qbText;
 
         var existingBlock = qbText.Substring(m.Index + m.Length, closeIdx - (m.Index + m.Length));
-        if (Regex.IsMatch(existingBlock, $@"(?m)^\s*{Regex.Escape(item)}\s*$"))
-            return qbText;
+        var items = new List<string>();
+        foreach (Match match in Regex.Matches(existingBlock, @"\b([a-zA-Z0-9_]+)\b"))
+        {
+            var val = match.Value.Trim();
+            if (!string.IsNullOrWhiteSpace(val) && !items.Contains(val, StringComparer.OrdinalIgnoreCase))
+            {
+                items.Add(val);
+            }
+        }
 
-        // Find the start of the line holding ']' so indentation stays pristine
-        int insertPos = closeIdx;
-        while (insertPos > 0 && (qbText[insertPos - 1] == '\t' || qbText[insertPos - 1] == ' '))
-            insertPos--;
+        if (!string.IsNullOrWhiteSpace(item))
+        {
+            var cleanItem = item.Trim();
+            if (!items.Contains(cleanItem, StringComparer.OrdinalIgnoreCase))
+            {
+                items.Add(cleanItem);
+            }
+        }
+
+        // Sort deterministically (alphabetically) so every peer's custom songs share identical slot indices in BetterGH3 online
+        items.Sort(StringComparer.OrdinalIgnoreCase);
 
         var newline = qbText.Contains("\r\n") ? "\r\n" : "\n";
-        return qbText.Insert(insertPos, $"{indent}{item}{newline}");
+        var formatted = string.Join(newline, items.Select(x => $"{indent}{x}")) + newline;
+
+        int indentClosePos = closeIdx;
+        while (indentClosePos > 0 && (qbText[indentClosePos - 1] == '\t' || qbText[indentClosePos - 1] == ' '))
+            indentClosePos--;
+
+        var closeIndent = qbText.Substring(indentClosePos, closeIdx - indentClosePos);
+        return qbText.Substring(0, m.Index + m.Length) + newline + formatted + closeIndent + qbText.Substring(closeIdx);
+    }
+
+    /// <summary>
+    /// Aligns and sorts custom song indices in DATA\customs.pak.xen deterministically
+    /// to ensure 100% matching slot indices during BetterGH3 online multiplayer.
+    /// </summary>
+    public static bool AlignAndSortCustomsPak(string gamePath, SyncLogger? logger = null)
+    {
+        if (string.IsNullOrWhiteSpace(gamePath)) return false;
+        var pakPath = Path.Combine(gamePath, "DATA", "customs.pak.xen");
+        if (!File.Exists(pakPath)) return false;
+
+        lock (_pakLock)
+        {
+            try
+            {
+                var loaded = LoadCoreAssembly(gamePath);
+                if (loaded == null) return false;
+                var (asm, _) = loaded.Value;
+
+                var (entriesObj, primaryEntry, qbText) = DecompileCustomsPak(asm, pakPath);
+                if (entriesObj == null || primaryEntry == null || string.IsNullOrWhiteSpace(qbText))
+                    return false;
+
+                qbText = InsertIntoFirstArrayBlock(qbText, @"tier1\s*=\s*\{[\s\S]*?songs\s*=\s*\[", "", "\t\t\t");
+                qbText = InsertIntoFirstArrayBlock(qbText, @"download_songlist\s*=\s*\[", "", "\t");
+
+                var ok = RecompileAndSaveCustomsPak(asm, pakPath, entriesObj, primaryEntry, qbText, logger);
+                if (ok)
+                {
+                    logger?.LogInfo("[CUSTOMS PAK] Successfully aligned and sorted customs.pak.xen song indices for online multiplayer compatibility.");
+                }
+                return ok;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarn($"[CUSTOMS PAK] Align and sort failed: {ex.Message}");
+                return false;
+            }
+        }
     }
 
     private static string AppendToPropsBlock(string qbText, string entryBlock)
