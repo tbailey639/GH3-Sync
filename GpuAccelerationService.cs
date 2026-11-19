@@ -17,6 +17,17 @@ public static class GpuAccelerationService
     public static int WpfRenderTier { get; private set; } = 2; // Default assume modern hardware
     private static bool _initialized = false;
 
+    public static void ApplyRenderMode(bool enableGpu)
+    {
+        try
+        {
+            System.Windows.Media.RenderOptions.ProcessRenderMode = enableGpu
+                ? System.Windows.Interop.RenderMode.Default
+                : System.Windows.Interop.RenderMode.SoftwareOnly;
+        }
+        catch { }
+    }
+
     public static void Initialize(SyncLogger? logger = null)
     {
         if (_initialized) return;

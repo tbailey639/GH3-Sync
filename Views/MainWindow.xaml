@@ -273,6 +273,7 @@
                             </StackPanel>
                             <WrapPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                 <Button Content="Refresh" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="RefreshSongs_Click" ToolTip="F5"/>
+                                <Button x:Name="HallOfFameBtn" Content="🏆 Hall of Fame" Style="{StaticResource GoldButton}" Padding="10,6" Margin="0,0,6,0" Click="HallOfFameBtn_Click" ToolTip="View In-App Rock Hall of Fame &amp; Achievements Trophy Showcase"/>
                                 <Button x:Name="TournamentBracketBtn" Content="🏆 Tournament" Style="{StaticResource GoldButton}" Padding="10,6" Margin="0,0,6,0" Click="TournamentBracketBtn_Click" ToolTip="Generate Rock Tour Tournament Bracket (4/8/16 players, song vetoes, match scorecards)"/>
                                 <Button x:Name="BossBattleModalBtn" Content="⚡ Boss Duel" Style="{StaticResource PurpleButton}" Padding="10,6" Margin="0,0,6,0" Click="BossBattleModalBtn_Click" ToolTip="Generate GH3 Boss Battle Duel with authentic battle power-up gems!"/>
                                 <Button x:Name="SpinRouletteBtn" Content="🎰 Roulette" Style="{StaticResource BlueButton}" Padding="10,6" Margin="0,0,6,0" Click="SpinRouletteBtn_Click" ToolTip="Spin Encore Roulette to pick a random song!"/>
@@ -692,11 +693,13 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <!-- Exclusive Enhancements (Stadium Chants, Boss Battle, Charter Signatures) -->
+                                <!-- Exclusive Enhancements (Stadium Chants, Boss Battle, Charter Signatures, Trade-Off Solos, AI Lyrics) -->
                                 <WrapPanel Margin="0,12,0,0">
                                     <CheckBox x:Name="CrStadiumChantsChk" Content="🏟️ AI Stadium Sing-Along &amp; Crowd Chants (Chorus claps)" IsChecked="True" Margin="0,0,16,6"/>
                                     <CheckBox x:Name="CrBossBattleChk" Content="⚡ Boss Battle Duel (Broken String &amp; Double Notes power-ups)" IsChecked="False" Margin="0,0,16,6"/>
                                     <CheckBox x:Name="CrSignCharterChk" Content="🔏 Cryptographic Charter Signature (.gh3sig verified checkmark)" IsChecked="True" Margin="0,0,16,6"/>
+                                    <CheckBox x:Name="CrTradeOffSoloChk" Content="🎸 Trade-Off Solo Duels (P1 Lead / P2 Co-Op alternating)" IsChecked="False" Margin="0,0,16,6"/>
+                                    <CheckBox x:Name="CrAiLyricsSectionsChk" Content="📝 AI Lyric &amp; Section Markers ([pr_verse], [pr_chorus])" IsChecked="True" Margin="0,0,16,6"/>
                                 </WrapPanel>
 
                                 <!-- Actions + Interactive Editable Batch Queue -->
@@ -1409,6 +1412,55 @@
                                                FontSize="12.5" Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" Margin="0,0,0,10"/>
                                     <CheckBox x:Name="SettingsAnimationsChk" Content="Enable UI Animations &amp; Animated Stage Effects (uncheck for static low-motion UI)" IsChecked="True" Margin="0,0,0,6" Checked="SettingsAnimationsChk_Changed" Unchecked="SettingsAnimationsChk_Changed"/>
                                     <CheckBox x:Name="SettingsSfxChk" Content="Enable Synthesized GH3 Sound Effects (Power-Chord on compile, Star Power chime, FC fanfare)" IsChecked="True" Checked="SettingsSfxChk_Changed" Unchecked="SettingsSfxChk_Changed"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Direct3D GPU Hardware Acceleration & Performance Rig Card -->
+                            <Border Style="{StaticResource GhCard}" BorderBrush="{DynamicResource AccentCyan}">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,6">
+                                        <Border DockPanel.Dock="Right" Background="#0C4A6E" BorderBrush="#38BDF8" BorderThickness="1" CornerRadius="6" Padding="8,3" VerticalAlignment="Center">
+                                            <TextBlock x:Name="GpuTelemetryStatusBadge" Text="TIER 2 HARDWARE ACCELERATED" FontSize="11" FontWeight="Bold" Foreground="#38BDF8" FontFamily="Consolas"/>
+                                        </Border>
+                                        <TextBlock Text="⚡ Direct3D GPU Hardware Acceleration &amp; Performance Rig" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource AccentCyanText}"/>
+                                    </DockPanel>
+                                    <TextBlock Text="Hardware-accelerated Direct3D Tier 2 composition offloads all vector geometries, real-time LED VU meters, 3D highway perspective transforms, and audio spectrum visualizers to your GPU."
+                                               FontSize="12" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="Enable Direct3D GPU Acceleration" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimary}"/>
+                                            <TextBlock Text="Switch off to force CPU software rasterization (useful for debugging, virtual machines, or power saving)." FontSize="11.5" Foreground="{DynamicResource TextMuted}"/>
+                                        </StackPanel>
+                                        <views:VintageToggleSwitch x:Name="SettingsGpuToggle" Grid.Column="1" IsChecked="True" CheckedChanged="SettingsGpuToggle_CheckedChanged"/>
+                                    </Grid>
+
+                                    <!-- Visual Effects Quality Profile -->
+                                    <TextBlock Text="Stage Visual Effects Quality Profile" FontSize="12.5" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,4"/>
+                                    <UniformGrid Columns="3" Margin="0,0,0,10">
+                                        <RadioButton x:Name="QualityUltraRadio" Content="Ultra (144Hz + Spotlights + Particles)" GroupName="QualityGroup" IsChecked="True" Checked="QualityRadio_Checked" Margin="0,0,6,0"/>
+                                        <RadioButton x:Name="QualityBalancedRadio" Content="Balanced (60Hz + LED Meters)" GroupName="QualityGroup" Checked="QualityRadio_Checked" Margin="0,0,6,0"/>
+                                        <RadioButton x:Name="QualityBatteryRadio" Content="Battery Saver (30Hz Static)" GroupName="QualityGroup" Checked="QualityRadio_Checked"/>
+                                    </UniformGrid>
+
+                                    <!-- Detected Hardware Telemetry Banner -->
+                                    <Border Background="#060A13" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="8" Padding="12,8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock x:Name="GpuTelemetryNameText" Text="NVIDIA GeForce RTX 5070 (12 GB VRAM)" FontSize="12.5" FontWeight="Bold" Foreground="#38BDF8"/>
+                                                <TextBlock x:Name="GpuTelemetryDriverText" Text="Driver 621.14 • DirectX 12 / Direct3D 9Ex/11 HW Composition • Demucs CUDA Active" FontSize="11" Foreground="{DynamicResource TextMuted}"/>
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" x:Name="GpuTelemetryFpsText" Text="144 FPS RIG" FontSize="14" FontWeight="Black" Foreground="#22C55E" VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </Border>
                                 </StackPanel>
                             </Border>
 

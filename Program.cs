@@ -1893,6 +1893,7 @@ else
                 ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown
             };
 
+            bool isMainWindowReady = false;
             wpfApp.DispatcherUnhandledException += (_, exArgs) =>
             {
                 syncLogger.LogError("WPF UI Error", exArgs.Exception);
@@ -1904,16 +1905,19 @@ else
                 }
                 catch { }
                 exArgs.Handled = true;
+
+                if (!isMainWindowReady)
+                {
+                    try { singleInstanceMutex?.Dispose(); } catch { }
+                    try { wpfApp.Shutdown(); } catch { }
+                    Environment.Exit(1);
+                }
             };
 
             wpfApp.Startup += async (_, _) =>
             {
-                // Force Direct3D Hardware GPU Rendering Mode
-                try
-                {
-                    System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.Default;
-                }
-                catch { }
+                // Apply Full-App GPU Acceleration Mode from Config (Direct3D Tier 2 HW vs Software WARP)
+                GpuAccelerationService.ApplyRenderMode(AppConfig.Current.EnableGpuAcceleration);
                 GpuAccelerationService.Initialize(syncLogger);
 
                 var splash = new GH3_Sync.Views.SplashWindow();
@@ -1961,27 +1965,44 @@ else
                 await Task.Delay(300);
 
                 splash.UpdateProgress(85, "Preparing workspace...");
-                var mainWin = new GH3_Sync.Views.MainWindow(
-                    gh3Service,
-                    syncLogger,
-                    securityService,
-                    friendService,
-                    saveManager,
-                    compilerService,
-                    cloneHeroService,
-                    audioAnalysisService,
-                    demucsService,
-                    creatorService,
-                    natService,
-                    updateService,
-                    tempSessionService,
-                    componentUpdater,
-                    port,
-                    chartDoctor,
-                    betterGh3Tweaks,
-                    discordRpc,
-                    tunnelService,
-                    careerScores);
+                GH3_Sync.Views.MainWindow mainWin;
+                try
+                {
+                    mainWin = new GH3_Sync.Views.MainWindow(
+                        gh3Service,
+                        syncLogger,
+                        securityService,
+                        friendService,
+                        saveManager,
+                        compilerService,
+                        cloneHeroService,
+                        audioAnalysisService,
+                        demucsService,
+                        creatorService,
+                        natService,
+                        updateService,
+                        tempSessionService,
+                        componentUpdater,
+                        port,
+                        chartDoctor,
+                        betterGh3Tweaks,
+                        discordRpc,
+                        tunnelService,
+                        careerScores);
+                    isMainWindowReady = true;
+                }
+                catch (Exception initEx)
+                {
+                    syncLogger.LogError("Fatal MainWindow initialization failure", initEx);
+                    try { File.WriteAllText(Path.Combine(appDataDir, "crash.log"), $"[{DateTime.Now}]\n{initEx}\n"); } catch { }
+                    try { splash.Close(); } catch { }
+                    System.Windows.MessageBox.Show($"Fatal startup error initializing UI:\n\n{initEx.Message}\n\nPlease check %AppData%\\GH3-Sync\\crash.log for details.", "GH3-Sync Error",
+                        System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                    try { singleInstanceMutex?.Dispose(); } catch { }
+                    wpfApp.Shutdown();
+                    Environment.Exit(1);
+                    return;
+                }
 
                 // Single-instance restore listener (brings minimized/tray window to front if user launches GH3-Sync again)
                 if (!hasCustomPortArg)

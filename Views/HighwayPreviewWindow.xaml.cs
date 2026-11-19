@@ -107,6 +107,14 @@ public partial class HighwayPreviewWindow : Window
         BuildSoloCutBtn.IsEnabled = !string.IsNullOrWhiteSpace(_projectDir) && _studioTools != null;
 
         SongHeaderTitle.Text = string.IsNullOrWhiteSpace(artist) ? title : $"{title}  —  {artist}";
+        try
+        {
+            double bpm = _chart.Tempos.FirstOrDefault()?.Bpm ?? 120.0;
+            var theme = HighwayThemeService.DetectTheme(_songTitle, _songArtist, bpm);
+            if (CoachInsightText != null)
+                CoachInsightText.Text = $"🏟️ VENUE: {theme.VenueName} ({theme.Name}) • AI Coach: Ready";
+        }
+        catch { }
         SaveOffsetBtn.IsEnabled = !string.IsNullOrWhiteSpace(_projectDir) && _doctor != null;
         SaveEditsBtn.IsEnabled = !string.IsNullOrWhiteSpace(_projectDir) && _doctor != null;
 
@@ -472,6 +480,8 @@ public partial class HighwayPreviewWindow : Window
         {
             _hasRecordedScoreThisRun = true;
             ScoreRecorded?.Invoke();
+            if (isFc) RockHallOfFameService.UnlockAchievement("FC_MASTER");
+            if (_score >= 1_000_000) RockHallOfFameService.UnlockAchievement("ONE_MILLION_CLUB");
         }
     }
 

@@ -145,6 +145,8 @@ public class AppConfigData
 
     // v1.4.0 Concert Master Edition Settings
     public string Language { get; set; } = "en";
+    public bool EnableGpuAcceleration { get; set; } = true;         // Full-App Direct3D Tier 2 hardware rendering
+    public string VisualEffectsQuality { get; set; } = "Ultra";     // Ultra, Balanced, BatterySaver
     public int ControllerDebounceMs { get; set; } = 25;             // Hardware anti-overstrum debounce (0ms - 100ms)
     public bool EnableHighPrecisionTimer { get; set; } = true;      // Windows 11 0.5ms microsecond timing boost
     public double AudioTargetLufs { get; set; } = -14.0;            // EBU R128 target loudness
@@ -154,6 +156,7 @@ public class AppConfigData
     public double WhammyDeadzone { get; set; } = 5.0;               // 0% - 30% deadzone
     public double TiltSensitivity { get; set; } = 7.0;              // 0 to 11 Star Power tilt sensitivity
     public bool StealthBlackholeMode { get; set; } = false;         // Silent blackhole packet dropping
+    public List<string> UnlockedAchievements { get; set; } = new(); // Hall of Fame achievement IDs
 
     public bool StreamerPrivacyMode { get; set; } = false;
     public bool CompactSetlistView { get; set; } = false;

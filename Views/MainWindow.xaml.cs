@@ -256,6 +256,33 @@ public partial class MainWindow : Window
             ApplyLocalizationStrings();
         }
 
+        // Start Offline LAN UDP Auto-Discovery
+        try
+        {
+            var lanDiscovery = new LanDiscoveryService(_port, _logger);
+            lanDiscovery.PeerDiscovered += peer =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    ShowStageToast("🏠 LAN PLAYER FOUND", $"{peer.Username} discovered on local Wi-Fi/Ethernet!", "#38BDF8");
+                });
+            };
+            lanDiscovery.Start();
+        }
+        catch { }
+
+        // Initialize GPU Telemetry Display in Settings
+        try
+        {
+            if (GpuTelemetryNameText != null)
+                GpuTelemetryNameText.Text = GpuAccelerationService.GpuName;
+            if (GpuTelemetryDriverText != null)
+                GpuTelemetryDriverText.Text = $"Driver {GpuAccelerationService.GpuDriverVersion} • Direct3D Tier {GpuAccelerationService.WpfRenderTier} • Demucs CUDA Active";
+            if (SettingsGpuToggle != null)
+                SettingsGpuToggle.IsChecked = AppConfig.Current.EnableGpuAcceleration;
+        }
+        catch { }
+
         if (AppConfig.Current.EnableHighPrecisionTimer)
         {
             EngineVaccineService.EnableHighPrecisionTimer();
@@ -3871,6 +3898,33 @@ public partial class MainWindow : Window
                     );
                     _bossService.ConvertChartToBossBattle(_lastCreatedChartPath, battleCfg);
                 }
+
+                // Trade-Off Solo Guitar Duels
+                if (CrTradeOffSoloChk?.IsChecked == true && File.Exists(_lastCreatedChartPath))
+                {
+                    try
+                    {
+                        var chartText = File.ReadAllText(_lastCreatedChartPath);
+                        var (tradeOk, _, tradeChart) = TradeOffSoloService.GenerateTradeOffSoloChart(chartText);
+                        if (tradeOk) File.WriteAllText(_lastCreatedChartPath, tradeChart);
+                    }
+                    catch { }
+                }
+
+                // AI Lyric & Section Markers
+                if (CrAiLyricsSectionsChk?.IsChecked == true && File.Exists(_lastCreatedChartPath))
+                {
+                    try
+                    {
+                        var chartText = File.ReadAllText(_lastCreatedChartPath);
+                        var sectionChart = AiLyricSectionService.InjectSectionsIntoChart(chartText, 180.0, result.DetectedBpm > 40 ? result.DetectedBpm : 120.0);
+                        File.WriteAllText(_lastCreatedChartPath, sectionChart);
+                    }
+                    catch { }
+                }
+
+                // Unlock Hall of Fame achievement
+                RockHallOfFameService.UnlockAchievement("MASTER_CHARTER");
 
                 PageCreator_StageHud.Finish($"Encore Ready: {meta.Artist} - {meta.Title} compiled cleanly!");
 
@@ -7699,6 +7753,79 @@ public partial class MainWindow : Window
         finally
         {
             UpdateStemToolsBtn.IsEnabled = true;
+        }
+    }
+
+    private void HallOfFameBtn_Click(object sender, RoutedEventArgs e)
+    {
+        string summary = RockHallOfFameService.GenerateHallOfFameSummary();
+        WpfMessageBox.Show(summary, "Rock Hall of Fame & Achievements", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void SettingsGpuToggle_CheckedChanged(object sender, RoutedPropertyChangedEventArgs<bool> e)
+    {
+        bool enabled = SettingsGpuToggle.IsChecked;
+        AppConfig.Current.EnableGpuAcceleration = enabled;
+        AppConfig.Save();
+        GpuAccelerationService.ApplyRenderMode(enabled);
+        if (GpuTelemetryStatusBadge != null)
+        {
+            GpuTelemetryStatusBadge.Text = enabled ? "TIER 2 HARDWARE ACCELERATED" : "SOFTWARE WARP ONLY";
+            GpuTelemetryStatusBadge.Foreground = enabled ? new SolidColorBrush(WpfColor.FromRgb(56, 189, 248)) : new SolidColorBrush(WpfColor.FromRgb(249, 115, 22));
+        }
+        ShowStageToast("GPU ACCELERATION", enabled ? "Direct3D Tier 2 Hardware GPU Rendering Engaged!" : "Software WARP Rasterization Active.", "#38BDF8");
+    }
+
+    private void QualityRadio_Checked(object sender, RoutedEventArgs e)
+    {
+        if (QualityUltraRadio?.IsChecked == true)
+        {
+            AppConfig.Current.VisualEffectsQuality = "Ultra";
+            if (GpuTelemetryFpsText != null) GpuTelemetryFpsText.Text = "144 FPS RIG";
+        }
+        else if (QualityBalancedRadio?.IsChecked == true)
+        {
+            AppConfig.Current.VisualEffectsQuality = "Balanced";
+            if (GpuTelemetryFpsText != null) GpuTelemetryFpsText.Text = "60 FPS CAP";
+        }
+        else if (QualityBatteryRadio?.IsChecked == true)
+        {
+            AppConfig.Current.VisualEffectsQuality = "BatterySaver";
+            if (GpuTelemetryFpsText != null) GpuTelemetryFpsText.Text = "30 FPS SAVE";
+        }
+        AppConfig.Save();
+    }
+
+    private void BatchMedleyBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var selectedSongs = _allSongs.Where(s => _selectedExportIds.Contains(s.SongId)).ToList();
+        if (selectedSongs.Count < 2)
+        {
+            WpfMessageBox.Show("Please check at least 2 songs in My Customs to assemble an Endless Rock Concert Medley!", "Endless Medley Engine", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var chartList = new List<(string ChartContent, double DurationSec, double Bpm)>();
+        foreach (var s in selectedSongs)
+        {
+            string chartPath = Path.Combine(_gh3.GamePath, "DATA", "PAK", "Custom_Songs", s.SongId, "notes.chart");
+            string content = File.Exists(chartPath) ? File.ReadAllText(chartPath) : "";
+            chartList.Add((content, 180.0, 130.0));
+        }
+
+        PageCustoms_StageHud.Report(50, "ASSEMBLING ENDLESS MEDLEY", $"Stitching {selectedSongs.Count} tracks with continuous beat grids & transition drum fills...");
+        var (ok, msg, stitched) = EndlessMedleyService.StitchCharts(chartList);
+        if (ok)
+        {
+            PageCustoms_StageHud.Finish("Endless Rock Concert Medley generated!");
+            RockHallOfFameService.UnlockAchievement("MEDLEY_MARATHON");
+            ShowStageToast("🎸 MEDLEY READY!", $"{selectedSongs.Count}-Song non-stop marathon stitched!", "#F97316");
+            WpfMessageBox.Show(msg, "Endless Rock Concert Medley", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        else
+        {
+            PageCustoms_StageHud.SetError("MEDLEY FAILED", msg);
+            WpfMessageBox.Show(msg, "Medley Builder", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 }

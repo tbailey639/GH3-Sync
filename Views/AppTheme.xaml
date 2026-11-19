@@ -4,6 +4,14 @@
     <!-- ==================== THEME FALLBACK BRUSHES ==================== -->
     <SolidColorBrush x:Key="BgCardAlt" Color="#161A26"/>
     <SolidColorBrush x:Key="BorderDefault" Color="#262B3D"/>
+    <LinearGradientBrush x:Key="GoldGradient" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#F59E0B" Offset="0"/>
+        <GradientStop Color="#D97706" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="PurpleGradient" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#8B5CF6" Offset="0"/>
+        <GradientStop Color="#6D28D9" Offset="1"/>
+    </LinearGradientBrush>
 
     <!-- ==================== CARD STYLE ==================== -->
     <Style x:Key="GhCard" TargetType="Border">
@@ -67,6 +75,14 @@
 
     <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource FlameButton}">
         <Setter Property="Background" Value="#DC2626"/>
+    </Style>
+
+    <Style x:Key="GoldButton" TargetType="Button" BasedOn="{StaticResource FlameButton}">
+        <Setter Property="Background" Value="{DynamicResource GoldGradient}"/>
+    </Style>
+
+    <Style x:Key="PurpleButton" TargetType="Button" BasedOn="{StaticResource FlameButton}">
+        <Setter Property="Background" Value="{DynamicResource PurpleGradient}"/>
     </Style>
 
     <Style x:Key="OutlineButton" TargetType="Button">
