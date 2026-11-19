@@ -151,6 +151,9 @@ public class AppConfigData
     public bool StemSeparationGpuEnabled { get; set; } = true;      // GPU acceleration for AI demux/pitch
     public bool ZeroTrustQuarantineEnabled { get; set; } = true;    // Sonic Quarantine archive pre-scanner
     public bool EnableStadiumChants { get; set; } = true;           // AI Stadium Sing-Along & crowd chants
+    public double WhammyDeadzone { get; set; } = 5.0;               // 0% - 30% deadzone
+    public double TiltSensitivity { get; set; } = 7.0;              // 0 to 11 Star Power tilt sensitivity
+    public bool StealthBlackholeMode { get; set; } = false;         // Silent blackhole packet dropping
 
     public bool StreamerPrivacyMode { get; set; } = false;
     public bool CompactSetlistView { get; set; } = false;

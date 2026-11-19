@@ -38,6 +38,7 @@ public class SongCreationRequest
     public int Year { get; set; } = DateTime.Now.Year;
     public string Genre { get; set; } = "Rock";
     public string Charter { get; set; } = "Mad Scientist";
+    public string Venue { get; set; } = "The Desert Rock Arena";
     public int DiffGuitar { get; set; } = 4;
     public int DiffRhythm { get; set; } = 3;
     public int PreviewStartMs { get; set; } = 5000;

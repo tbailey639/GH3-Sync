@@ -348,16 +348,26 @@ public partial class MainWindow
         string defaultTitle = $"Live Encore Medley ({picked.Count} Songs)";
         MedleyBuilderBtn.IsEnabled = false;
         MedleyBuilderBtn.Content = "Building...";
+        PageCustoms_StageHud.Report(25, "BUILDING CONCERT MEDLEY", $"Stitching stems & calculating crossfade markers for {picked.Count} tracks...");
         try
         {
             var (ok, msg) = await _studioTools.BuildConcertMedleyAsync(picked, defaultTitle, autoCompile: true);
             if (ok)
             {
+                PageCustoms_StageHud.Finish($"Live Concert Medley created cleanly! ({picked.Count} songs)");
                 AudioWaveformAndSfxService.PlayCompilePowerChord();
                 RefreshSongsList();
                 ShowStageToast("🎸 MEDLEY BUILT!", msg, "#22C55E");
             }
-            else WpfMessageBox.Show(msg, "Concert Medley Builder", MessageBoxButton.OK, MessageBoxImage.Warning);
+            else
+            {
+                PageCustoms_StageHud.SetError("MEDLEY BUILD FAILED", msg);
+                WpfMessageBox.Show(msg, "Concert Medley Builder", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            PageCustoms_StageHud.SetError("MEDLEY ERROR", ex.Message);
         }
         finally
         {

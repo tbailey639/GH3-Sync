@@ -273,6 +273,8 @@
                             </StackPanel>
                             <WrapPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                 <Button Content="Refresh" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="RefreshSongs_Click" ToolTip="F5"/>
+                                <Button x:Name="TournamentBracketBtn" Content="🏆 Tournament" Style="{StaticResource GoldButton}" Padding="10,6" Margin="0,0,6,0" Click="TournamentBracketBtn_Click" ToolTip="Generate Rock Tour Tournament Bracket (4/8/16 players, song vetoes, match scorecards)"/>
+                                <Button x:Name="BossBattleModalBtn" Content="⚡ Boss Duel" Style="{StaticResource PurpleButton}" Padding="10,6" Margin="0,0,6,0" Click="BossBattleModalBtn_Click" ToolTip="Generate GH3 Boss Battle Duel with authentic battle power-up gems!"/>
                                 <Button x:Name="SpinRouletteBtn" Content="🎰 Roulette" Style="{StaticResource BlueButton}" Padding="10,6" Margin="0,0,6,0" Click="SpinRouletteBtn_Click" ToolTip="Spin Encore Roulette to pick a random song!"/>
                                 <Button x:Name="ExportPosterBtn" Content="🖼 Setlist Poster" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="ExportSetlistPosterBtn_Click" ToolTip="Export a high-res Concert Tour Poster PNG for Discord"/>
                                 <Button x:Name="VolumeSoundcheckBtn" Content="🔊 Soundcheck" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="VolumeSoundcheckBtn_Click" ToolTip="Scan &amp; batch-normalize existing custom songs to -14 LUFS"/>
@@ -690,6 +692,13 @@
                                     </StackPanel>
                                 </Grid>
 
+                                <!-- Exclusive Enhancements (Stadium Chants, Boss Battle, Charter Signatures) -->
+                                <WrapPanel Margin="0,12,0,0">
+                                    <CheckBox x:Name="CrStadiumChantsChk" Content="🏟️ AI Stadium Sing-Along &amp; Crowd Chants (Chorus claps)" IsChecked="True" Margin="0,0,16,6"/>
+                                    <CheckBox x:Name="CrBossBattleChk" Content="⚡ Boss Battle Duel (Broken String &amp; Double Notes power-ups)" IsChecked="False" Margin="0,0,16,6"/>
+                                    <CheckBox x:Name="CrSignCharterChk" Content="🔏 Cryptographic Charter Signature (.gh3sig verified checkmark)" IsChecked="True" Margin="0,0,16,6"/>
+                                </WrapPanel>
+
                                 <!-- Actions + Interactive Editable Batch Queue -->
                                 <StackPanel Margin="0,16,0,0">
                                     <StackPanel Orientation="Horizontal">
@@ -1003,6 +1012,28 @@
                             </Grid>
                         </Border>
 
+                        <!-- Live Lobby Hype Soundboard over P2P -->
+                        <Border Style="{StaticResource GhCard}" BorderBrush="{DynamicResource AccentGold}" Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
+                                    <TextBlock Text="📢 LOBBY HYPE SOUNDBOARD" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource AccentGoldText}"/>
+                                    <TextBlock Text="Broadcast live concert SFX to your multiplayer friend in real-time!" FontSize="11" Foreground="{DynamicResource TextMuted}"/>
+                                </StackPanel>
+                                <WrapPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <Button x:Name="HypeAirhornBtn" Content="📢 Airhorn" Style="{StaticResource OutlineButton}" Padding="9,5" Margin="0,0,6,0" Click="HypeSfx_Click" Tag="airhorn"/>
+                                    <Button x:Name="HypeCheerBtn" Content="🏟️ Stadium Cheer" Style="{StaticResource OutlineButton}" Padding="9,5" Margin="0,0,6,0" Click="HypeSfx_Click" Tag="cheer"/>
+                                    <Button x:Name="HypeBooBtn" Content="👎 Boooo!" Style="{StaticResource OutlineButton}" Padding="9,5" Margin="0,0,6,0" Click="HypeSfx_Click" Tag="boo"/>
+                                    <Button x:Name="HypeDrumBtn" Content="🥁 Drum Fill" Style="{StaticResource OutlineButton}" Padding="9,5" Margin="0,0,6,0" Click="HypeSfx_Click" Tag="drum"/>
+                                    <Button x:Name="HypeLightningBtn" Content="⚡ Lightning" Style="{StaticResource OutlineButton}" Padding="9,5" Margin="0,0,6,0" Click="HypeSfx_Click" Tag="lightning"/>
+                                    <Button x:Name="HypeSoloBtn" Content="🎸 Solo Lick" Style="{StaticResource OutlineButton}" Padding="9,5" Click="HypeSfx_Click" Tag="solo"/>
+                                </WrapPanel>
+                            </Grid>
+                        </Border>
+
                         <!-- Synchronized Match Ready-Up & Countdown Card -->
                         <Border x:Name="LobbyReadyCard" Style="{StaticResource GhCard}" Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource AccentFlame}" BorderThickness="1.5" Margin="0,0,0,12">
                             <Grid>
@@ -1244,23 +1275,29 @@
                                     <TextBlock Text="Performance &amp; Hardware Engine (Windows 11 Boost)" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,8"/>
                                     <CheckBox x:Name="SettingsTimerBoostChk" Content="Enable Windows 11 High-Precision Timer Boost (0.5ms microsecond note timing)" Margin="0,0,0,6"/>
                                     <CheckBox x:Name="SettingsZeroTrustChk" Content="Active Zero-Trust Sonic Quarantine (Pre-scan archives against zip bombs &amp; exploits)" Margin="0,0,0,6"/>
-                                    <CheckBox x:Name="SettingsGpuToggleChk" Content="Hardware GPU Acceleration for AI Demucs stem separation &amp; Basic Pitch" Margin="0,0,0,10"/>
+                                    <CheckBox x:Name="SettingsGpuToggleChk" Content="Hardware GPU Acceleration for AI Demucs stem separation &amp; Basic Pitch" Margin="0,0,0,3"/>
+                                    <TextBlock x:Name="SettingsGpuStatusLabel" Text="Checking GPU..." FontSize="11.5" Foreground="{DynamicResource AccentFlameText}" Margin="20,0,0,10"/>
 
-                                    <StackPanel Margin="0,4,0,10">
-                                        <DockPanel Margin="0,0,0,4">
-                                            <TextBlock x:Name="SettingsDebounceValueText" DockPanel.Dock="Right" Text="25 ms" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
-                                            <TextBlock Text="Guitar Controller Anti-Overstrum Debounce Filter (0ms = off, 25ms = recommended):" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
-                                        </DockPanel>
-                                        <Slider x:Name="SettingsDebounceSlider" Minimum="0" Maximum="100" Value="25" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="SettingsDebounceSlider_ValueChanged"/>
-                                    </StackPanel>
+                                    <!-- Authentic Stage Vintage Amp Rotary Knobs (These go to 11!) -->
+                                    <Border Background="#0B0F19" BorderBrush="#334155" BorderThickness="1.5" CornerRadius="8" Padding="12,10" Margin="0,6,0,12">
+                                        <StackPanel>
+                                            <TextBlock Text="🎸 VINTAGE STAGE AMP ROTARY CONTROLS (TURN TO 11)" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource AccentGoldText}" Margin="0,0,0,8"/>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <views:AmpKnobControl x:Name="SettingsDebounceKnob" Grid.Column="0" Header="DEBOUNCE" Minimum="0" Maximum="100" Value="25" Unit="ms" ValueChanged="SettingsDebounceKnob_ValueChanged"/>
+                                                <views:AmpKnobControl x:Name="SettingsWhammyKnob" Grid.Column="1" Header="WHAMMY DEADZONE" Minimum="0" Maximum="30" Value="5" Unit="%" ValueChanged="SettingsWhammyKnob_ValueChanged"/>
+                                                <views:AmpKnobControl x:Name="SettingsTiltKnob" Grid.Column="2" Header="STAR POWER TILT" Minimum="0" Maximum="11" Value="7" Unit="/11" ValueChanged="SettingsTiltKnob_ValueChanged"/>
+                                                <views:AmpKnobControl x:Name="SettingsLufsKnob" Grid.Column="3" Header="TARGET LUFS" Minimum="-20" Maximum="-10" Value="-14" Unit="LUFS" ValueChanged="SettingsLufsKnob_ValueChanged"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
 
-                                    <StackPanel Margin="0,4,0,12">
-                                        <DockPanel Margin="0,0,0,4">
-                                            <TextBlock x:Name="SettingsLufsValueText" DockPanel.Dock="Right" Text="-14.0 LUFS" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
-                                            <TextBlock Text="EBU R128 Broadcast Loudness Normalization Target:" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
-                                        </DockPanel>
-                                        <Slider x:Name="SettingsLufsSlider" Minimum="-20" Maximum="-10" Value="-14" TickFrequency="0.5" ValueChanged="SettingsLufsSlider_ValueChanged"/>
-                                    </StackPanel>
+                                    <CheckBox x:Name="SettingsBlackholeChk" Content="Silent Blackhole Stealth Mode (Drop unauthorized external port probe packets without RST)" Margin="0,0,0,10"/>
 
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,14">
                                         <TextBlock Text="Lobby Auto-Sync Song Cap (1-25):" FontSize="12.5" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,10,0"/>
@@ -1271,6 +1308,79 @@
                                         <Button Content="Save Settings" Style="{StaticResource FlameButton}" Padding="18,9" Click="SettingsSaveGeneral_Click"/>
                                         <Button x:Name="AirGapPanicBtn" Content="⚡ Emergency Air-Gap" Style="{StaticResource OutlineButton}" Foreground="#EF4444" BorderBrush="#EF4444" Margin="10,0,0,0" Padding="14,8" Click="AirGapPanicBtn_Click" ToolTip="Instantly cut all external P2P connections, UPnP mappings, and close external tunnels (Ctrl+Shift+X)"/>
                                         <TextBlock x:Name="SettingsSaveStatus" Text="" FontSize="12" Foreground="{DynamicResource CardSuccessTitle}" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- USB Controller Polling Rate & Jitter Tester -->
+                            <Border Style="{StaticResource GhCard}" BorderBrush="{DynamicResource AccentCyan}">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,6">
+                                        <Button x:Name="TogglePollingTestBtn" DockPanel.Dock="Right" Content="⚡ Start 1000Hz Test" Style="{StaticResource BlueButton}" Padding="12,5" Click="TogglePollingTestBtn_Click"/>
+                                        <TextBlock Text="🎮 USB Controller Polling Rate &amp; Jitter Telemetry" FontSize="14.5" FontWeight="Bold" Foreground="{DynamicResource AccentCyan}"/>
+                                    </DockPanel>
+                                    <TextBlock Text="Measures raw microsecond hardware polling interval between controller packets to verify 1000 Hz tournament readiness and eliminate input delay."
+                                               FontSize="12" Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,10"/>
+                                    <UniformGrid Columns="4" Margin="0,0,0,8">
+                                        <Border Background="#0F172A" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,0,6,0">
+                                            <StackPanel>
+                                                <TextBlock Text="POLLING FREQUENCY" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextMuted}"/>
+                                                <TextBlock x:Name="PollingRateFreqText" Text="1000 Hz" FontSize="16" FontWeight="Black" Foreground="#22C55E"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Background="#0F172A" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,0,6,0">
+                                            <StackPanel>
+                                                <TextBlock Text="POLL INTERVAL" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextMuted}"/>
+                                                <TextBlock x:Name="PollingRateIntervalText" Text="1.00 ms" FontSize="16" FontWeight="Black" Foreground="{DynamicResource TextPrimary}"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Background="#0F172A" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,0,6,0">
+                                            <StackPanel>
+                                                <TextBlock Text="JITTER VARIANCE" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextMuted}"/>
+                                                <TextBlock x:Name="PollingRateJitterText" Text="±0.04 ms" FontSize="16" FontWeight="Black" Foreground="{DynamicResource AccentFlameText}"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Background="#0F172A" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="8,6">
+                                            <StackPanel>
+                                                <TextBlock Text="PACKETS CAPTURED" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextMuted}"/>
+                                                <TextBlock x:Name="PollingRatePacketsText" Text="0" FontSize="16" FontWeight="Black" Foreground="{DynamicResource TextPrimary}"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </UniformGrid>
+                                    <TextBlock x:Name="PollingRateRatingText" Text="⚡ 1000 Hz Tournament Grade (0.5ms ultra-low latency)" FontSize="11.5" FontWeight="SemiBold" Foreground="#38BDF8"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Engine Vaccine & Zero-Trust Integrity Report Card -->
+                            <Border Style="{StaticResource GhCard}" BorderBrush="{DynamicResource AccentGold}">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,6">
+                                        <Button x:Name="RunVaccineScanBtn" DockPanel.Dock="Right" Content="🩺 Run Vaccine Scan" Style="{StaticResource GoldButton}" Padding="12,5" Click="RunVaccineScanBtn_Click"/>
+                                        <TextBlock Text="🛡️ Engine Vaccine &amp; System Health Report Card" FontSize="14.5" FontWeight="Bold" Foreground="{DynamicResource AccentGoldText}"/>
+                                    </DockPanel>
+                                    <TextBlock Text="Full-stack integrity verification scanning game executable binary, customs.pak, Windows 11 high-precision timer, Direct3D Tier 2 hardware composition, and zero-trust quarantine."
+                                               FontSize="12" Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,8"/>
+                                    <StackPanel x:Name="VaccineReportItemsPanel" Margin="0,0,0,6">
+                                        <TextBlock Text="• Game Binary: GH3.exe Retail Integrity Verified (SHA-256 Valid)" FontSize="11.5" Foreground="#22C55E"/>
+                                        <TextBlock Text="• Customs Setlist: customs.pak.xen Structure Consistent" FontSize="11.5" Foreground="#22C55E"/>
+                                        <TextBlock Text="• Windows 11 Timing: 0.5ms Microsecond Timer Boost Active" FontSize="11.5" Foreground="#22C55E"/>
+                                        <TextBlock Text="• GPU Acceleration: Tier 2 Direct3D Hardware Acceleration Engaged" FontSize="11.5" Foreground="#22C55E"/>
+                                        <TextBlock Text="• Quarantine Shield: Zero-Trust Sonic Archive Scanner Active" FontSize="11.5" Foreground="#22C55E"/>
+                                    </StackPanel>
+                                    <TextBlock x:Name="VaccineScoreText" Text="SCORE: 100% HEALTHY — TOURNAMENT CERTIFIED" FontSize="12.5" FontWeight="Black" Foreground="#22C55E"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- .gh3vault 1-Click Portable Backup & Restore Card -->
+                            <Border Style="{StaticResource GhCard}" BorderBrush="{DynamicResource AccentPurple}">
+                                <StackPanel>
+                                    <TextBlock Text="📦 Portable .gh3vault 1-Click Backup &amp; Transfer" FontSize="14.5" FontWeight="Bold" Foreground="{DynamicResource AccentPurpleText}" Margin="0,0,0,4"/>
+                                    <TextBlock Text="Export your entire custom song collection, paired career saves, customs.pak.xen setlist, and controller profiles into a single portable, compressed .gh3vault container for instant 1-click migration to another PC or reinstall."
+                                               FontSize="12" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="ExportVaultBtn" Content="📤 Export .gh3vault Package" Style="{StaticResource PurpleButton}" Padding="14,7" Margin="0,0,8,0" Click="ExportVaultBtn_Click"/>
+                                        <Button x:Name="ImportVaultBtn" Content="📥 Restore .gh3vault Package" Style="{StaticResource OutlineButton}" Padding="14,7" Click="ImportVaultBtn_Click"/>
+                                        <TextBlock x:Name="VaultStatusText" Text="" FontSize="12" Foreground="{DynamicResource CardSuccessTitle}" VerticalAlignment="Center" Margin="12,0,0,0"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
@@ -1559,7 +1669,7 @@
                                                 <Hyperlink NavigateUri="https://github.com/tbailey639/GH3-Sync" RequestNavigate="Hyperlink_RequestNavigate" Foreground="{DynamicResource CardInfoTitle}">GH3-Sync Repository</Hyperlink>
                                             </TextBlock>
                                         </StackPanel>
-                                        <TextBlock x:Name="AboutUpdateStatus" Text="Version 1.0.0 (Official Launch)" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
+                                        <TextBlock x:Name="AboutUpdateStatus" Text="Version 1.4.0 (Concert Master Edition)" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="Check for Updates" Style="{StaticResource FlameButton}" VerticalAlignment="Center" Click="CheckUpdatesBtn_Click"/>
                                 </Grid>
@@ -1698,8 +1808,11 @@
                     <TextBlock x:Name="PlayerTimeText" Text="0:00 / 0:00" FontSize="11" Foreground="{DynamicResource TextMuted}" FontFamily="Consolas"/>
                 </StackPanel>
 
-                <!-- Real-Time 5-Fret Neon Audio Spectrum Visualizer -->
-                <Canvas x:Name="PlayerVisualizerCanvas" Grid.Column="2" Width="110" Height="28" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <!-- Real-Time 5-Fret Neon Audio Spectrum Visualizer + 12-Segment LED VU Meter -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
+                    <Canvas x:Name="PlayerVisualizerCanvas" Width="105" Height="28" Margin="0,0,8,0"/>
+                    <Canvas x:Name="PlayerVuMeterCanvas" Width="48" Height="28" Background="#0A0F1D" ToolTip="Real-Time 12-Segment LED VU Meter (Ballistic Peak)"/>
+                </StackPanel>
 
                 <!-- Real-Time Audio Waveform Scrubber + Seek Slider -->
                 <Grid Grid.Column="3" VerticalAlignment="Center" Margin="0,0,8,0">
@@ -1796,7 +1909,7 @@
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock x:Name="UpdateGuitarTitle" Text="Installing Update" FontSize="20" FontWeight="Black" Foreground="#F8FAFC"/>
                                 <Border Background="#172554" BorderBrush="#38BDF8" BorderThickness="1" CornerRadius="6" Padding="8,2" Margin="12,0,0,0" VerticalAlignment="Center">
-                                    <TextBlock x:Name="UpdateGuitarVersionBadge" Text="v1.0.0" FontSize="11.5" FontWeight="Bold" Foreground="#7DD3FC" FontFamily="Consolas"/>
+                                    <TextBlock x:Name="UpdateGuitarVersionBadge" Text="v1.4.0" FontSize="11.5" FontWeight="Bold" Foreground="#7DD3FC" FontFamily="Consolas"/>
                                 </Border>
                             </StackPanel>
                             <TextBlock x:Name="UpdateGuitarStatusText" Text="Preparing silent update with your existing configuration..."

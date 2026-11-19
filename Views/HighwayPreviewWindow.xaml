@@ -169,8 +169,28 @@
                             Background="#F97316" Foreground="White" BorderThickness="0" FontWeight="Bold" Cursor="Hand" Click="PlayPauseBtn_Click"/>
                     <Button Content="⏹ Stop" Padding="10,6" Background="#1E2436" Foreground="#E2E8F0" BorderBrush="#334155" BorderThickness="1" Cursor="Hand" Click="StopBtn_Click"/>
                 </StackPanel>
-                <Slider x:Name="SeekSlider" Grid.Column="1" VerticalAlignment="Center" Minimum="0" Maximum="100" Value="0"
-                        PreviewMouseLeftButtonDown="SeekSlider_MouseDown" PreviewMouseLeftButtonUp="SeekSlider_MouseUp"/>
+
+                <!-- AI Guitar Coach & Note-Density Heatmap Scrub Strip -->
+                <Grid Grid.Column="1" VerticalAlignment="Center">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="8"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <DockPanel Grid.Row="0" Margin="0,0,0,3">
+                        <Button x:Name="CoachLoopSoloBtn" DockPanel.Dock="Right" Content="⚡ Loop Peak Solo"
+                                Padding="8,2" FontSize="10.5" Background="#3B82F6" Foreground="White" BorderThickness="0"
+                                FontWeight="Bold" Cursor="Hand" Click="CoachLoopSoloBtn_Click" ToolTip="Instantly set Loop A-B on the highest NPS shred solo"/>
+                        <TextBlock x:Name="CoachInsightText" Text="🤖 AI COACH: Analyzing chart note density..." FontSize="11" FontWeight="SemiBold" Foreground="#38BDF8" TextTrimming="CharacterEllipsis"/>
+                    </DockPanel>
+
+                    <Canvas x:Name="CoachHeatmapCanvas" Grid.Row="1" Height="8" Background="#0F172A" ClipToBounds="True" SizeChanged="CoachHeatmapCanvas_SizeChanged"/>
+
+                    <Slider x:Name="SeekSlider" Grid.Row="2" VerticalAlignment="Center" Minimum="0" Maximum="100" Value="0" Margin="0,2,0,0"
+                            PreviewMouseLeftButtonDown="SeekSlider_MouseDown" PreviewMouseLeftButtonUp="SeekSlider_MouseUp"/>
+                </Grid>
+
                 <TextBlock x:Name="TimeLabel" Grid.Column="2" Text="0:00 / 0:00" FontFamily="Consolas" FontSize="12" Foreground="#CBD5E1"
                            VerticalAlignment="Center" Margin="12,0,0,0"/>
             </Grid>

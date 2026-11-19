@@ -369,19 +369,38 @@ public class DemucsService
             var ffmpegExe = HoneycombCompilerService.EnsureFfmpeg(hDir);
             var ffmpegDir = !string.IsNullOrEmpty(ffmpegExe) ? Path.GetDirectoryName(ffmpegExe) : null;
 
-            Report(10, "Running Demucs 6-Stem AI (isolating Guitar, Bass, Drums, Vocals, Piano)...", onProgress);
-            _logger?.LogInfo($"[DEMUCS 6-STEM] Separating: {Path.GetFileName(audioFilePath)}");
+            string devArg = GpuAccelerationService.GetDemucsDeviceArgs();
+            bool isGpu = devArg.Contains("cuda", StringComparison.OrdinalIgnoreCase);
+            Report(10, $"Running Demucs 6-Stem AI {(isGpu ? "⚡ [GPU Accelerated]" : "[CPU Mode]")} (isolating Guitar, Bass, Drums, Vocals, Piano)...", onProgress);
+            _logger?.LogInfo($"[DEMUCS 6-STEM] Separating with {devArg}: {Path.GetFileName(audioFilePath)}");
 
             bool isPython = Path.GetFileName(exe).Equals("python.exe", StringComparison.OrdinalIgnoreCase);
             string demucsArgs = isPython
-                ? $"-m demucs.separate -n htdemucs_6s -o \"{outputDir}\" \"{audioFilePath}\""
-                : $"-n htdemucs_6s -o \"{outputDir}\" \"{audioFilePath}\"";
+                ? $"-m demucs.separate {devArg} -n htdemucs_6s -o \"{outputDir}\" \"{audioFilePath}\""
+                : $"{devArg} -n htdemucs_6s -o \"{outputDir}\" \"{audioFilePath}\"";
 
             var (sepOk, sepErr) = await RunProcessWithPathAsync(exe, demucsArgs, outputDir, ffmpegDir, (line) =>
             {
                 if (line.Contains('%'))
                     Report(35, $"Demucs 6-Stem separating audio... {line.Trim()}", onProgress);
             }, ct);
+
+            // If CUDA separation failed (e.g. out of memory), retry seamlessly with CPU fallback
+            if (!sepOk && isGpu)
+            {
+                _logger?.LogWarn($"[DEMUCS] GPU separation failed: {sepErr}. Retrying with CPU fallback...");
+                Report(15, "GPU memory busy — retrying with CPU multi-threaded separation...", onProgress);
+                string cpuArgs = isPython
+                    ? $"-m demucs.separate -d cpu -n htdemucs_6s -o \"{outputDir}\" \"{audioFilePath}\""
+                    : $"-d cpu -n htdemucs_6s -o \"{outputDir}\" \"{audioFilePath}\"";
+                var (cpuOk, cpuErr) = await RunProcessWithPathAsync(exe, cpuArgs, outputDir, ffmpegDir, (line) =>
+                {
+                    if (line.Contains('%'))
+                        Report(35, $"Demucs 6-Stem separating audio (CPU)... {line.Trim()}", onProgress);
+                }, ct);
+                sepOk = cpuOk;
+                sepErr = cpuErr;
+            }
 
             // Locate output stems folder: outputDir/htdemucs_6s/<song_name>/
             var songName = Path.GetFileNameWithoutExtension(audioFilePath);

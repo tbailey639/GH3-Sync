@@ -1908,6 +1908,14 @@ else
 
             wpfApp.Startup += async (_, _) =>
             {
+                // Force Direct3D Hardware GPU Rendering Mode
+                try
+                {
+                    System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.Default;
+                }
+                catch { }
+                GpuAccelerationService.Initialize(syncLogger);
+
                 var splash = new GH3_Sync.Views.SplashWindow();
                 splash.Show();
                 splash.UpdateProgress(20, "Starting background sync service...");

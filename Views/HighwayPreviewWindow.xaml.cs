@@ -779,7 +779,97 @@ public partial class HighwayPreviewWindow : Window
                          : (_chart.BassDifficulties.Values.FirstOrDefault() ?? new List<ChartPreviewNote>());
         ResetPlayStats();
         UpdateHeaderMeta();
+        RenderCoachHeatmap();
         RenderHighwayFrame();
+    }
+
+    private double _peakSoloStartSec = 0;
+    private double _peakSoloEndSec = 0;
+    private double _peakSoloNps = 0;
+
+    private void CoachHeatmapCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        RenderCoachHeatmap();
+    }
+
+    private void CoachLoopSoloBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_peakSoloEndSec > _peakSoloStartSec)
+        {
+            _loopASec = _peakSoloStartSec;
+            _loopBSec = _peakSoloEndSec;
+            UpdateLoopLabel();
+            _currentTimeSec = _peakSoloStartSec;
+            if (_hasAudio) _player.Position = TimeSpan.FromSeconds(_currentTimeSec);
+            SeekSlider.Value = _currentTimeSec;
+            RenderHighwayFrame();
+        }
+    }
+
+    private void RenderCoachHeatmap()
+    {
+        if (CoachHeatmapCanvas == null || CoachHeatmapCanvas.ActualWidth <= 10) return;
+        CoachHeatmapCanvas.Children.Clear();
+
+        double totalDur = _chart.TotalDurationSeconds;
+        if (totalDur <= 1.0 || _activeNotes.Count == 0) return;
+
+        double canvasW = CoachHeatmapCanvas.ActualWidth;
+        double canvasH = CoachHeatmapCanvas.ActualHeight;
+        int buckets = (int)Math.Clamp(canvasW / 4.0, 32, 180);
+        double bucketDuration = totalDur / buckets;
+        int[] noteCounts = new int[buckets];
+
+        foreach (var n in _activeNotes)
+        {
+            int b = (int)(n.TimeSeconds / bucketDuration);
+            if (b >= 0 && b < buckets) noteCounts[b]++;
+        }
+
+        int maxInBucket = 1;
+        int peakBucket = 0;
+        for (int i = 0; i < buckets; i++)
+        {
+            if (noteCounts[i] > maxInBucket)
+            {
+                maxInBucket = noteCounts[i];
+                peakBucket = i;
+            }
+        }
+
+        double peakNps = bucketDuration > 0 ? (maxInBucket / bucketDuration) : 0;
+        _peakSoloNps = peakNps;
+        _peakSoloStartSec = Math.Max(0, (peakBucket - 1) * bucketDuration);
+        _peakSoloEndSec = Math.Min(totalDur, (peakBucket + 3) * bucketDuration);
+
+        if (CoachInsightText != null)
+        {
+            string startStr = $"{(int)(_peakSoloStartSec / 60)}:{(int)(_peakSoloStartSec % 60):D2}";
+            CoachInsightText.Text = $"🤖 AI COACH: Peak shred solo at {startStr} ({peakNps:F1} NPS). Suggested Debounce: 25ms • Recommended: 75% speed.";
+        }
+
+        double sliceW = canvasW / buckets;
+        for (int i = 0; i < buckets; i++)
+        {
+            double ratio = (double)noteCounts[i] / maxInBucket;
+            var col = ratio switch
+            {
+                >= 0.75 => System.Windows.Media.Color.FromRgb(239, 68, 68),  // Red (Solo)
+                >= 0.45 => System.Windows.Media.Color.FromRgb(249, 115, 22), // Orange (Fast)
+                >= 0.20 => System.Windows.Media.Color.FromRgb(234, 179, 8),  // Yellow (Medium)
+                _ => System.Windows.Media.Color.FromRgb(34, 197, 94)         // Green (Groove)
+            };
+
+            var rect = new System.Windows.Shapes.Rectangle
+            {
+                Width = Math.Max(1.0, sliceW - 0.5),
+                Height = canvasH,
+                Fill = new SolidColorBrush(col),
+                Opacity = Math.Clamp(0.35 + ratio * 0.65, 0.35, 1.0)
+            };
+            Canvas.SetLeft(rect, i * sliceW);
+            CoachHeatmapCanvas.Children.Add(rect);
+        }
     }
 
     private void SpeedCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)

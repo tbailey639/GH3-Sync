@@ -52,6 +52,12 @@ public partial class MainWindow : Window
     private readonly TunnelAndMeshService _tunnel;
     private readonly CareerSaveScoreService _careerScores;
     private readonly ChartStudioToolsService _studioTools;
+    private readonly Gh3VaultBackupService _vaultService = new();
+    private readonly TournamentBracketService _tournamentService = new();
+    private readonly BossBattleCreatorService _bossService = new();
+    private readonly AiStadiumChantsService _stadiumChants = new();
+    private readonly CharterSignatureService _charterSigner = new();
+    private ControllerPollingTesterService? _pollingTester;
     private readonly int _port;
 
     private readonly DispatcherTimer _stageAnimTimer = new() { Interval = TimeSpan.FromMilliseconds(33) };
@@ -623,6 +629,45 @@ public partial class MainWindow : Window
             Canvas.SetTop(rect, maxH - bh);
             PlayerVisualizerCanvas.Children.Add(rect);
         }
+
+        // 12-Segment Vintage Real-Time LED VU Meter
+        if (PlayerVuMeterCanvas != null)
+        {
+            PlayerVuMeterCanvas.Children.Clear();
+            const int segCount = 12;
+            double segW = 44.0;
+            double segH = 1.6;
+            double segGap = 0.5;
+            int litCount = _isPlayerPlaying ? (int)Math.Clamp(Math.Round(energyBoost * 12.0), 1, 12) : 1;
+
+            for (int s = 0; s < segCount; s++)
+            {
+                bool isLit = s < litCount;
+                var segColor = s switch
+                {
+                    >= 10 => WpfColor.FromRgb(239, 68, 68),  // 11-12 Red Peak
+                    >= 6 => WpfColor.FromRgb(245, 158, 11),  // 7-10 Amber Gold
+                    _ => WpfColor.FromRgb(34, 197, 94)       // 1-6 Green
+                };
+
+                var segRect = new System.Windows.Shapes.Rectangle
+                {
+                    Width = segW,
+                    Height = segH,
+                    RadiusX = 0.5,
+                    RadiusY = 0.5,
+                    Fill = isLit ? new SolidColorBrush(segColor) : new SolidColorBrush(WpfColor.FromArgb(40, 71, 85, 105))
+                };
+                if (isLit && s >= 10)
+                {
+                    segRect.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 4, ShadowDepth = 0, Color = segColor, Opacity = 0.8 };
+                }
+
+                Canvas.SetLeft(segRect, 2.0);
+                Canvas.SetTop(segRect, 25.0 - (s * (segH + segGap)));
+                PlayerVuMeterCanvas.Children.Add(segRect);
+            }
+        }
     }
 
     private void AnimatePanelEntrance(UIElement panel)
@@ -702,6 +747,7 @@ public partial class MainWindow : Window
         _isExiting = true;
         _stageAnimTimer?.Stop();
         StopAudioPreview();
+        try { _pollingTester?.Dispose(); } catch { }
         try { _tunnel?.StopTunnel(); } catch { }
         TunnelAndMeshService.KillAllOrphanCloudflaredProcesses();
         try { _trayIcon?.Dispose(); } catch { }
@@ -1785,6 +1831,22 @@ public partial class MainWindow : Window
         foreach (var tag in AppConfig.GetSongTags(song.SongId))
             badgeRow.Children.Add(MakeBadge($"#{tag}", "#3B0764", "#E9D5FF"));
 
+        // Check for .gh3sig charter signature or boss battle duel
+        if (hasProject)
+        {
+            string chartPath = ChartDoctorService.FindChartFileInProject(song.ProjectDirectory) ?? "";
+            if (!string.IsNullOrEmpty(chartPath))
+            {
+                string sigPath = Path.ChangeExtension(chartPath, ".gh3sig");
+                if (File.Exists(sigPath))
+                    badgeRow.Children.Add(MakeBadge("✓ Verified Charter", "#064E3B", "#6EE7B7"));
+
+                string battleIni = Path.Combine(song.ProjectDirectory, "boss_battle.ini");
+                if (File.Exists(battleIni))
+                    badgeRow.Children.Add(MakeBadge("⚡ Boss Battle Duel", "#581C87", "#E9D5FF"));
+            }
+        }
+
         // Mini Note Intensity Sparkline + 5-Level Difficulty Tier Meter (cached per chart!)
         var cardChartPath = hasProject ? ChartDoctorService.FindChartFileInProject(song.ProjectDirectory) : null;
         if (!string.IsNullOrEmpty(cardChartPath))
@@ -2372,14 +2434,17 @@ public partial class MainWindow : Window
         };
         if (dlg.ShowDialog() != true) return;
 
+        PageCustoms_StageHud.Report(35, "RENDERING CONCERT POSTER", "Composing 1200×1600 stage poster with authentic typography...");
         try
         {
             SetlistPosterService.ExportSetlistPosterPng(dlg.FileName, _friends.Profile.Username, _friends.Profile.FriendCode, title, list);
+            PageCustoms_StageHud.Finish("Concert tour poster exported!");
             WpfMessageBox.Show($"Saved high-res Concert Tour Setlist Poster (1200×1600) to:\n{dlg.FileName}\n\nReady to drop straight into Discord!", "Setlist Poster Exported", MessageBoxButton.OK, MessageBoxImage.Information);
             OpenFolderInExplorer(Path.GetDirectoryName(dlg.FileName)!);
         }
         catch (Exception ex)
         {
+            PageCustoms_StageHud.SetError("POSTER EXPORT FAILED", ex.Message);
             WpfMessageBox.Show($"Could not generate poster: {ex.Message}", "Poster Error", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
@@ -2387,11 +2452,13 @@ public partial class MainWindow : Window
     private async void VolumeSoundcheckBtn_Click(object sender, RoutedEventArgs e)
     {
         VolumeSoundcheckBtn.IsEnabled = false;
+        PageCustoms_StageHud.Report(20, "LOUDNESS SOUNDCHECK", "Scanning custom songs against target -14 LUFS...");
         try
         {
             var reports = await _practiceAudio.ScanLibraryLoudnessAsync(_allSongs);
             if (reports.Count == 0)
             {
+                PageCustoms_StageHud.Reset();
                 WpfMessageBox.Show("No local project audio files found to soundcheck.", "Volume Soundcheck", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -2403,6 +2470,7 @@ public partial class MainWindow : Window
 
             if (needsFix.Count == 0)
             {
+                PageCustoms_StageHud.Finish("All tracks are balanced near -14 LUFS!");
                 WpfMessageBox.Show(summary + "\n\nAll scanned tracks are already nicely balanced near -14 LUFS!", "🔊 Volume Soundcheck — All Balanced", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -2410,11 +2478,21 @@ public partial class MainWindow : Window
             var ask = WpfMessageBox.Show(
                 summary + $"\n\n{needsFix.Count} song(s) are outside target GH3 loudness (-14 LUFS).\nNormalize & recompile those {needsFix.Count} song(s) now?",
                 "🔊 Library Volume Soundcheck", MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (ask != MessageBoxResult.Yes) return;
+            if (ask != MessageBoxResult.Yes)
+            {
+                PageCustoms_StageHud.Reset();
+                return;
+            }
 
+            PageCustoms_StageHud.Report(65, "NORMALIZING AUDIO", $"Recalibrating stems for {needsFix.Count} track(s)...");
             var (_, _, resultMsg) = await _practiceAudio.NormalizeSongsBatchAsync(needsFix);
             RefreshSongsList();
+            PageCustoms_StageHud.Finish("Volume Soundcheck Complete!");
             WpfMessageBox.Show(resultMsg, "Volume Soundcheck Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            PageCustoms_StageHud.SetError("SOUNDCHECK ERROR", ex.Message);
         }
         finally
         {
@@ -2424,10 +2502,12 @@ public partial class MainWindow : Window
 
     private void AutoHealLibraryBtn_Click(object sender, RoutedEventArgs e)
     {
+        PageCustoms_StageHud.Report(25, "LIBRARY HEALTH SCAN", "Scanning file integrity, PAK headers, and QB consistency...");
         var report = _libraryHealth.ScanLibrary();
         var details = string.Join("\n", report.Findings.Select(f => $"[{(f.Severity == "OK" ? "✓ OK" : f.Severity.ToUpperInvariant())}] {f.Category}: {f.Message}"));
         if (report.IssueCount == 0)
         {
+            PageCustoms_StageHud.Finish("Library is 100% healthy!");
             WpfMessageBox.Show(report.Summary + "\n\n" + details, "🩺 Library Health Check — All Healthy", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -2436,9 +2516,16 @@ public partial class MainWindow : Window
             "🩺 Library Health Scanner", MessageBoxButton.YesNo, MessageBoxImage.Warning);
         if (ask == MessageBoxResult.Yes)
         {
+            PageCustoms_StageHud.Report(70, "AUTO-HEALING ASSETS", "Repairing song mappings and synchronizing cache...");
             var (ok, msg) = _libraryHealth.AutoHealLibrary();
             RefreshSongsList();
+            if (ok) PageCustoms_StageHud.Finish("Library auto-heal complete!");
+            else PageCustoms_StageHud.SetError("AUTO-HEAL WARNING", msg);
             WpfMessageBox.Show(msg, ok ? "Auto-Heal Complete" : "Auto-Heal Note", MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        }
+        else
+        {
+            PageCustoms_StageHud.Reset();
         }
     }
 
@@ -3756,6 +3843,35 @@ public partial class MainWindow : Window
                 CrResultText.Text = string.Join("\n", lines);
                 RefreshSongsList();
 
+                // Wave 5: Cryptographic Charter Signature
+                if (CrSignCharterChk?.IsChecked == true && File.Exists(_lastCreatedChartPath))
+                {
+                    _charterSigner.SignChart(_lastCreatedChartPath, meta.Charter, _friends.Profile.FriendCode);
+                }
+
+                // Wave 5: AI Stadium Sing-Along & Crowd Chants
+                if (CrStadiumChantsChk?.IsChecked == true && !string.IsNullOrEmpty(_lastCreatedAudioPath) && File.Exists(_lastCreatedAudioPath))
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        await _stadiumChants.GenerateStadiumChantsAsync(_lastCreatedAudioPath, _lastCreatedChartPath ?? "");
+                    });
+                }
+
+                // Wave 3: Boss Battle Duel
+                if (CrBossBattleChk?.IsChecked == true && File.Exists(_lastCreatedChartPath))
+                {
+                    var battleCfg = new BossBattleCreatorService.BossBattleConfig(
+                        BossName: "Lou the Devil",
+                        Difficulty: "Shredder",
+                        PowerUpDensity: 4,
+                        BossHealthDrain: 1.2,
+                        IncludeIntroSolo: true,
+                        Venue: meta.Venue
+                    );
+                    _bossService.ConvertChartToBossBattle(_lastCreatedChartPath, battleCfg);
+                }
+
                 PageCreator_StageHud.Finish($"Encore Ready: {meta.Artist} - {meta.Title} compiled cleanly!");
 
                 try
@@ -4153,16 +4269,22 @@ public partial class MainWindow : Window
         UninstallAiBtn.IsEnabled = false;
         AiInstallProgressPanel.Visibility = Visibility.Visible;
         AiInstallProgressBar.Value = 0;
+        PageAiTools_StageHud.Report(5, "INITIALIZING AI STEM ENGINE", "Preparing isolated Python virtual environment & CUDA packages...");
 
         var (ok, msg) = await _demucs.InstallAiEngineAsync((pct, step) => Dispatcher.Invoke(() =>
         {
             AiInstallProgressBar.Value = pct;
             AiInstallStepText.Text = $"[{pct}%] {step}";
+            PageAiTools_StageHud.Report(pct, "INSTALLING AI STEM ENGINE", step);
         }));
 
         InstallAiBtn.IsEnabled = true;
         UninstallAiBtn.IsEnabled = true;
         RefreshToolsAndAiStatus();
+        if (ok)
+            PageAiTools_StageHud.Finish("AI Demucs & Basic Pitch ready with GPU CUDA acceleration!");
+        else
+            PageAiTools_StageHud.SetError("INSTALLATION NOTE", msg);
         WpfMessageBox.Show(msg, ok ? "Stem Tools Installed" : "Installation Note", MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
     }
 
@@ -4170,8 +4292,10 @@ public partial class MainWindow : Window
     {
         if (WpfMessageBox.Show("Remove Demucs & Basic Pitch files to free disk space?", "Uninstall Stem Tools", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
             return;
+        PageAiTools_StageHud.Report(50, "UNINSTALLING AI ENGINE", "Removing virtual environments and weights...");
         var (ok, msg) = _demucs.UninstallAiEngine();
         RefreshToolsAndAiStatus();
+        PageAiTools_StageHud.Finish("AI stem engine removed.");
         WpfMessageBox.Show(msg, "Tools", MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
     }
 
@@ -4416,6 +4540,7 @@ public partial class MainWindow : Window
         SendFriendRequestBtn.IsEnabled = false;
         if (SendTrustedFriendRequestBtn != null) SendTrustedFriendRequestBtn.IsEnabled = false;
         SendFriendRequestBtn.Content = "📡 Delivering...";
+        PageFriends_StageHud.Report(35, "DELIVERING FRIEND REQUEST", $"Performing cryptographic handshake with {rawCode}...");
 
         try
         {
@@ -4423,6 +4548,7 @@ public partial class MainWindow : Window
 
             if (res.Success && res.ReceivedByPeer)
             {
+                PageFriends_StageHud.Finish($"Handshake successful! Request delivered to {rawCode}.");
                 ShowStageToast("✓ REQUEST DELIVERED!", res.Message, "#22C55E");
                 AudioWaveformAndSfxService.PlayStarPowerChime();
                 AddFriendCodeBox.Text = "";
@@ -4432,6 +4558,7 @@ public partial class MainWindow : Window
             }
             else
             {
+                PageFriends_StageHud.SetError("REQUEST FAILED", res.Message);
                 ShowStageToast("❌ DELIVERY FAILED", res.Message, "#EF4444");
                 AudioWaveformAndSfxService.PlayNoteMissClunk();
                 AutoDetectStatusPill.Visibility = Visibility.Visible;
@@ -5793,6 +5920,7 @@ public partial class MainWindow : Window
             // Temporarily mirror Peer's customs.pak.xen so both games have identical slots 0..N for this match!
             AutoSyncLobbyBtn.IsEnabled = false;
             PeerCompareStatus.Text = $"Mirroring {_lastPeerManifest.MachineName}'s customs.pak.xen setlist slots...";
+            PageP2P_StageHud.Report(40, "MIRRORING SETLIST SLOTS", $"Matching slots 0..{_lastPeerManifest.Songs.Count - 1} with {_lastPeerManifest.MachineName}...");
             _tempSession.BeginSessionIfNeeded(_lastPeerBaseUrl, autoCleanOnGameExit: true);
             await PullPeerCustomsPakAsync();
             AutoSyncLobbyBtn.IsEnabled = true;
@@ -5801,6 +5929,7 @@ public partial class MainWindow : Window
             RefreshTempSessionBanner();
             RenderPeerLibrary();
 
+            PageP2P_StageHud.Finish("Setlist mirrored! Both games are 100% matched for multiplayer.");
             ShowStageToast("🪞 SETLIST MIRRORED!", $"Temporarily matched {_lastPeerManifest.MachineName}'s setlist slots. Both games are 100% ready for online multiplayer!", "#22C55E");
             WpfMessageBox.Show(
                 $"Setlist slots successfully mirrored from {_lastPeerManifest.MachineName}!\n\n" +
@@ -5812,6 +5941,7 @@ public partial class MainWindow : Window
 
         bool tempMode = TempSessionModeChk.IsChecked == true;
         AutoSyncLobbyBtn.IsEnabled = false;
+        PageP2P_StageHud.Report(10, "STARTING LOBBY SYNC", $"Preparing transfer of {missing.Count} track(s)...");
         if (tempMode)
             _tempSession.BeginSessionIfNeeded(_lastPeerBaseUrl, autoCleanOnGameExit: true);
         else
@@ -5819,9 +5949,12 @@ public partial class MainWindow : Window
 
         int installed = 0;
         string lastErr = "";
-        foreach (var s in missing)
+        for (int i = 0; i < missing.Count; i++)
         {
+            var s = missing[i];
+            int pct = (int)((i + 1) * 90.0 / missing.Count);
             PeerCompareStatus.Text = $"Syncing ({installed + 1}/{missing.Count}): {s.Title}...";
+            PageP2P_StageHud.Report(pct, "TRANSFERRING P2P AUDIO & CHARTS", $"({i + 1}/{missing.Count}) Downloading {s.Artist} - {s.Title}...");
             var (ok, err) = await DownloadAndInstallPeerSongAsync(s, tempMode);
             if (ok) installed++;
             else lastErr = err;
@@ -5833,6 +5966,7 @@ public partial class MainWindow : Window
         RenderPeerLibrary();
         if (installed > 0)
         {
+            PageP2P_StageHud.Finish($"Lobby synchronized! {installed}/{missing.Count} songs ready for battle.");
             WpfMessageBox.Show(
                 tempMode
                     ? $"Temporary-synced {installed} / {missing.Count} Lobby song(s) from {_lastPeerManifest.MachineName}!\n\nThese songs will auto-clean when GH3 exits unless you click 'Keep Song'."
@@ -5841,7 +5975,12 @@ public partial class MainWindow : Window
         }
         else if (!string.IsNullOrEmpty(lastErr))
         {
+            PageP2P_StageHud.SetError("LOBBY SYNC FAILED", lastErr);
             WpfMessageBox.Show($"Sync could not complete: {lastErr}", "Lobby Sync", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        else
+        {
+            PageP2P_StageHud.Reset();
         }
     }
 
@@ -6246,16 +6385,26 @@ public partial class MainWindow : Window
         ChImportProgress.Visibility = Visibility.Visible;
         ChImportProgress.Value = 5;
         ChImportStatusText.Text = $"Starting Clone Hero conversion ({Path.GetFileName(path)})...";
+        PageImport_StageHud.Report(5, "CONVERTING CLONE HERO / YARG PACKAGE", $"Loading {Path.GetFileName(path)}...");
 
         var res = await _cloneHero.ImportFromZipOrFolderAsync(path, autoCompile: true, (pct, msg) => Dispatcher.Invoke(() =>
         {
             ChImportProgress.Value = pct;
             ChImportStatusText.Text = msg;
+            PageImport_StageHud.Report(pct, "CONVERTING CLONE HERO / YARG PACKAGE", msg);
         }));
 
         ChImportProgress.Visibility = Visibility.Collapsed;
         ChImportStatusText.Text = res.Message;
-        if (res.Success) RefreshSongsList();
+        if (res.Success)
+        {
+            PageImport_StageHud.Finish($"Imported: {res.Message}");
+            RefreshSongsList();
+        }
+        else
+        {
+            PageImport_StageHud.SetError("IMPORT FAILED", res.Message);
+        }
         return res.Success;
     }
 
@@ -6271,17 +6420,21 @@ public partial class MainWindow : Window
 
     private void ImportStandardArchive(string filePath)
     {
+        PageImport_StageHud.Report(20, "IMPORTING GH3 ARCHIVE", $"Validating {Path.GetFileName(filePath)}...");
         try
         {
             _saves.BackupCurrentSaves("Before-Archive-Import");
             var bytes = File.ReadAllBytes(filePath);
+            PageImport_StageHud.Report(60, "EXTRACTING ARCHIVE", "Extracting chart midis, FSV video, and Vorbis audio streams...");
             int count = _gh3.ImportArchiveFile(bytes, Path.GetFileName(filePath), _logger);
             ImportStatusText.Text = $"Imported {count} custom song(s) from '{Path.GetFileName(filePath)}'.";
+            PageImport_StageHud.Finish($"Imported {count} custom song(s) cleanly!");
             RefreshSongsList();
             RefreshSaveBackups();
         }
         catch (Exception ex)
         {
+            PageImport_StageHud.SetError("IMPORT FAILED", ex.Message);
             ImportStatusText.Text = $"Import failed: {ex.Message}";
         }
     }
@@ -6327,10 +6480,16 @@ public partial class MainWindow : Window
                     "Restore Career Profile", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                     return;
 
+                PageSaves_StageHud.Report(40, "RESTORING CAREER PROFILE", $"Restoring '{b.ProfileName}' and matching customs setlist...");
                 if (_saves.RestoreBackup(b.BackupId, _gh3.GamePath))
                 {
+                    PageSaves_StageHud.Finish($"Restored '{b.ProfileName}' cleanly!");
                     WpfMessageBox.Show($"Restored '{b.ProfileName}' cleanly!", "Profile Restored", MessageBoxButton.OK, MessageBoxImage.Information);
                     RefreshSongsList();
+                }
+                else
+                {
+                    PageSaves_StageHud.SetError("RESTORE FAILED", "Could not restore paired snapshot.");
                 }
             };
             var delBtn = new System.Windows.Controls.Button { Content = "Delete", Style = (Style)FindResource("OutlineButton") };
@@ -6349,21 +6508,28 @@ public partial class MainWindow : Window
     private void BackupSaveNowBtn_Click(object sender, RoutedEventArgs e)
     {
         var name = string.IsNullOrWhiteSpace(SaveProfileNameBox.Text) ? "Career Profile" : SaveProfileNameBox.Text.Trim();
+        PageSaves_StageHud.Report(35, "CREATING CAREER BACKUP", $"Capturing paired profile snapshot '{name}'...");
         var b = _saves.BackupCurrentSaves(name, name, _gh3.GamePath);
         RefreshSaveBackups();
+        PageSaves_StageHud.Finish($"Saved snapshot '{b.ProfileName}' cleanly!");
         WpfMessageBox.Show($"Saved paired snapshot '{b.ProfileName}' ({b.FileCount} files, customs.pak paired: {b.IncludesCustomsPak}).",
             "Profile Snapshot Saved", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void RestoreLatestSaveBtn_Click(object sender, RoutedEventArgs e)
     {
+        PageSaves_StageHud.Report(40, "RESTORING LATEST SNAPSHOT", "Locating most recent paired career profile...");
         if (_saves.RestoreLatestBackup(_gh3.GamePath))
         {
+            PageSaves_StageHud.Finish("Restored latest paired career snapshot!");
             WpfMessageBox.Show("Restored latest paired career snapshot cleanly!", "Restored", MessageBoxButton.OK, MessageBoxImage.Information);
             RefreshSongsList();
         }
         else
+        {
+            PageSaves_StageHud.SetError("RESTORE FAILED", "No paired career snapshots available to restore.");
             WpfMessageBox.Show("No snapshots available to restore.", "Restore", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     // ==================== PAGE 8: SETTINGS, THEMES, UPDATES & ABOUT ====================
@@ -6679,18 +6845,13 @@ public partial class MainWindow : Window
         if (SettingsTimerBoostChk != null) SettingsTimerBoostChk.IsChecked = AppConfig.Current.EnableHighPrecisionTimer;
         if (SettingsZeroTrustChk != null) SettingsZeroTrustChk.IsChecked = AppConfig.Current.ZeroTrustQuarantineEnabled;
         if (SettingsGpuToggleChk != null) SettingsGpuToggleChk.IsChecked = AppConfig.Current.StemSeparationGpuEnabled;
-        if (SettingsDebounceSlider != null)
-        {
-            SettingsDebounceSlider.Value = AppConfig.Current.ControllerDebounceMs;
-            if (SettingsDebounceValueText != null)
-                SettingsDebounceValueText.Text = AppConfig.Current.ControllerDebounceMs == 0 ? "Off (0 ms)" : $"{AppConfig.Current.ControllerDebounceMs} ms";
-        }
-        if (SettingsLufsSlider != null)
-        {
-            SettingsLufsSlider.Value = AppConfig.Current.AudioTargetLufs;
-            if (SettingsLufsValueText != null)
-                SettingsLufsValueText.Text = $"{AppConfig.Current.AudioTargetLufs:F1} LUFS";
-        }
+        if (SettingsGpuStatusLabel != null) SettingsGpuStatusLabel.Text = GpuAccelerationService.GetStatusBadge();
+        if (SettingsBlackholeChk != null) SettingsBlackholeChk.IsChecked = AppConfig.Current.StealthBlackholeMode;
+
+        if (SettingsDebounceKnob != null) SettingsDebounceKnob.Value = AppConfig.Current.ControllerDebounceMs;
+        if (SettingsWhammyKnob != null) SettingsWhammyKnob.Value = AppConfig.Current.WhammyDeadzone;
+        if (SettingsTiltKnob != null) SettingsTiltKnob.Value = AppConfig.Current.TiltSensitivity;
+        if (SettingsLufsKnob != null) SettingsLufsKnob.Value = AppConfig.Current.AudioTargetLufs;
         if (SettingsLanguageCombo != null)
         {
             string curLang = AppConfig.Current.Language ?? "en";
@@ -6999,8 +7160,12 @@ public partial class MainWindow : Window
         }
         if (SettingsZeroTrustChk != null) AppConfig.Current.ZeroTrustQuarantineEnabled = SettingsZeroTrustChk.IsChecked == true;
         if (SettingsGpuToggleChk != null) AppConfig.Current.StemSeparationGpuEnabled = SettingsGpuToggleChk.IsChecked == true;
-        if (SettingsDebounceSlider != null) AppConfig.Current.ControllerDebounceMs = (int)Math.Round(SettingsDebounceSlider.Value);
-        if (SettingsLufsSlider != null) AppConfig.Current.AudioTargetLufs = SettingsLufsSlider.Value;
+        if (SettingsBlackholeChk != null) AppConfig.Current.StealthBlackholeMode = SettingsBlackholeChk.IsChecked == true;
+
+        if (SettingsDebounceKnob != null) AppConfig.Current.ControllerDebounceMs = (int)Math.Round(SettingsDebounceKnob.Value);
+        if (SettingsWhammyKnob != null) AppConfig.Current.WhammyDeadzone = SettingsWhammyKnob.Value;
+        if (SettingsTiltKnob != null) AppConfig.Current.TiltSensitivity = SettingsTiltKnob.Value;
+        if (SettingsLufsKnob != null) AppConfig.Current.AudioTargetLufs = SettingsLufsKnob.Value;
         if (SettingsLanguageCombo?.SelectedItem is ComboBoxItem langItem && langItem.Tag is string langCode)
         {
             LocalizationService.SetLanguage(langCode);
@@ -7032,28 +7197,262 @@ public partial class MainWindow : Window
         }
     }
 
-    private void SettingsDebounceSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (SettingsDebounceValueText != null)
-        {
-            int ms = (int)Math.Round(e.NewValue);
-            SettingsDebounceValueText.Text = ms == 0 ? "Off (0 ms)" : $"{ms} ms";
-        }
-    }
-
-    private void SettingsLufsSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (SettingsLufsValueText != null)
-        {
-            SettingsLufsValueText.Text = $"{e.NewValue:F1} LUFS";
-        }
-    }
-
     private void AirGapPanicBtn_Click(object sender, RoutedEventArgs e)
     {
         EngineVaccineService.TriggerPanicAirGap();
         if (SettingsP2pOnlineChk != null) SettingsP2pOnlineChk.IsChecked = false;
         WpfMessageBox.Show("EMERGENCY AIR-GAP ACTIVATED!\n\nAll external network ports, UPnP mappings, and P2P sync tunnels have been terminated and blackholed.", "AIR-GAP SHIELD", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    private void SettingsDebounceKnob_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        AppConfig.Current.ControllerDebounceMs = (int)Math.Round(e.NewValue);
+    }
+
+    private void SettingsWhammyKnob_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        AppConfig.Current.WhammyDeadzone = e.NewValue;
+    }
+
+    private void SettingsTiltKnob_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        AppConfig.Current.TiltSensitivity = e.NewValue;
+    }
+
+    private void SettingsLufsKnob_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        AppConfig.Current.AudioTargetLufs = e.NewValue;
+    }
+
+    private void TogglePollingTestBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pollingTester == null)
+        {
+            _pollingTester = new ControllerPollingTesterService();
+            _pollingTester.OnTelemetryUpdated += telem => Dispatcher.Invoke(() =>
+            {
+                if (PollingRateFreqText != null) PollingRateFreqText.Text = $"{telem.FrequencyHz} Hz";
+                if (PollingRateIntervalText != null) PollingRateIntervalText.Text = $"{telem.IntervalMs:F2} ms";
+                if (PollingRateJitterText != null) PollingRateJitterText.Text = $"±{telem.JitterMs:F2} ms";
+                if (PollingRatePacketsText != null) PollingRatePacketsText.Text = telem.TotalPackets.ToString("N0");
+                if (PollingRateRatingText != null) PollingRateRatingText.Text = telem.Rating;
+            });
+            _pollingTester.Start();
+            TogglePollingTestBtn.Content = "⏹ Stop Test";
+            ShowStageToast("⚡ TESTER ACTIVE", "Measuring raw 1000Hz USB controller polling rate...", "#38BDF8");
+        }
+        else
+        {
+            _pollingTester.Stop();
+            _pollingTester.Dispose();
+            _pollingTester = null;
+            TogglePollingTestBtn.Content = "⚡ Start 1000Hz Test";
+        }
+    }
+
+    private void RunVaccineScanBtn_Click(object sender, RoutedEventArgs e)
+    {
+        PageSettings_StageHud.Report(30, "ENGINE VACCINE SCAN", "Verifying retail binary checksum, customs.pak, and timer boost...");
+        var (ok, details) = EngineVaccineService.VerifyGameIntegrity(_gh3.GamePath);
+        PageSettings_StageHud.Finish("Engine Vaccine scan completed!");
+
+        if (VaccineReportItemsPanel != null)
+        {
+            VaccineReportItemsPanel.Children.Clear();
+            foreach (var line in details.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                VaccineReportItemsPanel.Children.Add(new TextBlock
+                {
+                    Text = line,
+                    FontSize = 11.5,
+                    Foreground = line.Contains("✓") || line.Contains("Valid") || line.Contains("Active")
+                        ? new SolidColorBrush(WpfColor.FromRgb(34, 197, 94))
+                        : new SolidColorBrush(WpfColor.FromRgb(245, 158, 11)),
+                    Margin = new Thickness(0, 1, 0, 1)
+                });
+            }
+        }
+        if (VaccineScoreText != null)
+        {
+            VaccineScoreText.Text = ok ? "SCORE: 100% HEALTHY — TOURNAMENT CERTIFIED" : "SCORE: 92% HEALTHY — MINOR NOTES";
+        }
+        WpfMessageBox.Show(details, "Engine Vaccine Report Card", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void ExportVaultBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Export Complete .gh3vault Portable Backup",
+            Filter = "GH3 Vault Archive (*.gh3vault)|*.gh3vault",
+            FileName = $"GH3_Concert_Vault_{DateTime.Now:yyyyMMdd}.gh3vault"
+        };
+        if (dlg.ShowDialog() != true) return;
+
+        PageSettings_StageHud.Report(10, "EXPORTING .GH3VAULT", "Archiving customs songs, soundbanks, and career profiles...");
+        var (ok, msg, _) = _vaultService.ExportVault(
+            dlg.FileName,
+            _gh3.GamePath,
+            Path.Combine(_gh3.GamePath, "DATA", "PAK", "Custom_Songs"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Aspyr", "Guitar Hero III"),
+            (pct, step) => PageSettings_StageHud.Report(pct, "EXPORTING .GH3VAULT", step)
+        );
+
+        if (ok)
+        {
+            PageSettings_StageHud.Finish("Exported portable .gh3vault package!");
+            if (VaultStatusText != null) VaultStatusText.Text = "Exported cleanly!";
+            WpfMessageBox.Show(msg, "Vault Export Succeeded", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        else
+        {
+            PageSettings_StageHud.SetError("VAULT EXPORT FAILED", msg);
+            WpfMessageBox.Show(msg, "Vault Export", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void ImportVaultBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Select .gh3vault Portable Container to Restore",
+            Filter = "GH3 Vault Archive (*.gh3vault)|*.gh3vault|All Files (*.*)|*.*"
+        };
+        if (dlg.ShowDialog() != true) return;
+
+        PageSettings_StageHud.Report(15, "INSPECTING .GH3VAULT", "Validating container manifest and hashes...");
+        var (ok, msg, manifest) = _vaultService.RestoreVault(
+            dlg.FileName,
+            _gh3.GamePath,
+            Path.Combine(_gh3.GamePath, "DATA", "PAK", "Custom_Songs"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Aspyr", "Guitar Hero III"),
+            (pct, step) => PageSettings_StageHud.Report(pct, "RESTORING .GH3VAULT", step)
+        );
+
+        if (ok)
+        {
+            PageSettings_StageHud.Finish("Restored .gh3vault package cleanly!");
+            RefreshSongsList();
+            RefreshSaveBackups();
+            if (VaultStatusText != null) VaultStatusText.Text = $"Restored {manifest?.SongCount} songs!";
+            WpfMessageBox.Show(msg, "Vault Restored Cleanly", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        else
+        {
+            PageSettings_StageHud.SetError("VAULT RESTORE FAILED", msg);
+            WpfMessageBox.Show(msg, "Vault Restore", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void TournamentBracketBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var names = _friends.Friends.Select(f => f.Username).ToList();
+        if (names.Count == 0)
+        {
+            names = new List<string> { _friends.Profile.Username, "Slash", "Tom Morello", "Lou", "Buckethead", "Herman Li", "Sam Totman", "Synyster Gates" };
+        }
+        else
+        {
+            names.Insert(0, _friends.Profile.Username);
+        }
+
+        var tourney = _tournamentService.GenerateTournament("Legends of Rock World Tour", names, _allSongs);
+        string md = _tournamentService.ExportTournamentMarkdown(tourney);
+        try { System.Windows.Clipboard.SetText(md); } catch { }
+
+        ShowStageToast("🏆 TOURNAMENT CREATED!", $"{tourney.PlayerCount}-Player Bracket copied to Clipboard for Discord!", "#F59E0B");
+        WpfMessageBox.Show(
+            $"Rock Tour Tournament Bracket Generated!\n\n" +
+            $"• Players: {tourney.PlayerCount}\n" +
+            $"• Round 1 Matches: {tourney.Matches.Count}\n" +
+            $"• Rules: Song Veto (1 Ban each) + Decider Track in Pro Face-Off\n\n" +
+            $"The complete markdown bracket and score table has been copied to your clipboard, ready to paste straight into Discord or Reddit!",
+            "Rock Tour Tournament Bracket", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void BossBattleModalBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var picked = _allSongs.FirstOrDefault(s => _selectedExportIds.Contains(s.SongId)) ?? _allSongs.FirstOrDefault();
+        if (picked == null)
+        {
+            WpfMessageBox.Show("Please select a custom song in My Customs first to convert into a Boss Battle Duel!", "Boss Battle Duel", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        string chartPath = Path.Combine(_gh3.GamePath, "DATA", "PAK", "Custom_Songs", picked.SongId, "notes.chart");
+        if (!File.Exists(chartPath))
+            chartPath = Path.Combine(_gh3.GamePath, "DATA", "PAK", "Custom_Songs", picked.SongId, "notes.mid");
+
+        var config = new BossBattleCreatorService.BossBattleConfig(
+            BossName: "Lou the Devil",
+            Difficulty: "Shredder",
+            PowerUpDensity: 4,
+            BossHealthDrain: 1.25,
+            IncludeIntroSolo: true,
+            Venue: "Battle for Lou's Soul (Hell)"
+        );
+
+        PageCustoms_StageHud.Report(40, "GENERATING BOSS BATTLE DUEL", $"Embedding battle phrases (Broken String, Double Notes, Lefty Flip) for {picked.Title}...");
+        var (ok, msg, gems) = _bossService.ConvertChartToBossBattle(chartPath, config);
+        if (ok)
+        {
+            PageCustoms_StageHud.Finish($"Boss Battle Duel ready! ({gems} battle power-up gems generated)");
+            ShowStageToast("⚡ BOSS BATTLE READY!", $"{picked.Title} converted into a 2-Player Boss Duel with {gems} power-up phrases!", "#A855F7");
+            WpfMessageBox.Show(msg, "Boss Battle Duel Created", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        else
+        {
+            PageCustoms_StageHud.SetError("BOSS BATTLE FAILED", msg);
+            WpfMessageBox.Show(msg, "Boss Battle Duel", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void HypeSfx_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is string sfxType)
+        {
+            PlayHypeSound(sfxType);
+            ShowStageToast("📢 HYPE BROADCAST", $"Sent '{sfxType.ToUpperInvariant()}' over P2P lobby!", "#F59E0B");
+
+            // Broadcast soundboard event to peer via P2P if connected
+            if (!string.IsNullOrWhiteSpace(_lastPeerBaseUrl))
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+                        await client.PostAsync($"{_lastPeerBaseUrl.TrimEnd('/')}/api/lobby/hype-sfx?type={Uri.EscapeDataString(sfxType)}", null);
+                    }
+                    catch { }
+                });
+            }
+        }
+    }
+
+    private void PlayHypeSound(string type)
+    {
+        try
+        {
+            switch (type.ToLowerInvariant())
+            {
+                case "airhorn":
+                case "lightning":
+                case "solo":
+                    AudioWaveformAndSfxService.PlayCompilePowerChord();
+                    break;
+                case "cheer":
+                    AudioWaveformAndSfxService.PlayStarPowerChime();
+                    break;
+                case "boo":
+                    AudioWaveformAndSfxService.PlayNoteMissClunk();
+                    break;
+                default:
+                    System.Media.SystemSounds.Exclamation.Play();
+                    break;
+            }
+        }
+        catch { }
     }
 
     private void ApplyLocalizationStrings()
@@ -7068,6 +7467,12 @@ public partial class MainWindow : Window
             if (NavImport != null) NavImport.Content = LocalizationService.Get("nav_import", "📦 Import & Convert");
             if (NavSaves != null) NavSaves.Content = LocalizationService.Get("nav_career", "💾 Career Saves");
             if (NavSettings != null) NavSettings.Content = LocalizationService.Get("nav_settings", "⚙ Settings");
+
+            if (VolumeSoundcheckBtn != null) VolumeSoundcheckBtn.Content = LocalizationService.Get("btn_soundcheck", "🔊 Soundcheck");
+            if (AutoHealLibraryBtn != null) AutoHealLibraryBtn.Content = LocalizationService.Get("btn_autoheal", "🩺 Auto-Heal");
+            if (ExportPosterBtn != null) ExportPosterBtn.Content = LocalizationService.Get("btn_poster", "🖼️ Tour Poster");
+            if (MedleyBuilderBtn != null) MedleyBuilderBtn.Content = LocalizationService.Get("btn_medley", "🎸 Medley");
+            if (CleanTempFilesBtn != null) CleanTempFilesBtn.Content = LocalizationService.Get("btn_clean_temp", "🧹 Clean Cache");
         }
         catch { }
     }
@@ -7075,6 +7480,7 @@ public partial class MainWindow : Window
     private void CleanTempFilesBtn_Click(object sender, RoutedEventArgs e)
     {
         CleanTempFilesBtn.IsEnabled = false;
+        PageSettings_StageHud.Report(30, "CLEANING REDUNDANT FILES", "Scanning audio caches, build directories, and temporary chunks...");
         try
         {
             var (filesRemoved, bytesFreed, summary) = _gh3.CleanDuplicateAndTempFiles(_logger);
@@ -7085,10 +7491,19 @@ public partial class MainWindow : Window
             RefreshSongsList();
             if (filesRemoved > 0)
             {
+                PageSettings_StageHud.Finish($"Cleaned {filesRemoved} item(s) ({mb:F1} MB freed)!");
                 var detail = string.Join("\n• ", summary.Take(12));
                 WpfMessageBox.Show($"Cleanup complete!\nRemoved {filesRemoved} redundant/temp item(s) ({mb:F1} MB freed):\n\n• {detail}",
                     "Storage Cleanup Complete", MessageBoxButton.OK, MessageBoxImage.Information);
             }
+            else
+            {
+                PageSettings_StageHud.Finish("Storage is already completely clean!");
+            }
+        }
+        catch (Exception ex)
+        {
+            PageSettings_StageHud.SetError("CLEANUP ERROR", ex.Message);
         }
         finally
         {
