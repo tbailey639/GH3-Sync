@@ -784,6 +784,7 @@ public partial class MainWindow : Window
     private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         ExitApplication();
+        Environment.Exit(0);
     }
 
     // ==================== LAUNCH GH3 & HYPERLINKS ====================
@@ -1402,11 +1403,50 @@ public partial class MainWindow : Window
             else
             {
                 HeaderUpdateBtn.Content = "Up to Date";
-                AboutUpdateStatus.Text = $"Up to date (v{res.CurrentVersion})";
+                HeaderUpdateBtn.Style = (Style)FindResource("OutlineButton");
+                AboutUpdateStatus.Text = $"Up to date (v{res.CurrentVersion} Studio Edition)";
                 if (!silentIfUpToDate)
                 {
-                    WpfMessageBox.Show($"You are running the latest version of GH3-Sync (v{res.CurrentVersion}).",
-                        "Up to Date", MessageBoxButton.OK, MessageBoxImage.Information);
+                    // Check if local freshly-built installer package exists
+                    string localInstaller = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GH3-Sync-Setup.exe");
+                    if (!File.Exists(localInstaller))
+                        localInstaller = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "dist", "GH3-Sync-Setup.exe");
+                    if (!File.Exists(localInstaller))
+                        localInstaller = Path.Combine(Path.GetTempPath(), "GH3-Sync-Updates", "GH3-Sync-Setup-1.4.0.exe");
+                    if (!File.Exists(localInstaller))
+                        localInstaller = @"G:\Guitar Hero Songs\GH3-Sync\dist\GH3-Sync-Setup.exe";
+
+                    if (File.Exists(localInstaller))
+                    {
+                        var ask = WpfMessageBox.Show(
+                            $"GH3-Sync is at the latest release level (v{res.CurrentVersion} Studio Edition).\n\n" +
+                            $"Latest Build Package Available:\n{localInstaller}\n\n" +
+                            "Would you like to reinstall or apply the latest Studio Edition build now?",
+                            "GH3-Sync Update Manager",
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Information);
+
+                        if (ask == MessageBoxResult.Yes)
+                        {
+                            var (launched, cancelled, launchErr, _) = _updater.LaunchSilentInstaller(localInstaller);
+                            if (launched)
+                            {
+                                ExitApplication();
+                                Environment.Exit(0);
+                            }
+                            else if (!cancelled)
+                            {
+                                WpfMessageBox.Show($"Could not launch installer: {launchErr}", "Update Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            }
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        WpfMessageBox.Show(
+                            $"You are running the latest version of GH3-Sync (v{res.CurrentVersion} Studio Edition).\n\nGitHub release status: Up to date (Release: {res.ReleaseName}).",
+                            "Up to Date", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
                 }
             }
         }
@@ -1536,6 +1576,7 @@ public partial class MainWindow : Window
         await Task.Delay(750);
 
         ExitApplication();
+        Environment.Exit(0);
     }
 
     private void DismissUpdateBanner_Click(object sender, RoutedEventArgs e) => UpdateBanner.Visibility = Visibility.Collapsed;

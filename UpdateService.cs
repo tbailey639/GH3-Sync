@@ -298,19 +298,23 @@ public class UpdateService
             if (!File.Exists(installerPath))
                 return (false, false, "Installer file not found.", logPath);
 
-            // Preserve existing install directory & configuration silently without showing any wizard UI
-            var args = $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /LOG=\"{logPath}\"";
-            onDetail?.Invoke($"Executing silent upgrade: {Path.GetFileName(installerPath)}");
+            // Use /SILENT with Verb="runas" so Windows prompts for Administrator UAC elevation
+            // and Inno Setup installs cleanly over Program Files without getting blocked or silently aborted.
+            var args = $"/SILENT /NORESTART /SP- /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /LOG=\"{logPath}\"";
+            onDetail?.Invoke($"Executing upgrade: {Path.GetFileName(installerPath)}");
             onDetail?.Invoke($"Flags: {args}");
             onDetail?.Invoke("Preserving existing GH3-Sync install directory, settings, friends, and song library...");
-            _logger?.LogInfo($"[UPDATER] Launching silent upgrade: {installerPath} {args}");
+            _logger?.LogInfo($"[UPDATER] Launching upgrade: {installerPath} {args}");
 
-            Process.Start(new ProcessStartInfo
+            var psi = new ProcessStartInfo
             {
                 FileName = installerPath,
                 Arguments = args,
-                UseShellExecute = true
-            });
+                UseShellExecute = true,
+                Verb = "runas"
+            };
+
+            Process.Start(psi);
             return (true, false, "", logPath);
         }
         catch (System.ComponentModel.Win32Exception wex) when (wex.NativeErrorCode == 1223)
