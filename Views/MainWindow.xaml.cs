@@ -174,8 +174,8 @@ public partial class MainWindow : Window
         _stageToastTimer.Tick += (_, _) => HideStageToast();
         ApplyAnimationPreferences();
 
-        _tunnel.TunnelStateChanged += _ => Dispatcher.Invoke(RefreshMeshAndTunnelStatus);
-        _careerScores.StartGh3ExitWatcher(scan => Dispatcher.Invoke(() =>
+        _tunnel.TunnelStateChanged += _ => Dispatcher.BeginInvoke(RefreshMeshAndTunnelStatus);
+        _careerScores.StartGh3ExitWatcher(scan => Dispatcher.BeginInvoke(() =>
         {
             if (scan.ScoresUpdated > 0)
             {
@@ -184,21 +184,21 @@ public partial class MainWindow : Window
             }
         }));
 
-        _tempSession.SessionCleanedUp += msg => Dispatcher.Invoke(() =>
+        _tempSession.SessionCleanedUp += msg => Dispatcher.BeginInvoke(() =>
         {
             RefreshSongsList();
             RefreshTempSessionBanner();
             _trayIcon?.ShowBalloonTip(3000, "Temporary Lobby Session Cleaned", msg, WinForms.ToolTipIcon.Info);
         });
 
-        _friends.OnFriendRequestReceived += req => Dispatcher.Invoke(() =>
+        _friends.OnFriendRequestReceived += req => Dispatcher.BeginInvoke(() =>
         {
             RefreshFriendsList();
             AudioWaveformAndSfxService.PlayStarPowerChime();
             ShowStageToast("📩 NEW FRIEND REQUEST!", $"{req.Username} ({req.FriendCode}) sent you a friend request!", "#F97316");
         });
 
-        _friends.OnFriendRequestAccepted += friend => Dispatcher.Invoke(() =>
+        _friends.OnFriendRequestAccepted += friend => Dispatcher.BeginInvoke(() =>
         {
             RefreshFriendsList();
             RefreshTrustedFriendDropdown();
@@ -208,9 +208,9 @@ public partial class MainWindow : Window
 
         if (FriendService.SignalingRelay != null)
         {
-            FriendService.SignalingRelay.OnPeerReadyChanged += (peerCode, isReady) => Dispatcher.Invoke(() => HandleRemotePeerReadyChanged(peerCode, isReady));
-            FriendService.SignalingRelay.OnPeerRouletteRoll += (peerCode, seed, songIds) => Dispatcher.Invoke(() => HandleRemotePeerRouletteRoll(peerCode, seed, songIds));
-            FriendService.SignalingRelay.OnPeerActivityUpdated += (peerCode, activity, showcase) => Dispatcher.Invoke(() =>
+            FriendService.SignalingRelay.OnPeerReadyChanged += (peerCode, isReady) => Dispatcher.BeginInvoke(() => HandleRemotePeerReadyChanged(peerCode, isReady));
+            FriendService.SignalingRelay.OnPeerRouletteRoll += (peerCode, seed, songIds) => Dispatcher.BeginInvoke(() => HandleRemotePeerRouletteRoll(peerCode, seed, songIds));
+            FriendService.SignalingRelay.OnPeerActivityUpdated += (peerCode, activity, showcase) => Dispatcher.BeginInvoke(() =>
             {
                 RefreshFriendsList();
             });
@@ -262,7 +262,7 @@ public partial class MainWindow : Window
             var lanDiscovery = new LanDiscoveryService(_port, _logger);
             lanDiscovery.PeerDiscovered += peer =>
             {
-                Dispatcher.Invoke(() =>
+                Dispatcher.BeginInvoke(() =>
                 {
                     ShowStageToast("🏠 LAN PLAYER FOUND", $"{peer.Username} discovered on local Wi-Fi/Ethernet!", "#38BDF8");
                 });

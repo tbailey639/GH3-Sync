@@ -2,7 +2,7 @@
 ; GH3-Sync: Guitar Hero III Custom Song Creator, Clone Hero Converter & P2P Synchronizer
 
 #define MyAppName "GH3-Sync"
-#define MyAppVersion "1.4.3"
+#define MyAppVersion "1.4.4"
 #define MyAppPublisher "Mad Scientist (tbailey639)"
 #define MyAppURL "https://github.com/tbailey639/GH3-Sync"
 #define MyAppExeName "GH3-Sync.exe"

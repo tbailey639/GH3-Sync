@@ -571,6 +571,7 @@ public class FriendService
         var cleanCode = senderCode.Trim().ToUpperInvariant();
         if (!cleanCode.StartsWith("GH3-")) cleanCode = "GH3-" + cleanCode;
 
+        FriendRequestItem? notifyReq = null;
         lock (_lock)
         {
             // If sender is already a friend, update their last address
@@ -588,6 +589,7 @@ public class FriendService
                 r.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase) &&
                 r.Direction.Equals("Incoming", StringComparison.OrdinalIgnoreCase));
 
+            bool isNewOrReopened = false;
             if (req == null)
             {
                 req = new FriendRequestItem
@@ -603,23 +605,33 @@ public class FriendService
                     CreatedAt = DateTime.UtcNow
                 };
                 AppConfig.Current.FriendRequests.Add(req);
+                isNewOrReopened = true;
             }
             else
             {
+                if (req.Status != "Pending") isNewOrReopened = true;
                 req.Username = cleanName;
                 req.Address = senderAddress?.Trim() ?? req.Address;
                 req.ProposedTrustToken = proposedToken ?? req.ProposedTrustToken;
                 req.IsTrustedRequest = isTrusted;
                 req.RequestType = requestType;
                 req.Status = "Pending";
-                req.CreatedAt = DateTime.UtcNow;
             }
 
             AppConfig.Save();
-            OnFriendRequestReceived?.Invoke(req);
-
-            return (true, true, "received", Profile.Username, Profile.FriendCode);
+            if (isNewOrReopened)
+            {
+                notifyReq = req;
+            }
         }
+
+        // Open Calls Pattern: Notify listeners OUTSIDE the lock to prevent UI thread deadlocks
+        if (notifyReq != null)
+        {
+            OnFriendRequestReceived?.Invoke(notifyReq);
+        }
+
+        return (true, true, "received", Profile.Username, Profile.FriendCode);
     }
 
     /// <summary>
@@ -634,6 +646,7 @@ public class FriendService
         var cleanCode = senderCode.Trim().ToUpperInvariant();
         if (!cleanCode.StartsWith("GH3-")) cleanCode = "GH3-" + cleanCode;
 
+        FriendRequestItem? notifyReq = null;
         lock (_lock)
         {
             var cleanName = string.IsNullOrWhiteSpace(senderUsername) ? $"Peer_{cleanCode[^4..]}" : senderUsername.Trim();
@@ -647,6 +660,7 @@ public class FriendService
                 r.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase) &&
                 r.Direction.Equals("Incoming", StringComparison.OrdinalIgnoreCase));
 
+            bool isNewOrReopened = false;
             if (req == null)
             {
                 req = new FriendRequestItem
@@ -662,23 +676,33 @@ public class FriendService
                     CreatedAt = DateTime.UtcNow
                 };
                 AppConfig.Current.FriendRequests.Add(req);
+                isNewOrReopened = true;
             }
             else
             {
+                if (req.Status != "Pending") isNewOrReopened = true;
                 req.Username = cleanName;
                 req.Address = senderAddress?.Trim() ?? req.Address;
                 req.ProposedTrustToken = proposedToken ?? req.ProposedTrustToken;
                 req.IsTrustedRequest = true;
                 req.RequestType = "TrustUpgrade";
                 req.Status = "Pending";
-                req.CreatedAt = DateTime.UtcNow;
             }
 
             AppConfig.Save();
-            OnFriendRequestReceived?.Invoke(req);
-
-            return (true, true, "received", Profile.Username, Profile.FriendCode);
+            if (isNewOrReopened)
+            {
+                notifyReq = req;
+            }
         }
+
+        // Open Calls Pattern: Notify listeners OUTSIDE the lock to prevent UI thread deadlocks
+        if (notifyReq != null)
+        {
+            OnFriendRequestReceived?.Invoke(notifyReq);
+        }
+
+        return (true, true, "received", Profile.Username, Profile.FriendCode);
     }
 
     /// <summary>
@@ -828,6 +852,7 @@ public class FriendService
     /// </summary>
     public FriendEntry? ProcessTrustUpgradeAccepted(string remoteCode, string remoteUsername, string remoteAddress, string? trustToken)
     {
+        FriendEntry? friend = null;
         lock (_lock)
         {
             var cleanCode = remoteCode.Trim().ToUpperInvariant();
@@ -835,7 +860,7 @@ public class FriendService
 
             AppConfig.Current.FriendRequests.RemoveAll(r => r.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
 
-            var friend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+            friend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
             if (friend == null)
             {
                 friend = AddFriendByCode(cleanCode, remoteUsername, remoteAddress);
@@ -846,9 +871,13 @@ public class FriendService
             if (!string.IsNullOrWhiteSpace(remoteAddress) && !remoteAddress.Contains("169.254.")) friend.LastAddress = remoteAddress;
 
             AppConfig.Save();
-            OnFriendRequestAccepted?.Invoke(friend);
-            return friend;
         }
+
+        if (friend != null)
+        {
+            OnFriendRequestAccepted?.Invoke(friend);
+        }
+        return friend;
     }
 
     /// <summary>
@@ -943,6 +972,7 @@ public class FriendService
     /// </summary>
     public FriendEntry ProcessPeerAcceptedRequest(string remoteCode, string remoteUsername, string remoteAddress, string? trustToken, bool isTrusted)
     {
+        FriendEntry friend;
         lock (_lock)
         {
             var cleanCode = remoteCode.Trim().ToUpperInvariant();
@@ -950,7 +980,7 @@ public class FriendService
 
             AppConfig.Current.FriendRequests.RemoveAll(r => r.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
 
-            var friend = AddFriendByCode(cleanCode, remoteUsername, remoteAddress);
+            friend = AddFriendByCode(cleanCode, remoteUsername, remoteAddress);
             friend.IsTrusted = isTrusted;
             if (!string.IsNullOrEmpty(trustToken))
             {
@@ -962,9 +992,10 @@ public class FriendService
             }
 
             AppConfig.Save();
-            OnFriendRequestAccepted?.Invoke(friend);
-            return friend;
         }
+
+        OnFriendRequestAccepted?.Invoke(friend);
+        return friend;
     }
 
     public bool DeclineFriendRequest(string requestIdOrCode)

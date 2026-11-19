@@ -4,6 +4,15 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). Nota
 
 ---
 
+## [v1.4.4] - 2026-11-19 — Thread Deadlock Immunity & High-Reliability Signaling Edition
+
+### 🛡️ Thread Deadlock Immunity (Open Calls Pattern)
+* **Eliminated Background/UI Dispatcher Lock Contention:** Decoupled internal synchronization locking (`_lock`) from public event dispatching in `FriendService`. Events `OnFriendRequestReceived` and `OnFriendRequestAccepted` now fire strictly outside `_lock`, completely preventing circular lock contention between background network worker threads and the WPF UI Dispatcher.
+* **Non-Blocking Asynchronous UI Dispatching (`Dispatcher.BeginInvoke`):** Switched all background signaling and P2P notification handlers in `MainWindow.xaml.cs` to asynchronous queueing (`Dispatcher.BeginInvoke`). Background worker loops no longer halt waiting for the UI thread, preventing app freezes when friend requests are received during active gameplay or startup.
+* **Smart Event Deduping:** Hardened `ReceiveFriendRequest` and `ReceiveTrustUpgradeRequest` so incoming request notifications and chime sound effects only fire when a request is genuinely new or re-opened, eliminating redundant UI resets on repeated signaling poll cycles.
+
+---
+
 ## [v1.4.3] - 2026-11-19 — Instant IPv4 Fast-Path P2P Relay & Live Discovery Engine
 
 ### ⚡ Instant IPv4 Fast-Path Socket Handler
