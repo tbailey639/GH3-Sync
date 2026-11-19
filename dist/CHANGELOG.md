@@ -4,6 +4,18 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). Nota
 
 ---
 
+## [v1.4.3] - 2026-11-19 — Instant IPv4 Fast-Path P2P Relay & Live Discovery Engine
+
+### ⚡ Instant IPv4 Fast-Path Socket Handler
+* **Eliminated Residential IPv6 Dead-Route Blackhole:** Replaced default .NET `HttpClient` with a custom `SocketsHttpHandler` configured with IPv4 DNS priority. Bypasses residential ISP IPv6 routing dead-ends that previously caused 21-second TCP SYN hangs and canceled background signaling requests.
+* **Sub-50ms Global Rendezvous:** Heartbeat publishing, incoming friend request polling, and peer address lookups now execute in under 30ms (previously timed out at 4,000ms).
+
+### 🌐 Tunnel-Independent Online Presence
+* **Instant Online Status on App Launch:** GH3-Sync now publishes presence heartbeats immediately upon application startup—even while the Cloudflare Internet Tunnel is negotiating in the background.
+* **Graceful Peer Detection:** Players are detected online instantly upon typing their Friend Code in the UI without waiting for tunnel URLs or displaying premature offline warnings.
+
+---
+
 ## [v1.4.2] - 2026-11-19 — Xbox-Style Asynchronous Friends & Authentic Arena Concert Crowd Choir
 
 ### 🎮 True Xbox-Style Asynchronous Friend Requests

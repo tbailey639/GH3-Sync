@@ -46,12 +46,12 @@ Name: "{app}\tools\compiler\Backups\GH3"; Permissions: users-modify
 Name: "{app}\tools\compiler\Replacements"; Permissions: users-modify
 
 [Files]
-Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\wwwroot\*"; DestDir: "{app}\wwwroot"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "bin\Release\net10.0-windows\win-x64\publish\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "bin\Release\net10.0-windows\win-x64\publish\wwwroot\*"; DestDir: "{app}\wwwroot"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "Assets\app_icon.ico"; DestDir: "{app}\Assets"; Flags: ignoreversion
 Source: "Assets\gh3_sync_logo.png"; DestDir: "{app}\Assets"; Flags: ignoreversion
-Source: "dist\README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "CREDITS.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "tools\compiler\*"; DestDir: "{app}\tools\compiler"; Excludes: "Backups\*,QBDebug\*_user.txt"; Flags: ignoreversion recursesubdirs createallsubdirs; Permissions: users-modify
 
