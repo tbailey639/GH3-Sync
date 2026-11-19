@@ -109,9 +109,9 @@ public static class GpuAccelerationService
 
     private static bool? _isPyTorchCudaReady;
 
-    public static bool VerifyPyTorchCudaSupport(string? pythonExe = null)
+    public static bool VerifyPyTorchCudaSupport(string? pythonExe = null, bool forceRecheck = false)
     {
-        if (_isPyTorchCudaReady.HasValue) return _isPyTorchCudaReady.Value;
+        if (!forceRecheck && _isPyTorchCudaReady.HasValue) return _isPyTorchCudaReady.Value;
 
         if (string.IsNullOrEmpty(pythonExe) || !File.Exists(pythonExe))
         {
@@ -129,7 +129,7 @@ public static class GpuAccelerationService
             var psi = new ProcessStartInfo
             {
                 FileName = pythonExe,
-                Arguments = "-c \"import torch; print('CUDA_OK' if torch.cuda.is_available() else 'CUDA_NO')\"",
+                Arguments = "-c \"import torch; x = torch.zeros(1, device='cuda'); print('CUDA_OK')\"",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 CreateNoWindow = true
@@ -137,7 +137,7 @@ public static class GpuAccelerationService
             using var p = Process.Start(psi);
             if (p == null) { _isPyTorchCudaReady = false; return false; }
             var outText = p.StandardOutput.ReadToEnd().Trim();
-            p.WaitForExit(3000);
+            p.WaitForExit(4000);
             _isPyTorchCudaReady = outText.Contains("CUDA_OK");
             return _isPyTorchCudaReady.Value;
         }
@@ -160,9 +160,10 @@ public static class GpuAccelerationService
 
     public static string GetStatusBadge()
     {
-        if (IsCudaAvailable && AppConfig.Current.StemSeparationGpuEnabled)
+        bool cudaReady = IsNvidia && VerifyPyTorchCudaSupport();
+        if (cudaReady && AppConfig.Current.StemSeparationGpuEnabled)
         {
-            return $"⚡ GPU Accelerated: {GpuName} (CUDA {GpuMemoryMb:N0} MB • Tier {WpfRenderTier})";
+            return $"⚡ GPU Accelerated: {GpuName} (CUDA Active • {GpuMemoryMb:N0} MB VRAM • D3D Tier {WpfRenderTier})";
         }
         if (WpfRenderTier >= 2)
         {

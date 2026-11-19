@@ -759,6 +759,11 @@ public class HoneycombCompilerService
                     Log("Loading song project into Honeycomb compiler engine...");
                     csType.GetMethod("LoadProject", flags)?.Invoke(form, new object[] { ghprojPath });
 
+                    // Explicitly set projectFilePath & project_input so headless SaveProject() never triggers modal SaveFileDialog
+                    csType.GetField("projectFilePath", flags)?.SetValue(form, ghprojPath);
+                    var projectInputProp = csType.GetField("project_input", flags)?.GetValue(form) as System.Windows.Forms.TextBox;
+                    if (projectInputProp != null) projectInputProp.Text = ghprojPath;
+
                     // Ensure form inputs are properly initialized
                     var compileInputProp = csType.GetField("compile_input", flags)?.GetValue(form) as System.Windows.Forms.TextBox;
                     if (compileInputProp != null) compileInputProp.Text = projectDir;
@@ -914,9 +919,9 @@ public class HoneycombCompilerService
         var textPreview = Path.Combine(projectDir, $"{songChecksum}_preview.mp3");
         var tempHybridLead = Path.Combine(projectDir, $"{songChecksum}_hybrid_lead.wav");
         var tempHybridBack = Path.Combine(projectDir, $"{songChecksum}_hybrid_back.wav");
-        var tempSilenceMp3 = Path.Combine(projectDir, $"{songChecksum}_silence.mp3");
+        var tempSilenceWav = Path.Combine(projectDir, $"{songChecksum}_silence.wav");
 
-        var tempFiles = new List<string> { textGuitar, textRhythm, textSong, textPreview, tempHybridLead, tempHybridBack, tempSilenceMp3 };
+        var tempFiles = new List<string> { textGuitar, textRhythm, textSong, textPreview, tempHybridLead, tempHybridBack, tempSilenceWav };
 
         try
         {
@@ -924,10 +929,11 @@ public class HoneycombCompilerService
             string masterInput = !string.IsNullOrEmpty(stems.PrimaryAudio) ? stems.PrimaryAudio : stems.LeadStems.FirstOrDefault() ?? "";
 
             // Ensure silent padding audio matches the EXACT duration of the song so FMOD never loops early at 2:09!
+            // Converted through Honeycomb's ConvertToMp3() so the resulting MP3 is strictly valid CBR for FSB3.
             bool hasMatchingSilence = false;
             if (!string.IsNullOrEmpty(ffmpegExe) && File.Exists(ffmpegExe) && File.Exists(masterInput))
             {
-                hasMatchingSilence = CreateMatchingSilenceMp3(ffmpegExe, masterInput, tempSilenceMp3);
+                hasMatchingSilence = CreateMatchingSilenceWav(ffmpegExe, masterInput, tempSilenceWav);
             }
 
             if (audioMode.Equals("StudioMaster", StringComparison.OrdinalIgnoreCase) || !stems.HasMultiStems)
@@ -936,10 +942,10 @@ public class HoneycombCompilerService
                 // Untouched original master in backing, silent pad in guitar/rhythm -> ZERO Demucs warble, ZERO double-audio clipping!
                 log($"Audio Mode: Studio Master (Cleanest Fidelity) -> Backing={Path.GetFileName(masterInput)}, Guitar=silent pad (duration-matched)");
 
-                if (hasMatchingSilence && File.Exists(tempSilenceMp3))
+                if (hasMatchingSilence && File.Exists(tempSilenceWav))
                 {
-                    File.Copy(tempSilenceMp3, textGuitar, true);
-                    File.Copy(tempSilenceMp3, textRhythm, true);
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textGuitar })!;
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textRhythm })!;
                 }
                 else
                 {
@@ -964,9 +970,9 @@ public class HoneycombCompilerService
                     log("Converting hybrid playable lead channel to CBR MP3...");
                     await (Task)mConvert.Invoke(fsbObj, new object[] { tempHybridLead, textGuitar })!;
                     log("Preparing rhythm/bass track...");
-                    if (string.IsNullOrEmpty(stems.RhythmStem) && hasMatchingSilence && File.Exists(tempSilenceMp3))
+                    if (string.IsNullOrEmpty(stems.RhythmStem) && hasMatchingSilence && File.Exists(tempSilenceWav))
                     {
-                        File.Copy(tempSilenceMp3, textRhythm, true);
+                        await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textRhythm })!;
                     }
                     else
                     {
@@ -978,10 +984,10 @@ public class HoneycombCompilerService
                 else
                 {
                     // Clean fallback to Studio Master if FFmpeg filtergraph fails
-                    if (hasMatchingSilence && File.Exists(tempSilenceMp3))
+                    if (hasMatchingSilence && File.Exists(tempSilenceWav))
                     {
-                        File.Copy(tempSilenceMp3, textGuitar, true);
-                        File.Copy(tempSilenceMp3, textRhythm, true);
+                        await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textGuitar })!;
+                        await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textRhythm })!;
                     }
                     else
                     {
@@ -1008,9 +1014,9 @@ public class HoneycombCompilerService
                 }
 
                 log("Preparing rhythm/bass track...");
-                if (string.IsNullOrEmpty(stems.RhythmStem) && hasMatchingSilence && File.Exists(tempSilenceMp3))
+                if (string.IsNullOrEmpty(stems.RhythmStem) && hasMatchingSilence && File.Exists(tempSilenceWav))
                 {
-                    File.Copy(tempSilenceMp3, textRhythm, true);
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textRhythm })!;
                 }
                 else
                 {
@@ -1257,10 +1263,14 @@ public class HoneycombCompilerService
 
         string[] audioExts = new[] { ".mp3", ".ogg", ".wav" };
         string primaryAudio = "";
-        foreach (var ext in audioExts)
+        foreach (var prefix in new[] { "song_stadium", "song_processed", "song" })
         {
-            var p = Path.Combine(projectDir, "song" + ext);
-            if (File.Exists(p)) { primaryAudio = p; break; }
+            foreach (var ext in audioExts)
+            {
+                var p = Path.Combine(projectDir, prefix + ext);
+                if (File.Exists(p)) { primaryAudio = p; break; }
+            }
+            if (!string.IsNullOrEmpty(primaryAudio)) break;
         }
         if (string.IsNullOrEmpty(primaryAudio))
         {
@@ -1444,10 +1454,11 @@ public class HoneycombCompilerService
     }
 
     /// <summary>
-    /// Generates a silent CBR MP3 that matches the EXACT sample-accurate duration and 48kHz sample rate
-    /// of the primary song audio. Guarantees FMOD soundbanks never suffer early EOF looping/seek glitches at 2:09!
+    /// Generates a silent 48kHz stereo WAV that matches the EXACT sample-accurate duration
+    /// of the primary song audio. Converted to CBR MP3 via ConvertToMp3 to ensure valid FSB3 frames.
+    /// Guarantees FMOD soundbanks never suffer early EOF looping/seek glitches at 2:09!
     /// </summary>
-    private static bool CreateMatchingSilenceMp3(string ffmpegExe, string referenceAudioPath, string outputSilenceMp3Path)
+    private static bool CreateMatchingSilenceWav(string ffmpegExe, string referenceAudioPath, string outputSilenceWavPath)
     {
         try
         {
@@ -1465,18 +1476,16 @@ public class HoneycombCompilerService
             psi.ArgumentList.Add(referenceAudioPath);
             psi.ArgumentList.Add("-af");
             psi.ArgumentList.Add("volume=0");
-            psi.ArgumentList.Add("-c:a");
-            psi.ArgumentList.Add("libmp3lame");
-            psi.ArgumentList.Add("-b:a");
-            psi.ArgumentList.Add("128k");
             psi.ArgumentList.Add("-ar");
             psi.ArgumentList.Add("48000");
-            psi.ArgumentList.Add(outputSilenceMp3Path);
+            psi.ArgumentList.Add("-ac");
+            psi.ArgumentList.Add("2");
+            psi.ArgumentList.Add(outputSilenceWavPath);
 
             using var proc = Process.Start(psi);
             if (proc == null) return false;
             proc.WaitForExit(30000);
-            return File.Exists(outputSilenceMp3Path) && new FileInfo(outputSilenceMp3Path).Length > 1024;
+            return File.Exists(outputSilenceWavPath) && new FileInfo(outputSilenceWavPath).Length > 1024;
         }
         catch
         {

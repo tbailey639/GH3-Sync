@@ -260,8 +260,10 @@ public class DemucsService
                 ? "Installing PyTorch AI engine (NVIDIA GPU detected, configuring runtime)..."
                 : "Installing PyTorch AI engine (Universal Windows CPU build)...", onProgress);
 
-            // Use official PyTorch CPU wheels for reliable ~220MB install; works cleanly on every Windows 11 machine
-            var torchArgs = "-m pip install --no-warn-script-location torch torchaudio --index-url https://download.pytorch.org/whl/cpu";
+            // If NVIDIA GPU is detected, install CUDA 12.8 wheels for 10x-speed GPU acceleration on Tensor Cores (supporting RTX 30/40/50 series sm_120 Blackwell)!
+            var torchArgs = hasGpu
+                ? "-m pip install --no-warn-script-location torch torchaudio --index-url https://download.pytorch.org/whl/cu128"
+                : "-m pip install --no-warn-script-location torch torchaudio --index-url https://download.pytorch.org/whl/cpu";
             var (torchOk, torchErr) = await RunPythonAsync(torchArgs, onProgress, 35, 62, ct);
             if (!torchOk)
                 return (false, $"Failed installing PyTorch: {torchErr}");
