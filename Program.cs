@@ -74,6 +74,19 @@ var gh3Service = new Gh3Service();
 var syncLogger = new SyncLogger(gh3Service.GamePath);
 var securityService = new SecurityService();
 var friendService = new FriendService(baseDir);
+var signalingRelay = new SignalingRelayService(friendService, syncLogger);
+signalingRelay.Start();
+FriendService.SignalingRelay = signalingRelay;
+
+// Purge any legacy link-local 169.254.* addresses from saved friends list
+foreach (var fr in AppConfig.Current.Friends)
+{
+    if (fr.LastAddress != null && fr.LastAddress.Contains("169.254."))
+    {
+        fr.LastAddress = "";
+        AppConfig.Save();
+    }
+}
 var saveManager = new SaveManager(syncLogger, gh3Service.GamePath);
 var compilerService = new HoneycombCompilerService(gh3Service, syncLogger, saveManager);
 var cloneHeroService = new CloneHeroImportService(compilerService, syncLogger);

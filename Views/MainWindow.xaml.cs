@@ -227,6 +227,20 @@ public partial class MainWindow : Window
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        // Purge any stale 169.254.* addresses from friends list & input boxes
+        foreach (var fr in AppConfig.Current.Friends)
+        {
+            if (fr.LastAddress != null && fr.LastAddress.Contains("169.254."))
+            {
+                fr.LastAddress = "";
+                AppConfig.Save();
+            }
+        }
+        if (PeerAddressBox != null && PeerAddressBox.Text.Contains("169.254."))
+        {
+            PeerAddressBox.Text = "";
+        }
+
         RefreshAllUiState();
 
         // First-time custom song save setup check (only prompts if Honeycomb}{Honeycomb save doesn't exist yet!)
@@ -302,6 +316,11 @@ public partial class MainWindow : Window
                 ContextMenuStrip = menu,
                 Visible = true
             };
+            _trayIcon.MouseClick += (_, e) =>
+            {
+                if (e.Button == WinForms.MouseButtons.Left)
+                    Dispatcher.BeginInvoke(RestoreWindow);
+            };
             _trayIcon.DoubleClick += (_, _) => Dispatcher.BeginInvoke(RestoreWindow);
         }
         catch { }
@@ -309,12 +328,14 @@ public partial class MainWindow : Window
 
     private void RestoreWindow()
     {
-        if (!IsVisible) Show();
-        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-        Activate();
-        Topmost = true;
-        Topmost = false;
-        Focus();
+        try
+        {
+            if (!IsVisible) Show();
+            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+            Activate();
+            Focus();
+        }
+        catch { }
     }
 
     private void InitializeStageEmbers()
@@ -641,12 +662,11 @@ public partial class MainWindow : Window
     {
         if (_isExiting) return;
         _isExiting = true;
-        _stageAnimTimer.Stop();
+        _stageAnimTimer?.Stop();
         StopAudioPreview();
         try { _tunnel?.StopTunnel(); } catch { }
         TunnelAndMeshService.KillAllOrphanCloudflaredProcesses();
         try { _trayIcon?.Dispose(); } catch { }
-        Close();
         System.Windows.Application.Current.Shutdown();
     }
 
@@ -3930,8 +3950,11 @@ public partial class MainWindow : Window
     private void ToggleFriendCodeBtn_Click(object sender, RoutedEventArgs e) { _friendCodeVisible = !_friendCodeVisible; UpdateFriendCodeDisplay(); }
     private void CopyFriendCodeBtn_Click(object sender, RoutedEventArgs e)
     {
-        System.Windows.Clipboard.SetText(_friends.Profile.FriendCode);
-        WpfMessageBox.Show($"Copied Friend Code: {_friends.Profile.FriendCode}", "Copied", MessageBoxButton.OK, MessageBoxImage.Information);
+        var rawCode = _friends.Profile.FriendCode;
+        var shortCode = rawCode.StartsWith("GH3-", StringComparison.OrdinalIgnoreCase) ? rawCode.Substring(4) : rawCode;
+        System.Windows.Clipboard.SetText(rawCode);
+        ShowStageToast("📋 FRIEND CODE COPIED!", $"Copied {rawCode} (or {shortCode}) to clipboard.", "#22C55E");
+        AudioWaveformAndSfxService.PlayStarPowerChime();
     }
 
     private async void CopyOnlineInviteBtn_Click(object sender, RoutedEventArgs e)
@@ -3954,7 +3977,8 @@ public partial class MainWindow : Window
             }
             else
             {
-                var result = WpfMessageBox.Show(
+                bool isGh3Running = Process.GetProcessesByName("GH3").Length > 0;
+                var result = isGh3Running ? MessageBoxResult.Yes : WpfMessageBox.Show(
                     "To invite a friend across the internet (different houses/Wi-Fi), GH3-Sync can start a free, encrypted Cloudflare HTTPS Quick Tunnel with zero router port forwarding.\n\nStart Internet Tunnel now?",
                     "Start Internet Tunnel for Online Invite?",
                     MessageBoxButton.YesNo,
@@ -3979,7 +4003,10 @@ public partial class MainWindow : Window
                         }
                         else
                         {
-                            WpfMessageBox.Show($"Could not start tunnel: {urlOrErr}\nFalling back to public IP.", "Tunnel Notice", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            if (!isGh3Running)
+                            {
+                                WpfMessageBox.Show($"Could not start tunnel: {urlOrErr}\nFalling back to public IP.", "Tunnel Notice", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            }
                         }
                     }
                     finally
@@ -4155,16 +4182,9 @@ public partial class MainWindow : Window
             {
                 ShowStageToast("❌ DELIVERY FAILED", res.Message, "#EF4444");
                 AudioWaveformAndSfxService.PlayNoteMissClunk();
-                WpfMessageBox.Show(
-                    $"{res.Message}\n\n" +
-                    "Tip for connecting over the Internet:\n" +
-                    "If your friend is in another house or on a different Wi-Fi network:\n" +
-                    "1. Ask your friend to click '🌐 Start Free Internet Tunnel' and '📋 Copy Online Invite'.\n" +
-                    "2. Paste their online invite link (e.g. GH3-XXXX-XXXX@https://...) here.\n\n" +
-                    "No router port-forwarding or manual network configuration required!",
-                    "Friend Request Not Delivered",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
+                AutoDetectStatusPill.Visibility = Visibility.Visible;
+                AutoDetectStatusIcon.Text = "❌";
+                AutoDetectStatusText.Text = res.Message;
             }
         }
         finally
@@ -4470,11 +4490,28 @@ public partial class MainWindow : Window
                     ? $"Compare libraries with {f.Username} and auto-sync missing custom songs"
                     : $"View {f.Username}'s custom songs setlist"
             };
-            syncBtn.Click += (_, _) =>
+            syncBtn.Click += async (_, _) =>
             {
                 NavP2P.IsChecked = true;
 
                 var addr = (f.LastAddress ?? "").Trim();
+                if (addr.Contains("169.254.") || string.IsNullOrWhiteSpace(addr))
+                {
+                    PeerCompareStatus.Text = $"Resolving {f.Username}'s live address from Global Signaling Relay...";
+                    ShowStageToast("📡 RESOLVING PEER...", $"Finding {f.Username}'s live connection address...", "#38BDF8");
+
+                    if (FriendService.SignalingRelay != null)
+                    {
+                        var (found, _, liveAddr, _) = await FriendService.SignalingRelay.ResolvePeerAsync(f.FriendCode);
+                        if (found && !string.IsNullOrWhiteSpace(liveAddr))
+                        {
+                            addr = liveAddr;
+                            f.LastAddress = liveAddr;
+                            AppConfig.Save();
+                        }
+                    }
+                }
+
                 if (addr.Contains("169.254.") || string.IsNullOrWhiteSpace(addr))
                 {
                     PeerAddressBox.Text = "";
@@ -4482,8 +4519,8 @@ public partial class MainWindow : Window
                     {
                         PeerPinBox.Text = f.TrustToken;
                     }
-                    PeerCompareStatus.Text = $"Paste {f.Username}'s Online Invite (or click 'Paste Invite Code') to connect over the Internet.";
-                    ShowStageToast("🔗 ENTER ONLINE INVITE", $"Paste {f.Username}'s Online Invite link to connect over the Internet!", "#F59E0B");
+                    PeerCompareStatus.Text = $"Could not auto-resolve {f.Username}. Ensure {f.Username} has GH3-Sync open online!";
+                    ShowStageToast("⚠️ FRIEND OFFLINE", $"Ensure {f.Username} has GH3-Sync open online to connect!", "#F59E0B");
                     PeerAddressBox.Focus();
                     return;
                 }
@@ -4550,20 +4587,37 @@ public partial class MainWindow : Window
         TrustedFriendQuickCombo.SelectedIndex = 0;
     }
 
-    private void TrustedFriendQuickCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void TrustedFriendQuickCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         int idx = TrustedFriendQuickCombo.SelectedIndex - 1;
         if (idx < 0 || idx >= _trustedDropdownEntries.Count) return;
         var friend = _trustedDropdownEntries[idx];
-        if (!string.IsNullOrWhiteSpace(friend.LastAddress) && !friend.LastAddress.Contains("169.254."))
+
+        var addr = (friend.LastAddress ?? "").Trim();
+        if (addr.Contains("169.254.") || string.IsNullOrWhiteSpace(addr))
         {
-            PeerAddressBox.Text = friend.LastAddress;
+            if (FriendService.SignalingRelay != null)
+            {
+                var (found, _, liveAddr, _) = await FriendService.SignalingRelay.ResolvePeerAsync(friend.FriendCode);
+                if (found && !string.IsNullOrWhiteSpace(liveAddr))
+                {
+                    addr = liveAddr;
+                    friend.LastAddress = liveAddr;
+                    AppConfig.Save();
+                }
+            }
         }
-        else if (friend.LastAddress != null && friend.LastAddress.Contains("169.254."))
+
+        if (!string.IsNullOrWhiteSpace(addr) && !addr.Contains("169.254."))
+        {
+            PeerAddressBox.Text = addr;
+        }
+        else
         {
             PeerAddressBox.Text = "";
-            ShowStageToast("🔗 NEW INVITE NEEDED", $"Select friend has an outdated IP. Paste their Online Invite code to connect!", "#F59E0B");
+            ShowStageToast("📡 RESOLVING FRIEND...", $"Waiting for {friend.Username} to connect online.", "#38BDF8");
         }
+
         if (!string.IsNullOrWhiteSpace(friend.TrustToken))
             PeerPinBox.Text = friend.TrustToken;
     }

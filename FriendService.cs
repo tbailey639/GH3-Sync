@@ -37,6 +37,7 @@ public class FriendService
     private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(15.0) };
 
     public static Func<string>? BestAddressProvider { get; set; }
+    public static SignalingRelayService? SignalingRelay { get; set; }
 
     public UserProfile Profile => new()
     {
@@ -194,12 +195,8 @@ public class FriendService
             }
         }
 
-        // Normalize Friend Code format (e.g. 1234-ABCD or GH3-1234-ABCD)
-        cleanCode = cleanCode.ToUpperInvariant().Trim();
-        if (!cleanCode.StartsWith("GH3-"))
-        {
-            cleanCode = "GH3-" + cleanCode;
-        }
+        // Normalize Friend Code format (e.g. 1234-ABCD, 1234ABCD, or GH3-1234-ABCD)
+        cleanCode = SignalingRelayService.NormalizeCode(cleanCode);
 
         // Loopback test self-detection
         if (cleanCode.Equals(AppConfig.Current.FriendCode, StringComparison.OrdinalIgnoreCase))
@@ -289,7 +286,7 @@ public class FriendService
 
         // 4. Check previously saved address in existing Friends list
         var existingFriend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
-        if (existingFriend != null && !string.IsNullOrWhiteSpace(existingFriend.LastAddress))
+        if (existingFriend != null && !string.IsNullOrWhiteSpace(existingFriend.LastAddress) && !existingFriend.LastAddress.Contains("169.254."))
         {
             try
             {
@@ -312,13 +309,45 @@ public class FriendService
                 }
             }
             catch { }
+        }
 
+        // 5. Check Global P2P Signaling Relay (Instant Internet rendezvous by Friend Code)
+        try
+        {
+            if (SignalingRelay != null)
+            {
+                var (found, sUser, sAddr, sNorm) = await SignalingRelay.ResolvePeerAsync(cleanCode);
+                if (found && !string.IsNullOrWhiteSpace(sAddr))
+                {
+                    if (existingFriend != null)
+                    {
+                        existingFriend.LastAddress = sAddr;
+                        if (!string.IsNullOrWhiteSpace(sUser)) existingFriend.Username = sUser;
+                        AppConfig.Save();
+                    }
+
+                    return new FriendLookupResult
+                    {
+                        Found = true,
+                        FriendCode = sNorm,
+                        Username = sUser,
+                        Address = sAddr,
+                        IsOnline = true,
+                        Source = "SignalingRelay"
+                    };
+                }
+            }
+        }
+        catch { }
+
+        if (existingFriend != null)
+        {
             return new FriendLookupResult
             {
                 Found = true,
                 FriendCode = cleanCode,
                 Username = existingFriend.Username,
-                Address = existingFriend.LastAddress,
+                Address = existingFriend.LastAddress?.Contains("169.254.") == true ? "" : (existingFriend.LastAddress ?? ""),
                 IsOnline = false,
                 Source = "SavedAddress"
             };
@@ -328,7 +357,7 @@ public class FriendService
         {
             Found = false,
             FriendCode = cleanCode,
-            Error = $"Player with Friend Code {cleanCode} not found on local Wi-Fi. If your friend is in another house or on a different network, ask them to click '📋 Copy Online Invite' and paste it here, or start the Free Internet Tunnel above!"
+            Error = $"Player with Friend Code {cleanCode} not found online. Make sure your friend has GH3-Sync open!"
         };
     }
 
@@ -391,21 +420,54 @@ public class FriendService
             targetAddress = (targetAddress.Contains(".trycloudflare.com", StringComparison.OrdinalIgnoreCase) || targetAddress.EndsWith(":443")) ? "https://" + targetAddress : "http://" + targetAddress;
         }
 
-        if (string.IsNullOrWhiteSpace(targetAddress))
+        var client = customClient ?? _httpClient;
+        var myAddress = BestAddressProvider?.Invoke() ?? "http://127.0.0.1:7373";
+        var proposedToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+
+        if (string.IsNullOrWhiteSpace(targetAddress) || targetAddress.Contains("169.254."))
         {
+            if (SignalingRelay != null)
+            {
+                var sigSent = await SignalingRelay.SendFriendRequestPacketAsync(cleanCode, AppConfig.Current.FriendCode, AppConfig.Current.Username, myAddress, proposedToken);
+                if (sigSent)
+                {
+                    lock (_lock)
+                    {
+                        var req = new FriendRequestItem
+                        {
+                            FriendCode = cleanCode,
+                            Username = !string.IsNullOrWhiteSpace(lookup.Username) ? lookup.Username : $"Player_{cleanCode[^4..]}",
+                            Direction = "Outgoing",
+                            Status = "Pending",
+                            CreatedAt = DateTime.UtcNow,
+                            Address = targetAddress ?? "",
+                            ProposedTrustToken = proposedToken
+                        };
+                        AppConfig.Current.FriendRequests.RemoveAll(x => x.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+                        AppConfig.Current.FriendRequests.Add(req);
+                        AppConfig.Save();
+                    }
+
+                    return new SendFriendRequestResult
+                    {
+                        Success = true,
+                        ReceivedByPeer = true,
+                        FriendCode = cleanCode,
+                        Username = lookup.Username,
+                        Message = $"Friend request delivered to {cleanCode} via Global P2P Signaling Relay!"
+                    };
+                }
+            }
+
             // Do NOT add to requested list when peer is unreachable!
             return new SendFriendRequestResult
             {
                 Success = false,
                 ReceivedByPeer = false,
                 FriendCode = cleanCode,
-                Message = $"Could not reach {cleanCode} across local Wi-Fi or Hub.\n\nIf your friend is in another house or on different Wi-Fi, have them click '📋 Copy Online Invite' and send you their full invite link, or start the Free Internet Tunnel above!"
+                Message = $"Could not reach {cleanCode} across local Wi-Fi or Hub.\n\nEnsure your friend has GH3-Sync open!"
             };
         }
-
-        var client = customClient ?? _httpClient;
-        var myAddress = BestAddressProvider?.Invoke() ?? "http://127.0.0.1:7373";
-        var proposedToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
 
         var payload = new
         {
@@ -530,6 +592,39 @@ public class FriendService
                     }
                 }
                 catch { }
+            }
+
+            if (SignalingRelay != null)
+            {
+                var sigSent = await SignalingRelay.SendFriendRequestPacketAsync(cleanCode, AppConfig.Current.FriendCode, AppConfig.Current.Username, myAddress, proposedToken);
+                if (sigSent)
+                {
+                    lock (_lock)
+                    {
+                        var req = new FriendRequestItem
+                        {
+                            FriendCode = cleanCode,
+                            Username = !string.IsNullOrWhiteSpace(lookup.Username) ? lookup.Username : $"Player_{cleanCode[^4..]}",
+                            Direction = "Outgoing",
+                            Status = "Pending",
+                            CreatedAt = DateTime.UtcNow,
+                            Address = targetAddress,
+                            ProposedTrustToken = proposedToken
+                        };
+                        AppConfig.Current.FriendRequests.RemoveAll(x => x.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+                        AppConfig.Current.FriendRequests.Add(req);
+                        AppConfig.Save();
+                    }
+
+                    return new SendFriendRequestResult
+                    {
+                        Success = true,
+                        ReceivedByPeer = true,
+                        FriendCode = cleanCode,
+                        Username = lookup.Username,
+                        Message = $"Friend request delivered to {lookup.Username} ({cleanCode}) via Global P2P Signaling Relay!"
+                    };
+                }
             }
 
             // Network failure / timeout -> DO NOT ADD TO REQUESTED LIST!
@@ -665,7 +760,28 @@ public class FriendService
             });
         }
 
+        if (SignalingRelay != null && targetReq != null && newFriend != null)
+        {
+            var myAddress = BestAddressProvider?.Invoke() ?? "http://127.0.0.1:7373";
+            _ = SignalingRelay.SendFriendAcceptPacketAsync(
+                targetReq.FriendCode,
+                AppConfig.Current.FriendCode,
+                AppConfig.Current.Username,
+                myAddress,
+                newFriend.TrustToken);
+        }
+
         return newFriend;
+    }
+
+    public void ReceiveIncomingRequest(string senderCode, string senderUsername, string senderAddress, string? proposedToken)
+    {
+        ReceiveFriendRequest(senderCode, senderUsername, senderAddress, proposedToken);
+    }
+
+    public void HandleRemoteAcceptance(string remoteCode, string remoteUsername, string remoteAddress, string? remoteTrustToken)
+    {
+        ProcessPeerAcceptedRequest(remoteCode, remoteUsername, remoteAddress, remoteTrustToken, true);
     }
 
     /// <summary>

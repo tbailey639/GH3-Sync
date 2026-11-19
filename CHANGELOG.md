@@ -4,6 +4,21 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.2.4] - 2026-11-18 — Global P2P Signaling Relay, Short Friend Codes & Zero-Crash Focus Engine
+
+### Zero-Config Internet Rendezvous & Global P2P Signaling Relay
+* **Global Signaling Relay (`SignalingRelayService`):** Connect with friends anywhere across the globe using just a Friend Code. No router configuration, no port-forwarding, and no manual URL exchange required.
+* **Short Friend Code Support:** Friend codes can now be entered in short 8-character format (e.g. `5126-A893` or `5126A893`) or standard format (`GH3-5126-A893`).
+* **Dynamic Heartbeats & Live Address Auto-Updating:** Ephemeral Cloudflare tunnel URLs are now automatically kept in sync via background heartbeats every 6 seconds. If either player restarts the app or their tunnel cycles, addresses resolve automatically without breaking connections.
+* **Live Friend Request Delivery & Instant Mutual Acceptance:** Friend requests and mutual acceptances are now delivered over dedicated signaling topics (`gh3sync-req-*` and `gh3sync-ack-*`). Requests and acceptances appear on both screens in real time within 2–3 seconds with zero app restarts.
+* **Automatic Link-Local IP Purge:** Automatically cleanses stale `169.254.*` ("embedded IP") entries from `config.json` and prevents link-local IP addresses from ever blocking legitimate connections.
+
+### DirectX 9 Fullscreen Stability & Shell Fixes
+* **Zero-Crash Fullscreen Engine:** Eliminated modal Win32 message boxes during friend delivery and gameplay. Fullscreen DirectX 9 (`GH3.exe`) will never suffer `D3DERR_DEVICELOST` focus loss crashes. All notifications are delivered via smooth non-blocking in-app toasts and inline UI indicators.
+* **Clean App Shutdown & Tray Restoration:** Eliminated `System.InvalidOperationException` on clicking `[X]`. Added single-click restoration from the Windows system tray.
+
+---
+
 ## [v1.2.3] - 2026-11-18 — Deterministic Setlist Slots, Asymmetric Library Mirroring & Netcode Desync Fix
 
 ### Multiplayer Setlist Slot Synchronization & Loading Freeze Elimination

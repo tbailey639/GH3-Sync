@@ -189,7 +189,7 @@ public class SecurityService
                 // Block 0.0.0.0/8 and AWS/GCP/Azure link-local metadata 169.254.0.0/16
                 if (b[0] == 0 || (b[0] == 169 && b[1] == 254))
                 {
-                    error = $"Blocked restricted link-local / metadata IP address ({host}).";
+                    error = $"Outdated / disconnected adapter address ({host}). GH3-Sync is auto-resolving your friend's live Internet address...";
                     return false;
                 }
             }
