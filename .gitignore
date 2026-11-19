@@ -15,3 +15,5 @@ tools/compiler/*.exe
 dist/runtimes/
 dist/tools/
 dist/*.xml
+dist/*.pdb
+tools/compiler/QBDebug/*_user.txt

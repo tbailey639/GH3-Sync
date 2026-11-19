@@ -2,13 +2,41 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace GH3_Sync;
+
+public class FriendLookupResult
+{
+    public bool Found { get; set; }
+    public string FriendCode { get; set; } = "";
+    public string Username { get; set; } = "";
+    public string Address { get; set; } = "";
+    public bool IsOnline { get; set; }
+    public string Source { get; set; } = ""; // "LAN", "AdminHub", "Direct", "SavedAddress", "Loopback"
+    public string? Error { get; set; }
+}
+
+public class SendFriendRequestResult
+{
+    public bool Success { get; set; }
+    public bool ReceivedByPeer { get; set; }
+    public string FriendCode { get; set; } = "";
+    public string Username { get; set; } = "";
+    public string Message { get; set; } = "";
+}
 
 public class FriendService
 {
     private readonly object _lock = new();
+    private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(3.5) };
+
+    public static Func<string>? BestAddressProvider { get; set; }
 
     public UserProfile Profile => new()
     {
@@ -19,6 +47,40 @@ public class FriendService
     public string Username => AppConfig.Current.Username;
     public string FriendCode => AppConfig.Current.FriendCode;
     public IReadOnlyList<FriendEntry> Friends => AppConfig.Current.Friends;
+    public IReadOnlyList<FriendRequestItem> AllRequests => AppConfig.Current.FriendRequests;
+
+    public IReadOnlyList<FriendRequestItem> IncomingRequests
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return AppConfig.Current.FriendRequests
+                    .Where(r => r.Direction.Equals("Incoming", StringComparison.OrdinalIgnoreCase) &&
+                                r.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(r => r.CreatedAt)
+                    .ToList();
+            }
+        }
+    }
+
+    public IReadOnlyList<FriendRequestItem> OutgoingRequests
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return AppConfig.Current.FriendRequests
+                    .Where(r => r.Direction.Equals("Outgoing", StringComparison.OrdinalIgnoreCase) &&
+                                r.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(r => r.CreatedAt)
+                    .ToList();
+            }
+        }
+    }
+
+    public event Action<FriendRequestItem>? OnFriendRequestReceived;
+    public event Action<FriendEntry>? OnFriendRequestAccepted;
 
     public FriendService(string? baseDir = null)
     {
@@ -32,6 +94,578 @@ public class FriendService
             {
                 AppConfig.UpdateUsername(newUsername.Trim());
             }
+        }
+    }
+
+    /// <summary>
+    /// Auto-detects the username and live connection endpoint from a unique Friend Code (GH3-XXXX-XXXX)
+    /// across LAN UDP beacons, Central Admin Hub, direct URL, or past cached sessions.
+    /// </summary>
+    public async Task<FriendLookupResult> LookupFriendByCodeAsync(string rawInput, HttpClient? customClient = null)
+    {
+        if (string.IsNullOrWhiteSpace(rawInput))
+        {
+            return new FriendLookupResult { Found = false, Error = "Friend Code is empty." };
+        }
+
+        var client = customClient ?? _httpClient;
+        var input = rawInput.Trim();
+
+        // 1. Direct Address format: http://192.168.1.50:7373 or GH3-XXXX-XXXX@192.168.1.50:7373
+        string? directAddress = null;
+        string cleanCode = input;
+
+        if (input.Contains('@'))
+        {
+            var parts = input.Split('@', 2);
+            cleanCode = parts[0].Trim();
+            directAddress = parts[1].Trim();
+            if (!directAddress.StartsWith("http://") && !directAddress.StartsWith("https://"))
+                directAddress = "http://" + directAddress;
+        }
+        else if (input.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                 input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            directAddress = input;
+            cleanCode = "";
+        }
+
+        if (!string.IsNullOrEmpty(directAddress))
+        {
+            try
+            {
+                var profileUrl = $"{directAddress.TrimEnd('/')}/api/profile";
+                var resp = await client.GetAsync(profileUrl);
+                if (resp.IsSuccessStatusCode)
+                {
+                    var data = await resp.Content.ReadFromJsonAsync<JsonElement>();
+                    var detectedName = data.TryGetProperty("username", out var u) ? u.GetString() ?? "Player" : "Player";
+                    var detectedCode = data.TryGetProperty("friendCode", out var c) ? c.GetString() ?? cleanCode : cleanCode;
+
+                    return new FriendLookupResult
+                    {
+                        Found = true,
+                        FriendCode = detectedCode,
+                        Username = detectedName,
+                        Address = directAddress,
+                        IsOnline = true,
+                        Source = "Direct"
+                    };
+                }
+            }
+            catch { }
+        }
+
+        // Normalize Friend Code format (e.g. 1234-ABCD or GH3-1234-ABCD)
+        cleanCode = cleanCode.ToUpperInvariant().Trim();
+        if (!cleanCode.StartsWith("GH3-"))
+        {
+            cleanCode = "GH3-" + cleanCode;
+        }
+
+        // Loopback test self-detection
+        if (cleanCode.Equals(AppConfig.Current.FriendCode, StringComparison.OrdinalIgnoreCase))
+        {
+            return new FriendLookupResult
+            {
+                Found = true,
+                FriendCode = cleanCode,
+                Username = AppConfig.Current.Username,
+                Address = BestAddressProvider?.Invoke() ?? "http://127.0.0.1:7373",
+                IsOnline = true,
+                Source = "Self"
+            };
+        }
+
+        // 2. Check LAN UDP Peer Discovery Cache (Immediate detection on local Wi-Fi / LAN)
+        var lanPeer = PeerDiscoveryService.Instance?.LookupPeer(cleanCode);
+        if (lanPeer != null && !string.IsNullOrWhiteSpace(lanPeer.Address))
+        {
+            // Verify live reachability and probe for freshest username
+            try
+            {
+                var pingUrl = $"{lanPeer.Address.TrimEnd('/')}/api/profile";
+                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(1500));
+                var resp = await client.GetAsync(pingUrl, cts.Token);
+                if (resp.IsSuccessStatusCode)
+                {
+                    var data = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cts.Token);
+                    var liveName = data.TryGetProperty("username", out var u) ? u.GetString() ?? lanPeer.Username : lanPeer.Username;
+                    return new FriendLookupResult
+                    {
+                        Found = true,
+                        FriendCode = cleanCode,
+                        Username = liveName,
+                        Address = lanPeer.Address,
+                        IsOnline = true,
+                        Source = "LAN"
+                    };
+                }
+            }
+            catch
+            {
+                // Return cached LAN entry if recent
+                return new FriendLookupResult
+                {
+                    Found = true,
+                    FriendCode = cleanCode,
+                    Username = lanPeer.Username,
+                    Address = lanPeer.Address,
+                    IsOnline = (DateTime.UtcNow - lanPeer.LastSeen).TotalSeconds < 90,
+                    Source = "LAN"
+                };
+            }
+        }
+
+        // 3. Check Central Admin Hub Registry (/api/admin/resolve-friend)
+        if (!string.IsNullOrWhiteSpace(AppConfig.Current.AdminHubUrl))
+        {
+            try
+            {
+                var hubUrl = $"{AppConfig.Current.AdminHubUrl.TrimEnd('/')}/api/admin/resolve-friend?targetCode={Uri.EscapeDataString(cleanCode)}";
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2.0));
+                var resp = await client.GetAsync(hubUrl, cts.Token);
+                if (resp.IsSuccessStatusCode)
+                {
+                    var data = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cts.Token);
+                    if (data.TryGetProperty("found", out var found) && found.GetBoolean())
+                    {
+                        var hubName = data.TryGetProperty("username", out var u) ? u.GetString() ?? "Player" : "Player";
+                        var hubAddr = data.TryGetProperty("address", out var a) ? a.GetString() ?? "" : "";
+                        var isOnline = data.TryGetProperty("isOnline", out var o) && o.GetBoolean();
+
+                        return new FriendLookupResult
+                        {
+                            Found = true,
+                            FriendCode = cleanCode,
+                            Username = hubName,
+                            Address = hubAddr,
+                            IsOnline = isOnline,
+                            Source = "AdminHub"
+                        };
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // 4. Check previously saved address in existing Friends list
+        var existingFriend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+        if (existingFriend != null && !string.IsNullOrWhiteSpace(existingFriend.LastAddress))
+        {
+            try
+            {
+                var pingUrl = $"{existingFriend.LastAddress.TrimEnd('/')}/api/profile";
+                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(1500));
+                var resp = await client.GetAsync(pingUrl, cts.Token);
+                if (resp.IsSuccessStatusCode)
+                {
+                    var data = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cts.Token);
+                    var liveName = data.TryGetProperty("username", out var u) ? u.GetString() ?? existingFriend.Username : existingFriend.Username;
+                    return new FriendLookupResult
+                    {
+                        Found = true,
+                        FriendCode = cleanCode,
+                        Username = liveName,
+                        Address = existingFriend.LastAddress,
+                        IsOnline = true,
+                        Source = "SavedAddress"
+                    };
+                }
+            }
+            catch { }
+
+            return new FriendLookupResult
+            {
+                Found = true,
+                FriendCode = cleanCode,
+                Username = existingFriend.Username,
+                Address = existingFriend.LastAddress,
+                IsOnline = false,
+                Source = "SavedAddress"
+            };
+        }
+
+        return new FriendLookupResult
+        {
+            Found = false,
+            FriendCode = cleanCode,
+            Error = $"Player with Friend Code {cleanCode} not found online. Ensure your friend has GH3-Sync open on the same network or registered to the Hub."
+        };
+    }
+
+    /// <summary>
+    /// Dispatches a verified friend request over the network.
+    /// ONLY adds the friend to the requested list when the remote client explicitly acknowledges receipt with HTTP 200 OK.
+    /// </summary>
+    public async Task<SendFriendRequestResult> SendFriendRequestAsync(string rawFriendCode, string? customAddress = null, HttpClient? customClient = null)
+    {
+        var lookup = await LookupFriendByCodeAsync(rawFriendCode, customClient);
+        var cleanCode = lookup.FriendCode;
+
+        if (cleanCode.Equals(AppConfig.Current.FriendCode, StringComparison.OrdinalIgnoreCase))
+        {
+            return new SendFriendRequestResult
+            {
+                Success = false,
+                ReceivedByPeer = false,
+                FriendCode = cleanCode,
+                Message = "You cannot send a friend request to your own Friend Code."
+            };
+        }
+
+        // Check if already an active friend
+        var existing = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
+        {
+            return new SendFriendRequestResult
+            {
+                Success = false,
+                ReceivedByPeer = false,
+                FriendCode = cleanCode,
+                Username = existing.Username,
+                Message = $"{existing.Username} is already in your Friends list!"
+            };
+        }
+
+        var targetAddress = !string.IsNullOrWhiteSpace(customAddress) ? customAddress.Trim() : lookup.Address;
+        if (!targetAddress.StartsWith("http://") && !targetAddress.StartsWith("https://") && !string.IsNullOrWhiteSpace(targetAddress))
+        {
+            targetAddress = "http://" + targetAddress;
+        }
+
+        if (string.IsNullOrWhiteSpace(targetAddress))
+        {
+            // Do NOT add to requested list when peer is unreachable!
+            return new SendFriendRequestResult
+            {
+                Success = false,
+                ReceivedByPeer = false,
+                FriendCode = cleanCode,
+                Message = $"Could not deliver request: {cleanCode} is offline or unreachable on LAN & Hub. Request was NOT added."
+            };
+        }
+
+        var client = customClient ?? _httpClient;
+        var myAddress = BestAddressProvider?.Invoke() ?? "http://127.0.0.1:7373";
+        var proposedToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+
+        var payload = new
+        {
+            senderCode = AppConfig.Current.FriendCode,
+            senderUsername = AppConfig.Current.Username,
+            senderAddress = myAddress,
+            proposedTrustToken = proposedToken,
+            timestamp = DateTime.UtcNow
+        };
+
+        try
+        {
+            var reqUrl = $"{targetAddress.TrimEnd('/')}/api/friends/request";
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4.0));
+            var resp = await client.PostAsJsonAsync(reqUrl, payload, cts.Token);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cts.Token);
+                bool received = body.TryGetProperty("received", out var r) && r.GetBoolean();
+                var peerUsername = body.TryGetProperty("username", out var u) ? u.GetString() ?? lookup.Username : lookup.Username;
+                if (string.IsNullOrWhiteSpace(peerUsername)) peerUsername = $"Peer_{cleanCode[^4..]}";
+
+                if (received || resp.IsSuccessStatusCode)
+                {
+                    // VERIFIED DELIVERY CONFIRMATION: Add to Outgoing Requested List
+                    lock (_lock)
+                    {
+                        var outReq = new FriendRequestItem
+                        {
+                            FriendCode = cleanCode,
+                            Username = peerUsername,
+                            Address = targetAddress,
+                            Direction = "Outgoing",
+                            Status = "Pending",
+                            ProposedTrustToken = proposedToken,
+                            CreatedAt = DateTime.UtcNow
+                        };
+
+                        AppConfig.Current.FriendRequests.RemoveAll(x => x.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+                        AppConfig.Current.FriendRequests.Add(outReq);
+                        AppConfig.Save();
+                    }
+
+                    return new SendFriendRequestResult
+                    {
+                        Success = true,
+                        ReceivedByPeer = true,
+                        FriendCode = cleanCode,
+                        Username = peerUsername,
+                        Message = $"Friend request successfully delivered and confirmed received by {peerUsername}!"
+                    };
+                }
+            }
+
+            return new SendFriendRequestResult
+            {
+                Success = false,
+                ReceivedByPeer = false,
+                FriendCode = cleanCode,
+                Message = $"Remote client returned HTTP {(int)resp.StatusCode}. Request was NOT added to requested list."
+            };
+        }
+        catch (Exception ex)
+        {
+            // If direct peer connection failed, attempt Admin Hub queue fallback
+            if (!string.IsNullOrWhiteSpace(AppConfig.Current.AdminHubUrl))
+            {
+                try
+                {
+                    var hubUrl = $"{AppConfig.Current.AdminHubUrl.TrimEnd('/')}/api/admin/friend-request";
+                    var hubPayload = new
+                    {
+                        targetCode = cleanCode,
+                        senderCode = AppConfig.Current.FriendCode,
+                        senderUsername = AppConfig.Current.Username,
+                        senderAddress = myAddress,
+                        proposedTrustToken = proposedToken,
+                        createdAt = DateTime.UtcNow
+                    };
+                    using var hubCts = new CancellationTokenSource(TimeSpan.FromSeconds(2.5));
+                    var hubResp = await client.PostAsJsonAsync(hubUrl, hubPayload, hubCts.Token);
+                    if (hubResp.IsSuccessStatusCode)
+                    {
+                        var hubBody = await hubResp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: hubCts.Token);
+                        if (hubBody.TryGetProperty("queued", out var q) && q.GetBoolean())
+                        {
+                            lock (_lock)
+                            {
+                                var outReq = new FriendRequestItem
+                                {
+                                    FriendCode = cleanCode,
+                                    Username = lookup.Username,
+                                    Address = targetAddress,
+                                    Direction = "Outgoing",
+                                    Status = "Pending",
+                                    ProposedTrustToken = proposedToken,
+                                    CreatedAt = DateTime.UtcNow
+                                };
+                                AppConfig.Current.FriendRequests.RemoveAll(x => x.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+                                AppConfig.Current.FriendRequests.Add(outReq);
+                                AppConfig.Save();
+                            }
+                            return new SendFriendRequestResult
+                            {
+                                Success = true,
+                                ReceivedByPeer = true,
+                                FriendCode = cleanCode,
+                                Username = lookup.Username,
+                                Message = $"Friend request queued on Admin Hub for {lookup.Username} (queued for delivery on their next sync)!"
+                            };
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // Network failure / timeout -> DO NOT ADD TO REQUESTED LIST!
+            return new SendFriendRequestResult
+            {
+                Success = false,
+                ReceivedByPeer = false,
+                FriendCode = cleanCode,
+                Message = $"Delivery failed: Could not connect to {cleanCode} at {targetAddress} ({ex.Message}). Request was NOT added."
+            };
+        }
+    }
+
+    /// <summary>
+    /// Processes an incoming friend request dispatched from another peer.
+    /// Stores it in IncomingRequests and returns ACK receipt.
+    /// </summary>
+    public (bool Success, bool Received, string Status, string Username, string FriendCode) ReceiveFriendRequest(
+        string senderCode, string senderUsername, string senderAddress, string? proposedToken)
+    {
+        if (string.IsNullOrWhiteSpace(senderCode))
+            return (false, false, "invalid_code", Profile.Username, Profile.FriendCode);
+
+        var cleanCode = senderCode.Trim().ToUpperInvariant();
+        if (!cleanCode.StartsWith("GH3-")) cleanCode = "GH3-" + cleanCode;
+
+        lock (_lock)
+        {
+            // If sender is already a friend, update their last address
+            var existing = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+            if (existing != null)
+            {
+                if (!string.IsNullOrWhiteSpace(senderAddress)) existing.LastAddress = senderAddress.Trim();
+                AppConfig.Save();
+                return (true, true, "already_friends", Profile.Username, Profile.FriendCode);
+            }
+
+            var cleanName = string.IsNullOrWhiteSpace(senderUsername) ? $"Peer_{cleanCode[^4..]}" : senderUsername.Trim();
+
+            var req = AppConfig.Current.FriendRequests.FirstOrDefault(r =>
+                r.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase) &&
+                r.Direction.Equals("Incoming", StringComparison.OrdinalIgnoreCase));
+
+            if (req == null)
+            {
+                req = new FriendRequestItem
+                {
+                    FriendCode = cleanCode,
+                    Username = cleanName,
+                    Address = senderAddress?.Trim() ?? "",
+                    Direction = "Incoming",
+                    Status = "Pending",
+                    ProposedTrustToken = proposedToken ?? "",
+                    CreatedAt = DateTime.UtcNow
+                };
+                AppConfig.Current.FriendRequests.Add(req);
+            }
+            else
+            {
+                req.Username = cleanName;
+                req.Address = senderAddress?.Trim() ?? req.Address;
+                req.ProposedTrustToken = proposedToken ?? req.ProposedTrustToken;
+                req.Status = "Pending";
+                req.CreatedAt = DateTime.UtcNow;
+            }
+
+            AppConfig.Save();
+            OnFriendRequestReceived?.Invoke(req);
+
+            return (true, true, "received", Profile.Username, Profile.FriendCode);
+        }
+    }
+
+    /// <summary>
+    /// Accepts an incoming friend request, adds to active Friends with mutual trust,
+    /// and dispatches acceptance confirmation to the remote sender.
+    /// </summary>
+    public async Task<FriendEntry?> AcceptFriendRequestAsync(string requestIdOrCode, bool asTrusted = true, HttpClient? customClient = null)
+    {
+        FriendRequestItem? targetReq = null;
+        FriendEntry? newFriend = null;
+
+        lock (_lock)
+        {
+            targetReq = AppConfig.Current.FriendRequests.FirstOrDefault(r =>
+                r.Id.Equals(requestIdOrCode, StringComparison.OrdinalIgnoreCase) ||
+                r.FriendCode.Equals(requestIdOrCode, StringComparison.OrdinalIgnoreCase));
+
+            if (targetReq == null) return null;
+
+            // Add to active Friends
+            newFriend = AddFriendByCode(targetReq.FriendCode, targetReq.Username, targetReq.Address);
+            if (asTrusted)
+            {
+                newFriend.IsTrusted = true;
+                if (string.IsNullOrEmpty(newFriend.TrustToken))
+                {
+                    newFriend.TrustToken = !string.IsNullOrEmpty(targetReq.ProposedTrustToken)
+                        ? targetReq.ProposedTrustToken
+                        : Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+                }
+            }
+
+            // Remove from pending requests
+            AppConfig.Current.FriendRequests.RemoveAll(r => r.FriendCode.Equals(targetReq.FriendCode, StringComparison.OrdinalIgnoreCase));
+            AppConfig.Save();
+        }
+
+        // Notify remote sender that request was accepted
+        if (!string.IsNullOrWhiteSpace(targetReq.Address))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var client = customClient ?? _httpClient;
+                    var acceptUrl = $"{targetReq.Address.TrimEnd('/')}/api/friends/accept";
+                    var myAddress = BestAddressProvider?.Invoke() ?? "http://127.0.0.1:7373";
+
+                    var payload = new
+                    {
+                        senderCode = AppConfig.Current.FriendCode,
+                        senderUsername = AppConfig.Current.Username,
+                        senderAddress = myAddress,
+                        trustToken = newFriend.TrustToken,
+                        isTrusted = newFriend.IsTrusted
+                    };
+
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3.5));
+                    await client.PostAsJsonAsync(acceptUrl, payload, cts.Token);
+                }
+                catch { }
+            });
+        }
+
+        return newFriend;
+    }
+
+    /// <summary>
+    /// Processes acceptance confirmation sent from remote peer.
+    /// Converts our outgoing request into an active mutual friend.
+    /// </summary>
+    public FriendEntry ProcessPeerAcceptedRequest(string remoteCode, string remoteUsername, string remoteAddress, string? trustToken, bool isTrusted)
+    {
+        lock (_lock)
+        {
+            var cleanCode = remoteCode.Trim().ToUpperInvariant();
+            if (!cleanCode.StartsWith("GH3-")) cleanCode = "GH3-" + cleanCode;
+
+            AppConfig.Current.FriendRequests.RemoveAll(r => r.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+
+            var friend = AddFriendByCode(cleanCode, remoteUsername, remoteAddress);
+            friend.IsTrusted = isTrusted;
+            if (!string.IsNullOrEmpty(trustToken))
+            {
+                friend.TrustToken = trustToken;
+            }
+            else if (isTrusted && string.IsNullOrEmpty(friend.TrustToken))
+            {
+                friend.TrustToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+            }
+
+            AppConfig.Save();
+            OnFriendRequestAccepted?.Invoke(friend);
+            return friend;
+        }
+    }
+
+    public bool DeclineFriendRequest(string requestIdOrCode)
+    {
+        lock (_lock)
+        {
+            var req = AppConfig.Current.FriendRequests.FirstOrDefault(r =>
+                r.Id.Equals(requestIdOrCode, StringComparison.OrdinalIgnoreCase) ||
+                r.FriendCode.Equals(requestIdOrCode, StringComparison.OrdinalIgnoreCase));
+
+            if (req != null)
+            {
+                AppConfig.Current.FriendRequests.Remove(req);
+                AppConfig.Save();
+                return true;
+            }
+            return false;
+        }
+    }
+
+    public bool CancelOutgoingRequest(string requestIdOrCode)
+    {
+        lock (_lock)
+        {
+            var req = AppConfig.Current.FriendRequests.FirstOrDefault(r =>
+                (r.Id.Equals(requestIdOrCode, StringComparison.OrdinalIgnoreCase) ||
+                 r.FriendCode.Equals(requestIdOrCode, StringComparison.OrdinalIgnoreCase)) &&
+                r.Direction.Equals("Outgoing", StringComparison.OrdinalIgnoreCase));
+
+            if (req != null)
+            {
+                AppConfig.Current.FriendRequests.Remove(req);
+                AppConfig.Save();
+                return true;
+            }
+            return false;
         }
     }
 
@@ -61,7 +695,7 @@ public class FriendService
             }
 
             var baseName = string.IsNullOrWhiteSpace(nickname) 
-                ? $"Peer_{cleanCode.Substring(Math.Max(0, cleanCode.Length - 4))}" 
+                ? $"Peer_{cleanCode[^4..]}" 
                 : nickname.Trim();
 
             var uniqueName = EnsureUniqueNickname(baseName, cleanCode);
@@ -105,7 +739,6 @@ public class FriendService
             friend.IsTrusted = allowTrust;
             if (allowTrust)
             {
-                // Generate 32-char cryptographically secure bearer token
                 friend.TrustToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
             }
             else

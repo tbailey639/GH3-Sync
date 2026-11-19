@@ -768,20 +768,44 @@
 
                         <Border Style="{StaticResource GhCard}">
                             <StackPanel>
-                                <TextBlock Text="Add Friend by Code" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,10"/>
+                                <DockPanel Margin="0,0,0,8">
+                                    <Button DockPanel.Dock="Right" Content="🔄 Refresh Status" Style="{StaticResource OutlineButton}" Click="RefreshFriendsBtn_Click"/>
+                                    <TextBlock Text="Add Friend (Zero-Input Auto-Detection)" FontSize="14.5" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+                                </DockPanel>
+                                <TextBlock Text="Enter or paste your friend's unique Friend Code. Their username is automatically detected across LAN &amp; Hub without typing a nickname. A delivery handshake confirms they received the request before adding."
+                                           FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,12" TextWrapping="Wrap"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="10"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="10"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBox x:Name="AddFriendCodeBox" Grid.Column="0" ToolTip="Friend Code (e.g. GH3-1234-ABCD)"/>
-                                    <TextBox x:Name="AddFriendNameBox" Grid.Column="2" ToolTip="Friend Nickname"/>
-                                    <Button Grid.Column="4" Content="+ Add Friend" Style="{StaticResource GreenButton}" Click="AddFriendBtn_Click"/>
+                                    <TextBox x:Name="AddFriendCodeBox" Grid.Column="0" FontFamily="Consolas" FontSize="13.5" FontWeight="SemiBold"
+                                             ToolTip="Friend Code (e.g. GH3-1234-ABCD or paste invite)" TextChanged="AddFriendCodeBox_TextChanged"/>
+                                    <Button x:Name="SendFriendRequestBtn" Grid.Column="2" Content="🚀 Send Friend Request" Style="{StaticResource FlameButton}"
+                                            Padding="18,7" Click="SendFriendRequestBtn_Click"/>
                                 </Grid>
-                                <TextBlock Text="Left: Friend Code (e.g. GH3-6475-71AF)  •  Right: Nickname" FontSize="11" Foreground="{DynamicResource TextSectionHeader}" Margin="0,6,0,0"/>
+
+                                <!-- Live Auto-Detection Status Pill -->
+                                <Border x:Name="AutoDetectStatusPill" Visibility="Collapsed" Margin="0,10,0,0" Padding="12,8" CornerRadius="6"
+                                        Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1">
+                                    <DockPanel>
+                                        <TextBlock x:Name="AutoDetectStatusIcon" Text="🔍" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="AutoDetectStatusText" Text="Detecting player profile..." FontSize="12" Foreground="{DynamicResource TextPrimary}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    </DockPanel>
+                                </Border>
+
+                                <!-- Optional Direct Address Expander -->
+                                <Expander Header="Advanced: Direct IP / Custom Port (Optional, for manual port-forwarding without LAN/Hub)"
+                                          Foreground="{DynamicResource TextMuted}" FontSize="11" Margin="0,10,0,0">
+                                    <StackPanel Margin="0,6,0,0">
+                                        <DockPanel>
+                                            <TextBlock Text="Direct Host/IP: " Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <TextBox x:Name="DirectAddressBox" ToolTip="e.g. 192.168.1.50:7373 or my-ddns.org:7373" FontFamily="Consolas"/>
+                                        </DockPanel>
+                                        <TextBlock Text="Leave empty for automatic LAN broadcast and Central Admin Hub discovery." FontSize="10.5" Foreground="{DynamicResource TextMuted}" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Expander>
                             </StackPanel>
                         </Border>
 

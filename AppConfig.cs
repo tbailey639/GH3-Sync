@@ -71,6 +71,18 @@ public class SongRequestItem
     public DateTime RequestedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
+public class FriendRequestItem
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string FriendCode { get; set; } = "";
+    public string Username { get; set; } = "";
+    public string Address { get; set; } = "";
+    public string Direction { get; set; } = "Incoming"; // "Incoming" (they asked me) or "Outgoing" (I asked them)
+    public string Status { get; set; } = "Pending";     // "Pending", "Accepted", "Declined"
+    public string ProposedTrustToken { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
 public class FeedbackItem
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 8);
@@ -139,6 +151,7 @@ public class AppConfigData
     public Dictionary<string, string> PinnedPeerFingerprints { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public TourStats LifetimeStats { get; set; } = new();
     public List<SongRequestItem> SongRequests { get; set; } = new();
+    public List<FriendRequestItem> FriendRequests { get; set; } = new();
 }
 
 public static class AppConfig
@@ -182,6 +195,7 @@ public static class AppConfig
                             Current.FriendCode = GenerateFriendCode();
                             Save();
                         }
+                        if (Current.FriendRequests == null) Current.FriendRequests = new();
                         if (Current.Usage == null) Current.Usage = new FeatureUsageStats();
                         EnsureSeedCreatedSongs();
                         return;

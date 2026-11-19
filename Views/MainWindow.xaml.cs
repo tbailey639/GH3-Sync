@@ -181,6 +181,21 @@ public partial class MainWindow : Window
             _trayIcon?.ShowBalloonTip(3000, "Temporary Lobby Session Cleaned", msg, WinForms.ToolTipIcon.Info);
         });
 
+        _friends.OnFriendRequestReceived += req => Dispatcher.Invoke(() =>
+        {
+            RefreshFriendsList();
+            AudioWaveformAndSfxService.PlayStarPowerChime();
+            ShowStageToast("📩 NEW FRIEND REQUEST!", $"{req.Username} ({req.FriendCode}) sent you a friend request!", "#F97316");
+        });
+
+        _friends.OnFriendRequestAccepted += friend => Dispatcher.Invoke(() =>
+        {
+            RefreshFriendsList();
+            RefreshTrustedFriendDropdown();
+            AudioWaveformAndSfxService.PlayFcFanfare();
+            ShowStageToast("🎉 FRIEND ACCEPTED!", $"{friend.Username} accepted your friend request! You can now sync songs!", "#22C55E");
+        });
+
         _playerTimer.Tick += PlayerTimer_Tick;
         _player.MediaEnded += (_, _) => { _isPlayerPlaying = false; PlayerPlayPauseBtn.Content = "▶"; };
 
@@ -3933,34 +3948,315 @@ public partial class MainWindow : Window
         WpfMessageBox.Show($"Display name updated to '{name}'.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
-    private void AddFriendBtn_Click(object sender, RoutedEventArgs e)
+    private CancellationTokenSource? _autoDetectCts;
+
+    private async void AddFriendCodeBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        var code = AddFriendCodeBox.Text.Trim();
-        var name = AddFriendNameBox.Text.Trim();
-        if (string.IsNullOrEmpty(code)) return;
-        _friends.AddFriend(string.IsNullOrEmpty(name) ? code : name, code);
-        AddFriendCodeBox.Text = "";
-        AddFriendNameBox.Text = "";
+        _autoDetectCts?.Cancel();
+        var rawInput = (AddFriendCodeBox.Text ?? "").Trim();
+
+        if (string.IsNullOrWhiteSpace(rawInput) || rawInput.Length < 4)
+        {
+            AutoDetectStatusPill.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        AutoDetectStatusPill.Visibility = Visibility.Visible;
+        AutoDetectStatusIcon.Text = "🔍";
+        AutoDetectStatusText.Text = "Detecting player profile from unique ID...";
+        AutoDetectStatusPill.BorderBrush = new SolidColorBrush(WpfColor.FromRgb(56, 189, 248)); // Sky blue
+
+        var cts = new CancellationTokenSource();
+        _autoDetectCts = cts;
+
+        try
+        {
+            await Task.Delay(260, cts.Token);
+            if (cts.IsCancellationRequested) return;
+
+            var res = await _friends.LookupFriendByCodeAsync(rawInput);
+            if (cts.IsCancellationRequested) return;
+
+            if (res.Found)
+            {
+                AutoDetectStatusIcon.Text = "🎸";
+                var statusStr = res.IsOnline ? "Online" : "Last seen";
+                AutoDetectStatusText.Text = $"✓ Player Detected: \"{res.Username}\" • {statusStr} via {res.Source} ({(string.IsNullOrEmpty(res.Address) ? "P2P" : res.Address)})";
+                AutoDetectStatusPill.BorderBrush = new SolidColorBrush(WpfColor.FromRgb(34, 197, 94)); // Green
+            }
+            else
+            {
+                AutoDetectStatusIcon.Text = "⚠️";
+                AutoDetectStatusText.Text = res.Error ?? $"Player {res.FriendCode} not detected online yet. Click 'Send Friend Request' to connect.";
+                AutoDetectStatusPill.BorderBrush = new SolidColorBrush(WpfColor.FromRgb(249, 115, 22)); // Amber
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            AutoDetectStatusIcon.Text = "⚠️";
+            AutoDetectStatusText.Text = $"Lookup note: {ex.Message}";
+        }
+    }
+
+    private async void SendFriendRequestBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var rawCode = (AddFriendCodeBox.Text ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(rawCode))
+        {
+            ShowStageToast("⚠️ FRIEND CODE REQUIRED", "Please enter a Friend Code (e.g. GH3-XXXX-XXXX).", "#EF4444");
+            return;
+        }
+
+        var directAddr = (DirectAddressBox?.Text ?? "").Trim();
+        SendFriendRequestBtn.IsEnabled = false;
+        SendFriendRequestBtn.Content = "📡 Delivering Request...";
+
+        try
+        {
+            var res = await _friends.SendFriendRequestAsync(rawCode, string.IsNullOrWhiteSpace(directAddr) ? null : directAddr);
+
+            if (res.Success && res.ReceivedByPeer)
+            {
+                ShowStageToast("✓ REQUEST DELIVERED!", res.Message, "#22C55E");
+                AudioWaveformAndSfxService.PlayStarPowerChime();
+                AddFriendCodeBox.Text = "";
+                if (DirectAddressBox != null) DirectAddressBox.Text = "";
+                AutoDetectStatusPill.Visibility = Visibility.Collapsed;
+                RefreshFriendsList();
+            }
+            else
+            {
+                ShowStageToast("❌ DELIVERY FAILED", res.Message, "#EF4444");
+                AudioWaveformAndSfxService.PlayNoteMissClunk();
+                WpfMessageBox.Show(
+                    $"{res.Message}\n\nThe friend request was NOT added to your requested list because your friend's client could not be reached to confirm receipt.\n\nEnsure your friend has GH3-Sync open on the same network or connected to the Admin Hub, or supply their Direct IP:Port in the Advanced section.",
+                    "Friend Request Not Delivered",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+        finally
+        {
+            SendFriendRequestBtn.IsEnabled = true;
+            SendFriendRequestBtn.Content = "🚀 Send Friend Request";
+        }
+    }
+
+    private void RefreshFriendsBtn_Click(object sender, RoutedEventArgs e)
+    {
         RefreshFriendsList();
+        RefreshTrustedFriendDropdown();
+        ShowStageToast("🔄 REFRESHED", "Friends list and pending requests updated.", "#38BDF8");
     }
 
     private void RefreshFriendsList()
     {
         FriendsListPanel.Children.Clear();
+
+        var incoming = _friends.IncomingRequests;
+        var outgoing = _friends.OutgoingRequests;
         var list = _friends.Friends;
+
+        // ==================== 1. INCOMING REQUESTS (AWAITING YOUR APPROVAL) ====================
+        if (incoming.Count > 0)
+        {
+            var incomingHeader = new TextBlock
+            {
+                Text = $"📩 Received Friend Requests ({incoming.Count})",
+                FontSize = 15,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(WpfColor.FromRgb(249, 115, 22)),
+                Margin = new Thickness(0, 4, 0, 8)
+            };
+            FriendsListPanel.Children.Add(incomingHeader);
+
+            foreach (var req in incoming)
+            {
+                var card = new Border
+                {
+                    Style = (Style)FindResource("GhCard"),
+                    Padding = new Thickness(14),
+                    BorderBrush = new SolidColorBrush(WpfColor.FromRgb(249, 115, 22)),
+                    BorderThickness = new Thickness(1.5),
+                    Margin = new Thickness(0, 0, 0, 10)
+                };
+
+                var grid = new Grid();
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var left = new StackPanel();
+                left.Children.Add(new TextBlock
+                {
+                    Text = $"{req.Username}  ({req.FriendCode})",
+                    FontSize = 14.5,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = (WpfBrush)FindResource("TextPrimary")
+                });
+
+                var addrText = string.IsNullOrWhiteSpace(req.Address) ? "LAN / Mesh" : req.Address;
+                left.Children.Add(new TextBlock
+                {
+                    Text = $"Incoming request • From: {addrText} • Received: {req.CreatedAt:g}",
+                    FontSize = 12,
+                    Foreground = new SolidColorBrush(WpfColor.FromRgb(253, 186, 116)),
+                    Margin = new Thickness(0, 2, 0, 0)
+                });
+                Grid.SetColumn(left, 0);
+                grid.Children.Add(left);
+
+                var right = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+                var acceptTrustBtn = new System.Windows.Controls.Button
+                {
+                    Content = "✓ Accept & Trust",
+                    Style = (Style)FindResource("GreenButton"),
+                    Margin = new Thickness(0, 0, 8, 0),
+                    ToolTip = "Accept request and grant Trusted Friend permissions (P2P song download and setlist auto-sync)"
+                };
+                acceptTrustBtn.Click += async (_, _) =>
+                {
+                    var added = await _friends.AcceptFriendRequestAsync(req.Id, asTrusted: true);
+                    ShowStageToast("✓ FRIEND ADDED!", $"{req.Username} is now a Trusted Friend!", "#22C55E");
+                    AudioWaveformAndSfxService.PlayStarPowerChime();
+                    RefreshFriendsList();
+                    RefreshTrustedFriendDropdown();
+                };
+
+                var acceptRegBtn = new System.Windows.Controls.Button
+                {
+                    Content = "✓ Accept (View Only)",
+                    Style = (Style)FindResource("OutlineButton"),
+                    Margin = new Thickness(0, 0, 8, 0),
+                    ToolTip = "Accept as regular friend (view setlist only, downloads blocked)"
+                };
+                acceptRegBtn.Click += async (_, _) =>
+                {
+                    var added = await _friends.AcceptFriendRequestAsync(req.Id, asTrusted: false);
+                    ShowStageToast("✓ FRIEND ADDED!", $"{req.Username} added as regular friend.", "#38BDF8");
+                    RefreshFriendsList();
+                    RefreshTrustedFriendDropdown();
+                };
+
+                var declineBtn = new System.Windows.Controls.Button
+                {
+                    Content = "✕ Decline",
+                    Style = (Style)FindResource("DangerButton"),
+                    ToolTip = "Decline and remove this friend request"
+                };
+                declineBtn.Click += (_, _) =>
+                {
+                    _friends.DeclineFriendRequest(req.Id);
+                    ShowStageToast("✕ DECLINED", $"Friend request from {req.Username} declined.", "#EF4444");
+                    RefreshFriendsList();
+                };
+
+                right.Children.Add(acceptTrustBtn);
+                right.Children.Add(acceptRegBtn);
+                right.Children.Add(declineBtn);
+                Grid.SetColumn(right, 1);
+                grid.Children.Add(right);
+
+                card.Child = grid;
+                FriendsListPanel.Children.Add(card);
+            }
+        }
+
+        // ==================== 2. OUTGOING REQUESTS (AWAITING FRIEND CONFIRMATION) ====================
+        if (outgoing.Count > 0)
+        {
+            var outHeader = new TextBlock
+            {
+                Text = $"⏳ Sent Requests (Awaiting Friend Acceptance) ({outgoing.Count})",
+                FontSize = 15,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(WpfColor.FromRgb(56, 189, 248)),
+                Margin = new Thickness(0, incoming.Count > 0 ? 10 : 4, 0, 8)
+            };
+            FriendsListPanel.Children.Add(outHeader);
+
+            foreach (var req in outgoing)
+            {
+                var card = new Border
+                {
+                    Style = (Style)FindResource("GhCard"),
+                    Padding = new Thickness(14),
+                    Margin = new Thickness(0, 0, 0, 10)
+                };
+
+                var grid = new Grid();
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var left = new StackPanel();
+                left.Children.Add(new TextBlock
+                {
+                    Text = $"{req.Username}  ({req.FriendCode})",
+                    FontSize = 14.5,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = (WpfBrush)FindResource("TextPrimary")
+                });
+                left.Children.Add(new TextBlock
+                {
+                    Text = $"✓ Delivery confirmed to peer • Sent: {req.CreatedAt:g} • Waiting for player to accept...",
+                    FontSize = 12,
+                    Foreground = (WpfBrush)FindResource("TextMuted"),
+                    Margin = new Thickness(0, 2, 0, 0)
+                });
+                Grid.SetColumn(left, 0);
+                grid.Children.Add(left);
+
+                var right = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+                var cancelBtn = new System.Windows.Controls.Button
+                {
+                    Content = "Cancel Request",
+                    Style = (Style)FindResource("OutlineButton"),
+                    ToolTip = "Cancel this pending outgoing friend request"
+                };
+                cancelBtn.Click += (_, _) =>
+                {
+                    _friends.CancelOutgoingRequest(req.Id);
+                    ShowStageToast("CANCELED", $"Canceled request to {req.Username}.", "#94A3B8");
+                    RefreshFriendsList();
+                };
+                right.Children.Add(cancelBtn);
+                Grid.SetColumn(right, 1);
+                grid.Children.Add(right);
+
+                card.Child = grid;
+                FriendsListPanel.Children.Add(card);
+            }
+        }
+
+        // ==================== 3. ACTIVE FRIENDS ====================
+        var friendsHeader = new TextBlock
+        {
+            Text = $"👥 Active Friends ({list.Count})",
+            FontSize = 15,
+            FontWeight = FontWeights.Bold,
+            Foreground = (WpfBrush)FindResource("TextPrimary"),
+            Margin = new Thickness(0, (incoming.Count > 0 || outgoing.Count > 0) ? 12 : 4, 0, 8)
+        };
+        FriendsListPanel.Children.Add(friendsHeader);
+
         if (list.Count == 0)
         {
             FriendsListPanel.Children.Add(new Border
             {
                 Style = (Style)FindResource("GhCard"),
-                Child = new TextBlock { Text = "No friends added yet.", Foreground = (WpfBrush)FindResource("TextMuted") }
+                Child = new TextBlock
+                {
+                    Text = "No active friends yet. Enter a friend's code above to send a verified request, or share your Friend Code so friends can add you!",
+                    Foreground = (WpfBrush)FindResource("TextMuted")
+                }
             });
             return;
         }
 
         foreach (var f in list)
         {
-            var card = new Border { Style = (Style)FindResource("GhCard"), Padding = new Thickness(14) };
+            var card = new Border { Style = (Style)FindResource("GhCard"), Padding = new Thickness(14), Margin = new Thickness(0, 0, 0, 10) };
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -3973,6 +4269,16 @@ public partial class MainWindow : Window
                 FontSize = 12,
                 Foreground = (WpfBrush)FindResource(f.IsTrusted ? "CardSuccessTitle" : "TextMuted")
             });
+            if (!string.IsNullOrWhiteSpace(f.LastAddress))
+            {
+                left.Children.Add(new TextBlock
+                {
+                    Text = $"Last Connection: {f.LastAddress}",
+                    FontSize = 11,
+                    Foreground = (WpfBrush)FindResource("TextMuted"),
+                    Margin = new Thickness(0, 2, 0, 0)
+                });
+            }
             Grid.SetColumn(left, 0);
             grid.Children.Add(left);
 

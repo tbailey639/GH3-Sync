@@ -135,6 +135,11 @@ static bool IsExternalP2pRoute(string path)
     if (path.Equals("/api/manifest", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/api/download-customs-pak", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.StartsWith("/api/download/", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/api/profile", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/api/friends/request", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/api/friends/accept", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/api/friends/decline", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/api/friends/check-status", StringComparison.OrdinalIgnoreCase)) return true;
     return false;
 }
 
@@ -278,6 +283,8 @@ string GetLocalIpAddress()
     return "127.0.0.1";
 }
 
+FriendService.BestAddressProvider = GetBestPublicOrLanAddress;
+
 bool TryAuthorize(HttpContext context, SecurityService sec, FriendService friends, SyncLogger logger, out string sharedSecret, out bool isTrustedFriend)
 {
     sharedSecret = sec.PairingPin;
@@ -404,6 +411,20 @@ _ = Task.Run(async () =>
                 if (reply.TryGetProperty("broadcast", out var b))
                 {
                     globalBroadcastNotice = b.GetString() ?? "";
+                }
+                if (reply.TryGetProperty("pendingRequests", out var pr) && pr.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in pr.EnumerateArray())
+                    {
+                        var sCode = item.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
+                        var sUser = item.TryGetProperty("senderUsername", out var su) ? su.GetString() ?? "" : "";
+                        var sAddr = item.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
+                        var sTok = item.TryGetProperty("proposedTrustToken", out var pt) ? pt.GetString() : null;
+                        if (!string.IsNullOrWhiteSpace(sCode))
+                        {
+                            friendService.ReceiveFriendRequest(sCode, sUser, sAddr, sTok);
+                        }
+                    }
                 }
             }
         }
@@ -747,6 +768,169 @@ app.MapPost("/api/profile", async (HttpContext context, FriendService friends, S
 });
 
 app.MapGet("/api/friends", (FriendService friends) => Results.Ok(friends.Friends));
+
+app.MapGet("/api/friends/requests", (FriendService friends) => Results.Ok(new
+{
+    incoming = friends.IncomingRequests,
+    outgoing = friends.OutgoingRequests
+}));
+
+app.MapPost("/api/friends/lookup", async (HttpContext context, FriendService friends, IHttpClientFactory clientFactory) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+    var code = req.TryGetProperty("friendCode", out var c) ? c.GetString() ?? "" : "";
+    var client = clientFactory.CreateClient();
+    var result = await friends.LookupFriendByCodeAsync(code, client);
+    return Results.Ok(result);
+});
+
+app.MapPost("/api/friends/send-request", async (HttpContext context, FriendService friends, IHttpClientFactory clientFactory, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+    var code = req.TryGetProperty("friendCode", out var c) ? c.GetString() ?? "" : "";
+    var address = req.TryGetProperty("address", out var a) ? a.GetString() : null;
+
+    if (string.IsNullOrWhiteSpace(code))
+        return Results.BadRequest(new { success = false, message = "Friend Code is required." });
+
+    var client = clientFactory.CreateClient();
+    var result = await friends.SendFriendRequestAsync(code, address, client);
+    if (result.Success && result.ReceivedByPeer)
+    {
+        AppConfig.IncrementUsage("friend");
+        logger.LogInfo($"[FRIENDS] Friend request delivered and confirmed received by {result.Username} ({result.FriendCode})");
+    }
+    else
+    {
+        logger.LogWarn($"[FRIENDS] Could not deliver friend request to {code}: {result.Message}");
+    }
+
+    return Results.Ok(result);
+});
+
+// P2P Handshake: Remote peer calls this endpoint to deliver an incoming friend request
+app.MapPost("/api/friends/request", async (HttpContext context, FriendService friends, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+
+    var senderCode = req.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
+    var senderUsername = req.TryGetProperty("senderUsername", out var su) ? su.GetString() ?? "" : "";
+    var senderAddress = req.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
+    var proposedToken = req.TryGetProperty("proposedTrustToken", out var pt) ? pt.GetString() : null;
+
+    if (string.IsNullOrWhiteSpace(senderCode))
+        return Results.BadRequest(new { error = "senderCode is required." });
+
+    var res = friends.ReceiveFriendRequest(senderCode, senderUsername, senderAddress, proposedToken);
+    logger.LogInfo($"[FRIENDS] Received friend request from {senderUsername} ({senderCode}) at {senderAddress} [Status: {res.Status}]");
+
+    return Results.Ok(new
+    {
+        success = res.Success,
+        received = res.Received,
+        status = res.Status,
+        username = res.Username,
+        friendCode = res.FriendCode,
+        message = "Friend request successfully received and waiting for approval."
+    });
+});
+
+// P2P Handshake: Remote peer calls this endpoint when they accept our friend request
+app.MapPost("/api/friends/accept", async (HttpContext context, FriendService friends, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+
+    var senderCode = req.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
+    var senderUsername = req.TryGetProperty("senderUsername", out var su) ? su.GetString() ?? "" : "";
+    var senderAddress = req.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
+    var trustToken = req.TryGetProperty("trustToken", out var tt) ? tt.GetString() : null;
+    var isTrusted = !req.TryGetProperty("isTrusted", out var it) || it.GetBoolean();
+
+    if (!string.IsNullOrWhiteSpace(senderCode))
+    {
+        var friend = friends.ProcessPeerAcceptedRequest(senderCode, senderUsername, senderAddress, trustToken, isTrusted);
+        logger.LogInfo($"[FRIENDS] Remote peer {friend.Username} ({friend.FriendCode}) accepted friend request! Mutual trust established.");
+    }
+
+    return Results.Ok(new { success = true });
+});
+
+app.MapPost("/api/friends/accept-request", async (HttpContext context, FriendService friends, IHttpClientFactory clientFactory, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+    var idOrCode = req.TryGetProperty("id", out var i) ? i.GetString() ?? "" : (req.TryGetProperty("friendCode", out var c) ? c.GetString() ?? "" : "");
+    var asTrusted = !req.TryGetProperty("asTrusted", out var at) || at.GetBoolean();
+
+    var client = clientFactory.CreateClient();
+    var added = await friends.AcceptFriendRequestAsync(idOrCode, asTrusted, client);
+    if (added != null)
+    {
+        AppConfig.IncrementUsage("friend");
+        logger.LogInfo($"[FRIENDS] Accepted friend request for {added.Username} ({added.FriendCode}) [Trusted: {added.IsTrusted}]");
+        return Results.Ok(new { success = true, friend = added });
+    }
+    return Results.NotFound(new { error = "Friend request not found." });
+});
+
+app.MapPost("/api/friends/decline-request", async (HttpContext context, FriendService friends, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+    var idOrCode = req.TryGetProperty("id", out var i) ? i.GetString() ?? "" : (req.TryGetProperty("friendCode", out var c) ? c.GetString() ?? "" : "");
+
+    var ok = friends.DeclineFriendRequest(idOrCode);
+    logger.LogInfo($"[FRIENDS] Declined friend request for {idOrCode}");
+    return Results.Ok(new { success = ok });
+});
+
+app.MapPost("/api/friends/cancel-request", async (HttpContext context, FriendService friends, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+    var idOrCode = req.TryGetProperty("id", out var i) ? i.GetString() ?? "" : (req.TryGetProperty("friendCode", out var c) ? c.GetString() ?? "" : "");
+
+    var ok = friends.CancelOutgoingRequest(idOrCode);
+    logger.LogInfo($"[FRIENDS] Canceled outgoing friend request for {idOrCode}");
+    return Results.Ok(new { success = ok });
+});
+
+app.MapGet("/api/friends/check-status", (string? code, FriendService friends) =>
+{
+    var cleanCode = code?.Trim().ToUpperInvariant() ?? "";
+    if (!cleanCode.StartsWith("GH3-")) cleanCode = "GH3-" + cleanCode;
+
+    var friend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+    if (friend != null)
+    {
+        return Results.Ok(new
+        {
+            isFriend = true,
+            isTrusted = friend.IsTrusted,
+            trustToken = friend.IsTrusted ? friend.TrustToken : "",
+            username = friends.Profile.Username
+        });
+    }
+
+    return Results.Ok(new
+    {
+        isFriend = false,
+        isTrusted = false,
+        trustToken = "",
+        username = friends.Profile.Username
+    });
+});
 
 app.MapPost("/api/friends/add", async (HttpContext context, FriendService friends, SyncLogger logger) =>
 {

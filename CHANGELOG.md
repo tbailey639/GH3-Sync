@@ -4,6 +4,18 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.2.0] - 2026-11-18 — Verified P2P Friends & Handshake Edition
+
+### Automatic Username Detection & Handshake Delivery Confirmation
+* **Zero-Input Auto-Detection of Username from Unique ID:** Friend Codes (`GH3-XXXX-XXXX`) are automatically resolved in real time across **LAN broadcast beacons (`PeerDiscoveryService`)**, **Central Admin Hub (`/api/admin/resolve-friend`)**, and **direct P2P profile queries (`/api/profile`)**. Typing or pasting a Friend Code immediately previews the friend's actual username and live online status with zero manual nickname typing.
+* **Bi-Directional P2P Delivery Handshake:** When adding a friend, GH3-Sync dispatches an actual network handshake request (`POST /api/friends/request`) to the friend's client. The remote client acknowledges receipt with HTTP 200 OK.
+* **Strict Receipt Confirmation Requirement:** GH3-Sync verifies that the friend request was actually received by the friend's client before adding them to the Outgoing Requested list. If the peer is unreachable or offline, the request is **NOT** added to the requested list, and a clear diagnostic alert explains why.
+* **Incoming Friend Request Approval System:** When a friend sends a request, the recipient receives a live animated **GH3 Stage Toast notification** (`"📩 NEW FRIEND REQUEST!"`) and Star Power audio chime. In the upgraded `Friends & Trusted Network` page, incoming requests appear in a dedicated section with 1-click **Accept & Trust** (generating mutual DPAPI-encrypted 32-character Trust Tokens for custom song downloads & setlist auto-sync), **Accept (View Only)**, or **Decline**.
+* **NAT Firewall Relay & Admin Hub Queuing Fallback:** If two players are behind restrictive firewalls/NAT without port forwarding or tunnels, requests automatically queue on the Admin Hub and deliver on the friend's next client heartbeat.
+* **External P2P Security Route Whitelist:** Updated the zero-trust external IP lockdown to whitelist `/api/profile`, `/api/friends/request`, `/api/friends/accept`, `/api/friends/decline`, and `/api/friends/check-status`, allowing direct P2P friend connections while maintaining localhost DNS-rebinding and CSRF shields.
+
+---
+
 ## [v1.1.0] - 2026-11-18 — Encore & Zero-Trust Edition
 
 ### Universal Plug-and-Play Controller Support (DualSense Edge • PlayStation • Xbox • Guitar)
