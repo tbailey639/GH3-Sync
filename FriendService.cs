@@ -232,7 +232,37 @@ public class FriendService
             };
         }
 
-        // 2. Check LAN UDP Peer Discovery Cache (Immediate detection on local Wi-Fi / LAN)
+        // 2. Check Global P2P Signaling Relay FIRST (Instant Internet rendezvous by Friend Code - typically ~300ms)
+        var existingFriend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+        try
+        {
+            if (SignalingRelay != null)
+            {
+                var (found, sUser, sAddr, sNorm) = await SignalingRelay.ResolvePeerAsync(cleanCode);
+                if (found && !string.IsNullOrWhiteSpace(sAddr))
+                {
+                    if (existingFriend != null)
+                    {
+                        existingFriend.LastAddress = sAddr;
+                        if (!string.IsNullOrWhiteSpace(sUser)) existingFriend.Username = sUser;
+                        AppConfig.Save();
+                    }
+
+                    return new FriendLookupResult
+                    {
+                        Found = true,
+                        FriendCode = sNorm,
+                        Username = sUser,
+                        Address = sAddr,
+                        IsOnline = true,
+                        Source = "SignalingRelay"
+                    };
+                }
+            }
+        }
+        catch { }
+
+        // 3. Check LAN UDP Peer Discovery Cache (Immediate detection on local Wi-Fi / LAN)
         var lanPeer = PeerDiscoveryService.Instance?.LookupPeer(cleanCode);
         if (lanPeer != null && !string.IsNullOrWhiteSpace(lanPeer.Address))
         {
@@ -272,40 +302,7 @@ public class FriendService
             }
         }
 
-        // 3. Check Central Admin Hub Registry (/api/admin/resolve-friend)
-        if (!string.IsNullOrWhiteSpace(AppConfig.Current.AdminHubUrl))
-        {
-            try
-            {
-                var hubUrl = $"{AppConfig.Current.AdminHubUrl.TrimEnd('/')}/api/admin/resolve-friend?targetCode={Uri.EscapeDataString(cleanCode)}";
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2.0));
-                var resp = await client.GetAsync(hubUrl, cts.Token);
-                if (resp.IsSuccessStatusCode)
-                {
-                    var data = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cts.Token);
-                    if (data.TryGetProperty("found", out var found) && found.GetBoolean())
-                    {
-                        var hubName = data.TryGetProperty("username", out var u) ? u.GetString() ?? "Player" : "Player";
-                        var hubAddr = data.TryGetProperty("address", out var a) ? a.GetString() ?? "" : "";
-                        var isOnline = data.TryGetProperty("isOnline", out var o) && o.GetBoolean();
-
-                        return new FriendLookupResult
-                        {
-                            Found = true,
-                            FriendCode = cleanCode,
-                            Username = hubName,
-                            Address = hubAddr,
-                            IsOnline = isOnline,
-                            Source = "AdminHub"
-                        };
-                    }
-                }
-            }
-            catch { }
-        }
-
         // 4. Check previously saved address in existing Friends list
-        var existingFriend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
         if (existingFriend != null && !string.IsNullOrWhiteSpace(existingFriend.LastAddress) && !existingFriend.LastAddress.Contains("169.254."))
         {
             try
@@ -331,34 +328,37 @@ public class FriendService
             catch { }
         }
 
-        // 5. Check Global P2P Signaling Relay (Instant Internet rendezvous by Friend Code)
-        try
+        // 5. Check Central Admin Hub Registry (/api/admin/resolve-friend) only if external hub configured
+        if (!string.IsNullOrWhiteSpace(AppConfig.Current.AdminHubUrl) && !AppConfig.Current.AdminHubUrl.Contains("localhost:7575"))
         {
-            if (SignalingRelay != null)
+            try
             {
-                var (found, sUser, sAddr, sNorm) = await SignalingRelay.ResolvePeerAsync(cleanCode);
-                if (found && !string.IsNullOrWhiteSpace(sAddr))
+                var hubUrl = $"{AppConfig.Current.AdminHubUrl.TrimEnd('/')}/api/admin/resolve-friend?targetCode={Uri.EscapeDataString(cleanCode)}";
+                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(1500));
+                var resp = await client.GetAsync(hubUrl, cts.Token);
+                if (resp.IsSuccessStatusCode)
                 {
-                    if (existingFriend != null)
+                    var data = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cts.Token);
+                    if (data.TryGetProperty("found", out var found) && found.GetBoolean())
                     {
-                        existingFriend.LastAddress = sAddr;
-                        if (!string.IsNullOrWhiteSpace(sUser)) existingFriend.Username = sUser;
-                        AppConfig.Save();
-                    }
+                        var hubName = data.TryGetProperty("username", out var u) ? u.GetString() ?? "Player" : "Player";
+                        var hubAddr = data.TryGetProperty("address", out var a) ? a.GetString() ?? "" : "";
+                        var isOnline = data.TryGetProperty("isOnline", out var o) && o.GetBoolean();
 
-                    return new FriendLookupResult
-                    {
-                        Found = true,
-                        FriendCode = sNorm,
-                        Username = sUser,
-                        Address = sAddr,
-                        IsOnline = true,
-                        Source = "SignalingRelay"
-                    };
+                        return new FriendLookupResult
+                        {
+                            Found = true,
+                            FriendCode = cleanCode,
+                            Username = hubName,
+                            Address = hubAddr,
+                            IsOnline = isOnline,
+                            Source = "AdminHub"
+                        };
+                    }
                 }
             }
+            catch { }
         }
-        catch { }
 
         if (existingFriend != null)
         {
@@ -447,7 +447,10 @@ public class FriendService
         var myAddress = BestAddressProvider?.Invoke() ?? "http://127.0.0.1:7373";
         var proposedToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
 
-        if (string.IsNullOrWhiteSpace(targetAddress) || targetAddress.Contains("169.254."))
+        var peerDisplay = !string.IsNullOrWhiteSpace(lookup.Username) ? lookup.Username : $"Player_{cleanCode[^4..]}";
+
+        // Helper to record outgoing request and return success via Relay
+        async Task<SendFriendRequestResult?> TrySendViaSignalingRelayAsync()
         {
             if (SignalingRelay != null)
             {
@@ -459,7 +462,7 @@ public class FriendService
                         var req = new FriendRequestItem
                         {
                             FriendCode = cleanCode,
-                            Username = !string.IsNullOrWhiteSpace(lookup.Username) ? lookup.Username : $"Player_{cleanCode[^4..]}",
+                            Username = peerDisplay,
                             Direction = "Outgoing",
                             Status = "Pending",
                             CreatedAt = DateTime.UtcNow,
@@ -478,11 +481,18 @@ public class FriendService
                         Success = true,
                         ReceivedByPeer = true,
                         FriendCode = cleanCode,
-                        Username = lookup.Username,
-                        Message = $"Friend request delivered to {cleanCode} via Global P2P Signaling Relay!"
+                        Username = peerDisplay,
+                        Message = $"Friend request delivered to {peerDisplay} ({cleanCode}) via Global P2P Signaling Relay!"
                     };
                 }
             }
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(targetAddress) || targetAddress.Contains("169.254."))
+        {
+            var relayResult = await TrySendViaSignalingRelayAsync();
+            if (relayResult != null) return relayResult;
 
             // Do NOT add to requested list when peer is unreachable!
             return new SendFriendRequestResult
@@ -490,7 +500,7 @@ public class FriendService
                 Success = false,
                 ReceivedByPeer = false,
                 FriendCode = cleanCode,
-                Message = $"Could not reach {cleanCode} across local Wi-Fi or Hub.\n\nEnsure your friend has GH3-Sync open!"
+                Message = $"Could not reach {cleanCode} across local Wi-Fi or Signaling Relay.\n\nEnsure your friend has GH3-Sync open!"
             };
         }
 
@@ -504,10 +514,11 @@ public class FriendService
             timestamp = DateTime.UtcNow
         };
 
+        string directError = "";
         try
         {
             var reqUrl = $"{targetAddress.TrimEnd('/')}/api/friends/request";
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20.0));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5.0));
             HttpResponseMessage resp;
             try
             {
@@ -515,16 +526,15 @@ public class FriendService
             }
             catch (Exception) when (!cts.IsCancellationRequested)
             {
-                await Task.Delay(1000, cts.Token);
-                resp = await client.PostAsJsonAsync(reqUrl, payload, cts.Token);
+                using var retryCts = new CancellationTokenSource(TimeSpan.FromSeconds(3.0));
+                resp = await client.PostAsJsonAsync(reqUrl, payload, retryCts.Token);
             }
 
             if (resp.IsSuccessStatusCode)
             {
                 var body = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cts.Token);
                 bool received = body.TryGetProperty("received", out var r) && r.GetBoolean();
-                var peerUsername = body.TryGetProperty("username", out var u) ? u.GetString() ?? lookup.Username : lookup.Username;
-                if (string.IsNullOrWhiteSpace(peerUsername)) peerUsername = $"Peer_{cleanCode[^4..]}";
+                var peerUsername = body.TryGetProperty("username", out var u) ? u.GetString() ?? peerDisplay : peerDisplay;
 
                 if (received || resp.IsSuccessStatusCode)
                 {
@@ -559,116 +569,83 @@ public class FriendService
                     };
                 }
             }
-
-            return new SendFriendRequestResult
+            else
             {
-                Success = false,
-                ReceivedByPeer = false,
-                FriendCode = cleanCode,
-                Message = $"Remote client returned HTTP {(int)resp.StatusCode}. Request was NOT added to requested list."
-            };
+                directError = $"HTTP {(int)resp.StatusCode}";
+            }
         }
         catch (Exception ex)
         {
-            // If direct peer connection failed, attempt Admin Hub queue fallback
-            if (!string.IsNullOrWhiteSpace(AppConfig.Current.AdminHubUrl))
-            {
-                try
-                {
-                    var hubUrl = $"{AppConfig.Current.AdminHubUrl.TrimEnd('/')}/api/admin/friend-request";
-                    var hubPayload = new
-                    {
-                        targetCode = cleanCode,
-                        senderCode = AppConfig.Current.FriendCode,
-                        senderUsername = AppConfig.Current.Username,
-                        senderAddress = myAddress,
-                        proposedTrustToken = proposedToken,
-                        isTrusted = asTrusted,
-                        createdAt = DateTime.UtcNow
-                    };
-                    using var hubCts = new CancellationTokenSource(TimeSpan.FromSeconds(2.5));
-                    var hubResp = await client.PostAsJsonAsync(hubUrl, hubPayload, hubCts.Token);
-                    if (hubResp.IsSuccessStatusCode)
-                    {
-                        var hubBody = await hubResp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: hubCts.Token);
-                        if (hubBody.TryGetProperty("queued", out var q) && q.GetBoolean())
-                        {
-                            lock (_lock)
-                            {
-                                var outReq = new FriendRequestItem
-                                {
-                                    FriendCode = cleanCode,
-                                    Username = lookup.Username,
-                                    Address = targetAddress,
-                                    Direction = "Outgoing",
-                                    Status = "Pending",
-                                    ProposedTrustToken = proposedToken,
-                                    IsTrustedRequest = asTrusted,
-                                    RequestType = "Friend",
-                                    CreatedAt = DateTime.UtcNow
-                                };
-                                AppConfig.Current.FriendRequests.RemoveAll(x => x.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
-                                AppConfig.Current.FriendRequests.Add(outReq);
-                                AppConfig.Save();
-                            }
-                            return new SendFriendRequestResult
-                            {
-                                Success = true,
-                                ReceivedByPeer = true,
-                                FriendCode = cleanCode,
-                                Username = lookup.Username,
-                                Message = $"Friend request queued on Admin Hub for {lookup.Username} (queued for delivery on their next sync)!"
-                            };
-                        }
-                    }
-                }
-                catch { }
-            }
-
-            if (SignalingRelay != null)
-            {
-                var sigSent = await SignalingRelay.SendFriendRequestPacketAsync(cleanCode, AppConfig.Current.FriendCode, AppConfig.Current.Username, myAddress, proposedToken, asTrusted);
-                if (sigSent)
-                {
-                    lock (_lock)
-                    {
-                        var req = new FriendRequestItem
-                        {
-                            FriendCode = cleanCode,
-                            Username = !string.IsNullOrWhiteSpace(lookup.Username) ? lookup.Username : $"Player_{cleanCode[^4..]}",
-                            Direction = "Outgoing",
-                            Status = "Pending",
-                            CreatedAt = DateTime.UtcNow,
-                            Address = targetAddress,
-                            ProposedTrustToken = proposedToken,
-                            IsTrustedRequest = asTrusted,
-                            RequestType = "Friend"
-                        };
-                        AppConfig.Current.FriendRequests.RemoveAll(x => x.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
-                        AppConfig.Current.FriendRequests.Add(req);
-                        AppConfig.Save();
-                    }
-
-                    return new SendFriendRequestResult
-                    {
-                        Success = true,
-                        ReceivedByPeer = true,
-                        FriendCode = cleanCode,
-                        Username = lookup.Username,
-                        Message = $"Friend request delivered to {lookup.Username} ({cleanCode}) via Global P2P Signaling Relay!"
-                    };
-                }
-            }
-
-            // Network failure / timeout -> DO NOT ADD TO REQUESTED LIST!
-            return new SendFriendRequestResult
-            {
-                Success = false,
-                ReceivedByPeer = false,
-                FriendCode = cleanCode,
-                Message = $"Delivery failed: Could not connect to {cleanCode} at {targetAddress} ({ex.Message}). Request was NOT added."
-            };
+            directError = ex.Message;
         }
+
+        // Direct HTTP failed (e.g. 502/530 Bad Gateway, timeout, tunnel rotated) -> Automatic Global Signaling Relay fallback!
+        var relayFallback = await TrySendViaSignalingRelayAsync();
+        if (relayFallback != null) return relayFallback;
+
+        // If direct peer connection failed and signaling failed, attempt Admin Hub queue fallback if external hub configured
+        if (!string.IsNullOrWhiteSpace(AppConfig.Current.AdminHubUrl) && !AppConfig.Current.AdminHubUrl.Contains("localhost:7575"))
+        {
+            try
+            {
+                var hubUrl = $"{AppConfig.Current.AdminHubUrl.TrimEnd('/')}/api/admin/friend-request";
+                var hubPayload = new
+                {
+                    targetCode = cleanCode,
+                    senderCode = AppConfig.Current.FriendCode,
+                    senderUsername = AppConfig.Current.Username,
+                    senderAddress = myAddress,
+                    proposedTrustToken = proposedToken,
+                    isTrusted = asTrusted,
+                    createdAt = DateTime.UtcNow
+                };
+                using var hubCts = new CancellationTokenSource(TimeSpan.FromSeconds(2.0));
+                var hubResp = await client.PostAsJsonAsync(hubUrl, hubPayload, hubCts.Token);
+                if (hubResp.IsSuccessStatusCode)
+                {
+                    var hubBody = await hubResp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: hubCts.Token);
+                    if (hubBody.TryGetProperty("queued", out var q) && q.GetBoolean())
+                    {
+                        lock (_lock)
+                        {
+                            var outReq = new FriendRequestItem
+                            {
+                                FriendCode = cleanCode,
+                                Username = peerDisplay,
+                                Address = targetAddress,
+                                Direction = "Outgoing",
+                                Status = "Pending",
+                                ProposedTrustToken = proposedToken,
+                                IsTrustedRequest = asTrusted,
+                                RequestType = "Friend",
+                                CreatedAt = DateTime.UtcNow
+                            };
+                            AppConfig.Current.FriendRequests.RemoveAll(x => x.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+                            AppConfig.Current.FriendRequests.Add(outReq);
+                            AppConfig.Save();
+                        }
+                        return new SendFriendRequestResult
+                        {
+                            Success = true,
+                            ReceivedByPeer = true,
+                            FriendCode = cleanCode,
+                            Username = peerDisplay,
+                            Message = $"Friend request queued on Admin Hub for {peerDisplay}!"
+                        };
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // Network failure / timeout -> DO NOT ADD TO REQUESTED LIST!
+        return new SendFriendRequestResult
+        {
+            Success = false,
+            ReceivedByPeer = false,
+            FriendCode = cleanCode,
+            Message = $"Delivery failed: Could not connect to {cleanCode} at {targetAddress} ({directError}). Request was NOT added."
+        };
     }
 
     /// <summary>

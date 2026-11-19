@@ -129,10 +129,23 @@ public class SignalingRelayService
         var topicKey = CleanTopicCode(normCode);
         if (string.IsNullOrWhiteSpace(topicKey)) return (false, "", "", normCode);
 
+        // 1. Fast query: past 10 minutes (typical response ~300ms)
+        var res = await QueryPeerFromNtfyAsync(normCode, topicKey, "10m");
+        if (res.Found) return res;
+
+        // 2. Fallback query: past 2 hours
+        res = await QueryPeerFromNtfyAsync(normCode, topicKey, "2h");
+        if (res.Found) return res;
+
+        return (false, "", "", normCode);
+    }
+
+    private async Task<(bool Found, string Username, string Address, string NormalizedCode)> QueryPeerFromNtfyAsync(string normCode, string topicKey, string since)
+    {
         try
         {
-            var url = $"https://ntfy.sh/gh3sync-sig-{topicKey}/json?poll=1";
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4.0));
+            var url = $"https://ntfy.sh/gh3sync-sig-{topicKey}/json?poll=1&since={since}";
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6.0));
             var resp = await _http.GetAsync(url, cts.Token);
             if (!resp.IsSuccessStatusCode) return (false, "", "", normCode);
 
@@ -184,6 +197,7 @@ public class SignalingRelayService
                             if (existingFriend != null)
                             {
                                 existingFriend.ActivityStatus = peerActivity;
+                                existingFriend.LastAddress = peerAddr;
                                 if (!string.IsNullOrWhiteSpace(peerShowcase)) existingFriend.ShowcaseSong = peerShowcase;
                             }
                             OnPeerActivityUpdated?.Invoke(peerCode, peerActivity, peerShowcase);
@@ -448,9 +462,9 @@ public class SignalingRelayService
     {
         try
         {
-            var url = $"https://ntfy.sh/gh3sync-req-{myCleanTopic}/json?poll=1";
+            var url = $"https://ntfy.sh/gh3sync-req-{myCleanTopic}/json?poll=1&since=24h";
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(TimeSpan.FromSeconds(4.0));
+            cts.CancelAfter(TimeSpan.FromSeconds(6.0));
 
             var resp = await _http.GetAsync(url, cts.Token);
             if (!resp.IsSuccessStatusCode) return;
@@ -566,9 +580,9 @@ public class SignalingRelayService
     {
         try
         {
-            var url = $"https://ntfy.sh/gh3sync-ack-{myCleanTopic}/json?poll=1";
+            var url = $"https://ntfy.sh/gh3sync-ack-{myCleanTopic}/json?poll=1&since=24h";
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(TimeSpan.FromSeconds(4.0));
+            cts.CancelAfter(TimeSpan.FromSeconds(6.0));
 
             var resp = await _http.GetAsync(url, cts.Token);
             if (!resp.IsSuccessStatusCode) return;
