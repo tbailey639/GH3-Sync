@@ -74,10 +74,12 @@ public class TunnelAndMeshService : IDisposable
                     if (uni.Address.AddressFamily != AddressFamily.InterNetwork) continue;
                     var bytes = uni.Address.GetAddressBytes();
                     if (bytes.Length != 4) continue;
+                    // Ignore dead unconfigured APIPA link-local fallback addresses (169.254.x.x)
+                    if (bytes[0] == 169 && bytes[1] == 254) continue;
                     var ip = uni.Address.ToString();
 
                     bool isTailscaleRange = bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127;
-                    if (nameAndDesc.Contains("Tailscale", StringComparison.OrdinalIgnoreCase) || isTailscaleRange)
+                    if ((nameAndDesc.Contains("Tailscale", StringComparison.OrdinalIgnoreCase) && isTailscaleRange) || isTailscaleRange)
                     {
                         results.Add(new MeshInterfaceInfo
                         {

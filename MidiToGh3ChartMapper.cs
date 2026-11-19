@@ -87,6 +87,14 @@ public static class MidiToGh3ChartMapper
         // 2. Clean, group, and strictly quantize raw transcribed notes onto musical subdivisions
         var allEvents = GroupAndQuantizeNoteEvents(rawNotes, secondsToTick);
 
+        // Musical Key & Scale Snapping (eliminates microtonal feedback and out-of-scale dissonant notes)
+        var detectedScale = DetectMusicalScale(allEvents);
+        foreach (var ev in allEvents)
+        {
+            ev.RootPitch = detectedScale.SnapMidiPitch(ev.RootPitch);
+            ev.TopPitch = detectedScale.SnapMidiPitch(ev.TopPitch);
+        }
+
         double songDuration = durationSeconds > 5
             ? durationSeconds
             : (allEvents.Count > 0 ? allEvents[^1].EndSec + 2.0 : 180.0);
@@ -105,6 +113,14 @@ public static class MidiToGh3ChartMapper
         bool hasCoopBass = bassNotes != null && bassNotes.Count >= 20;
         var bassEvents = hasCoopBass ? GroupAndQuantizeNoteEvents(bassNotes!, secondsToTick) : new List<NoteEvent>();
         if (bassEvents.Count < 16) hasCoopBass = false;
+        else
+        {
+            foreach (var bev in bassEvents)
+            {
+                bev.RootPitch = detectedScale.SnapMidiPitch(bev.RootPitch);
+                bev.TopPitch = detectedScale.SnapMidiPitch(bev.TopPitch);
+            }
+        }
 
         var sb = new StringBuilder();
         sb.AppendLine("[Song]");
@@ -150,28 +166,31 @@ public static class MidiToGh3ChartMapper
 
         // Build all 4 Lead Guitar difficulties (with Riff Memory, Hand-Box Ergonomics, Forced HOPOs/Strums, Energy Chords)
         WriteDifficultyTrack(sb, "ExpertSingle", allEvents, lowPitch, highPitch, measureEnergies,
-            soloStartTick, soloEndTick,
+            soloStartTick, soloEndTick, safeBpm,
             maxFrets: 5, minSpacingSec: 0.080 * feelScale,
             allowChords: true, allowThreeNoteChords: true, allowSustains: true, allowForcedMarkers: true,
             ampFloor: 0.12f, isBassTrack: false, statsOut: statsOut);
 
+        // HardSingle: Full 5 frets (Green through Orange)! Introduces the index-finger slide and moderate density
         WriteDifficultyTrack(sb, "HardSingle", allEvents, lowPitch, highPitch, measureEnergies,
-            soloStartTick, soloEndTick,
-            maxFrets: 4, minSpacingSec: 0.145 * feelScale,
+            soloStartTick, soloEndTick, safeBpm,
+            maxFrets: 5, minSpacingSec: 0.125 * feelScale,
             allowChords: true, allowThreeNoteChords: false, allowSustains: true, allowForcedMarkers: true,
-            ampFloor: 0.18f, isBassTrack: false, statsOut: null);
+            ampFloor: 0.16f, isBassTrack: false, statsOut: null);
 
+        // MediumSingle: Strictly 4 frets (Green, Red, Yellow, Blue). STRICTLY 0% Orange! Hand stays in home position
         WriteDifficultyTrack(sb, "MediumSingle", allEvents, lowPitch, highPitch, measureEnergies,
-            soloStartTick, soloEndTick,
-            maxFrets: 4, minSpacingSec: 0.250 * feelScale,
-            allowChords: false, allowThreeNoteChords: false, allowSustains: true, allowForcedMarkers: false,
-            ampFloor: 0.25f, isBassTrack: false, statsOut: null);
+            soloStartTick, soloEndTick, safeBpm,
+            maxFrets: 4, minSpacingSec: 0.220 * feelScale,
+            allowChords: true, allowThreeNoteChords: false, allowSustains: true, allowForcedMarkers: false,
+            ampFloor: 0.22f, isBassTrack: false, statsOut: null);
 
+        // EasySingle: Strictly 3 frets (Green, Red, Yellow). Single notes only, relaxed tempo
         WriteDifficultyTrack(sb, "EasySingle", allEvents, lowPitch, highPitch, measureEnergies,
-            soloStartTick, soloEndTick,
-            maxFrets: 3, minSpacingSec: 0.430 * feelScale,
+            soloStartTick, soloEndTick, safeBpm,
+            maxFrets: 3, minSpacingSec: 0.380 * feelScale,
             allowChords: false, allowThreeNoteChords: false, allowSustains: true, allowForcedMarkers: false,
-            ampFloor: 0.32f, isBassTrack: false, statsOut: null);
+            ampFloor: 0.30f, isBassTrack: false, statsOut: null);
 
         // Build all 4 Co-Op Bass difficulties when isolated bass transcription is available
         if (hasCoopBass)
@@ -179,24 +198,24 @@ public static class MidiToGh3ChartMapper
             var (bassLow, bassHigh) = ComputeRobustPitchRange(bassEvents, 32, 56);
             var bassStats = new ChartBuildStats();
             WriteDifficultyTrack(sb, "ExpertDoubleBass", bassEvents, bassLow, bassHigh, measureEnergies,
-                0, 0, maxFrets: 5, minSpacingSec: 0.105 * feelScale,
+                0, 0, safeBpm, maxFrets: 5, minSpacingSec: 0.105 * feelScale,
                 allowChords: false, allowThreeNoteChords: false, allowSustains: true, allowForcedMarkers: true,
                 ampFloor: 0.14f, isBassTrack: true, statsOut: bassStats);
 
             WriteDifficultyTrack(sb, "HardDoubleBass", bassEvents, bassLow, bassHigh, measureEnergies,
-                0, 0, maxFrets: 4, minSpacingSec: 0.180 * feelScale,
+                0, 0, safeBpm, maxFrets: 5, minSpacingSec: 0.160 * feelScale,
                 allowChords: false, allowThreeNoteChords: false, allowSustains: true, allowForcedMarkers: false,
-                ampFloor: 0.20f, isBassTrack: true, statsOut: null);
+                ampFloor: 0.18f, isBassTrack: true, statsOut: null);
 
             WriteDifficultyTrack(sb, "MediumDoubleBass", bassEvents, bassLow, bassHigh, measureEnergies,
-                0, 0, maxFrets: 4, minSpacingSec: 0.300 * feelScale,
+                0, 0, safeBpm, maxFrets: 4, minSpacingSec: 0.260 * feelScale,
                 allowChords: false, allowThreeNoteChords: false, allowSustains: true, allowForcedMarkers: false,
-                ampFloor: 0.26f, isBassTrack: true, statsOut: null);
+                ampFloor: 0.24f, isBassTrack: true, statsOut: null);
 
             WriteDifficultyTrack(sb, "EasyDoubleBass", bassEvents, bassLow, bassHigh, measureEnergies,
-                0, 0, maxFrets: 3, minSpacingSec: 0.480 * feelScale,
+                0, 0, safeBpm, maxFrets: 3, minSpacingSec: 0.420 * feelScale,
                 allowChords: false, allowThreeNoteChords: false, allowSustains: true, allowForcedMarkers: false,
-                ampFloor: 0.34f, isBassTrack: true, statsOut: null);
+                ampFloor: 0.32f, isBassTrack: true, statsOut: null);
 
             if (statsOut != null) statsOut.BassNoteCount = bassStats.ExpertNoteCount;
         }
@@ -500,6 +519,7 @@ public static class MidiToGh3ChartMapper
         List<double>? measureEnergies,
         int soloStartTick,
         int soloEndTick,
+        double safeBpm,
         int maxFrets,
         double minSpacingSec,
         bool allowChords,
@@ -554,12 +574,12 @@ public static class MidiToGh3ChartMapper
             double localMedian = winPitches[winPitches.Count / 2];
             double localNorm = Math.Clamp((localMedian - lowPitch) / (double)pitchSpan, 0.0, 1.0);
 
-            // Sliding 4-fret hand box on Expert (5-fret): low box [0..3] vs high box [1..4]
+            // Sliding 4-fret hand box on Expert & Hard (5-fret): low box [0..3] vs high box [1..4]
             int boxMin = 0;
             int boxMax = maxFrets - 1;
             if (maxFrets == 5)
             {
-                bool highRegister = localNorm >= 0.56;
+                bool highRegister = localNorm >= 0.54;
                 boxMin = highRegister ? 1 : 0;
                 boxMax = highRegister ? 4 : 3;
             }
@@ -608,8 +628,8 @@ public static class MidiToGh3ChartMapper
 
         // Second pass: 2-Bar Riff & Hook Repetition Memory!
         // Group notes into 2-bar phrases (1536 ticks). When a hook repeats with matching rhythm & melodic contour,
-        // lock it to the EXACT same 5-fret pattern as its first appearance!
-        int matchedRiffs = ApplyRiffRepetitionMemory(diffEvents, assignedFrets);
+        // lock it to the EXACT same fret pattern as its first appearance!
+        int matchedRiffs = ApplyRiffRepetitionMemory(diffEvents, assignedFrets, maxFrets);
         if (statsOut != null) statsOut.RepeatedRiffsMatched += matchedRiffs;
 
         // 3. Emit notes, chords, sustains, authentic GH3 forced HOPO/strum markers (N 5 0), and Smart Star Power
@@ -629,22 +649,48 @@ public static class MidiToGh3ChartMapper
         for (int i = 0; i < diffEvents.Count; i++)
         {
             var ev = diffEvents[i];
-            int fret = assignedFrets[i];
+            int fret = Math.Clamp(assignedFrets[i], 0, maxFrets - 1);
             double energy = GetMeasureEnergy(ev.Tick);
             bool inSolo = soloStartTick > 0 && ev.Tick >= soloStartTick && ev.Tick <= soloEndTick;
             bool onBarDownbeat = (ev.Tick % TicksPerBar) == 0;
 
-            // Sustain calculation (quantized, never collides with next note)
+            // Intelligent Musical Sustain Calculation:
+            int nextNoteTick = (i + 1 < diffEvents.Count) ? diffEvents[i + 1].Tick : (ev.Tick + TicksPerBar * 2);
+            int availableGapTicks = nextNoteTick - ev.Tick;
+            int maxSustainHeadroom = Math.Max(0, availableGapTicks - 48); // leave 48-tick (16th note) visual/strike safety gap
+
             int sustain = 0;
-            if (allowSustains && (ev.EndSec - ev.StartSec) >= 0.30 && ev.DurationTicks >= 96)
+            if (allowSustains && maxSustainHeadroom >= 48)
             {
-                int maxAllowed = ev.DurationTicks;
-                if (i + 1 < diffEvents.Count)
+                // Measure the note's acoustic duration in ticks
+                double acousticDurationSec = Math.Max(0.0, ev.EndSec - ev.StartSec);
+                int acousticTicks = (int)Math.Round(acousticDurationSec * (Resolution * (safeBpm / 60.0)));
+
+                // A note sustains if:
+                // a) It has measurable audio ring-out (>= 0.18s or DurationTicks >= 48)
+                // b) It is a chord on a bar downbeat (power chords naturally ring into the measure)
+                // c) It sits before a musical rest (gap >= 1 beat) or is a singing solo vibrato note
+                bool hasAudioSustain = acousticDurationSec >= 0.18 || ev.DurationTicks >= 48;
+                bool isCadenceHold = (onBarDownbeat && allowChords) || (availableGapTicks >= Resolution && acousticDurationSec >= 0.14);
+                bool isSoloSingingNote = inSolo && availableGapTicks >= Resolution && ev.PeakAmplitude >= 0.48f;
+
+                if (hasAudioSustain || isCadenceHold || isSoloSingingNote)
                 {
-                    int gapTicks = diffEvents[i + 1].Tick - ev.Tick;
-                    maxAllowed = Math.Min(maxAllowed, gapTicks - 48);
+                    int intendedTicks = Math.Max(ev.DurationTicks, acousticTicks);
+
+                    if (isCadenceHold || isSoloSingingNote)
+                    {
+                        intendedTicks = Math.Max(intendedTicks, Math.Min(availableGapTicks / 2, Resolution));
+                    }
+
+                    int boundedSustain = Math.Min(intendedTicks, maxSustainHeadroom);
+
+                    // Quantize to 16th-note ticks (48 ticks). 48 ticks is the official minimum visible sustain tail in GH3!
+                    if (boundedSustain >= 48)
+                    {
+                        sustain = (boundedSustain / 48) * 48;
+                    }
                 }
-                if (maxAllowed >= 96) sustain = (maxAllowed / 48) * 48;
             }
 
             int intervalSemitones = ev.TopPitch - ev.RootPitch;
@@ -652,7 +698,7 @@ public static class MidiToGh3ChartMapper
 
             // Keep solos & basslines crisp single notes; unleash chords on driving riffs & high-energy choruses!
             bool isChord = allowChords && !isBassTrack && !inSolo && maxFrets >= 3 &&
-                (isPolyphonic || (onBarDownbeat && energy >= 0.78 && ev.PeakAmplitude >= 0.55f));
+                (isPolyphonic || (onBarDownbeat && energy >= 0.75 && ev.PeakAmplitude >= 0.50f));
 
             bool isThreeNote = allowThreeNoteChords && isChord && maxFrets >= 5 && energy >= 0.76 &&
                 ((ev.NoteCount >= 3 && intervalSemitones >= 5) || (onBarDownbeat && energy >= 0.85 && ev.PeakAmplitude >= 0.60f));
@@ -666,6 +712,10 @@ public static class MidiToGh3ChartMapper
                 else if (fret == 2) { f0 = 1; f1 = 2; f2 = 3; }
                 else { f0 = 2; f1 = 3; f2 = 4; }
 
+                f0 = Math.Clamp(f0, 0, maxFrets - 1);
+                f1 = Math.Clamp(f1, 0, maxFrets - 1);
+                f2 = Math.Clamp(f2, 0, maxFrets - 1);
+
                 sb.AppendLine($"  {ev.Tick} = N {f0} {sustain}");
                 sb.AppendLine($"  {ev.Tick} = N {f1} {sustain}");
                 sb.AppendLine($"  {ev.Tick} = N {f2} {sustain}");
@@ -675,8 +725,10 @@ public static class MidiToGh3ChartMapper
             }
             else if (isChord)
             {
-                int baseFret = Math.Min(fret, maxFrets - 2);
+                int baseFret = Math.Clamp(Math.Min(fret, maxFrets - 2), 0, Math.Max(0, maxFrets - 2));
                 int secondFret = (intervalSemitones >= 5 && baseFret + 2 < maxFrets) ? baseFret + 2 : baseFret + 1;
+                secondFret = Math.Clamp(secondFret, 0, maxFrets - 1);
+
                 sb.AppendLine($"  {ev.Tick} = N {baseFret} {sustain}");
                 sb.AppendLine($"  {ev.Tick} = N {secondFret} {sustain}");
                 prevEmittedFret = baseFret;
@@ -735,7 +787,7 @@ public static class MidiToGh3ChartMapper
         sb.AppendLine("}");
     }
 
-    private static int ApplyRiffRepetitionMemory(List<NoteEvent> events, int[] frets)
+    private static int ApplyRiffRepetitionMemory(List<NoteEvent> events, int[] frets, int maxFrets)
     {
         if (events.Count < 16) return 0;
 
@@ -812,14 +864,14 @@ public static class MidiToGh3ChartMapper
             {
                 for (int k = 0; k < indices.Count; k++)
                 {
-                    frets[indices[k]] = bestMatch.AssignedFrets[k];
+                    frets[indices[k]] = Math.Clamp(bestMatch.AssignedFrets[k], 0, maxFrets - 1);
                 }
                 matchedCount++;
             }
             else
             {
                 var snapFrets = new int[indices.Count];
-                for (int k = 0; k < indices.Count; k++) snapFrets[k] = frets[indices[k]];
+                for (int k = 0; k < indices.Count; k++) snapFrets[k] = Math.Clamp(frets[indices[k]], 0, maxFrets - 1);
                 library.Add(new PhrasePattern(pIdx, slots, intervals, snapFrets));
             }
         }
@@ -853,4 +905,92 @@ public static class MidiToGh3ChartMapper
     }
 
     private static string EscapeChartStr(string s) => (s ?? "").Replace("\"", "'");
+
+    public class MusicalScale
+    {
+        public int RootClass { get; }
+        public string Name { get; }
+        public HashSet<int> PitchClasses { get; }
+
+        public MusicalScale(int root, string name, int[] intervals)
+        {
+            RootClass = root;
+            Name = name;
+            PitchClasses = new HashSet<int>(intervals.Select(i => ((root + i) % 12 + 12) % 12));
+        }
+
+        public bool Contains(int midiPitch) => PitchClasses.Contains(((midiPitch % 12) + 12) % 12);
+
+        public int SnapMidiPitch(int midiPitch)
+        {
+            int pc = ((midiPitch % 12) + 12) % 12;
+            if (PitchClasses.Contains(pc)) return midiPitch;
+
+            // Check neighbor semitones (+1 / -1)
+            int upPc = (pc + 1) % 12;
+            int downPc = (pc + 11) % 12;
+
+            if (PitchClasses.Contains(upPc)) return midiPitch + 1;
+            if (PitchClasses.Contains(downPc)) return midiPitch - 1;
+
+            return midiPitch;
+        }
+    }
+
+    private static MusicalScale DetectMusicalScale(List<NoteEvent> events)
+    {
+        string[] noteNames = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        var scaleTemplates = new (string TypeName, int[] Intervals)[]
+        {
+            ("Minor Pentatonic", new[] { 0, 3, 5, 7, 10 }),
+            ("Natural Minor",     new[] { 0, 2, 3, 5, 7, 8, 10 }),
+            ("Major Pentatonic", new[] { 0, 2, 4, 7, 9 }),
+            ("Major",            new[] { 0, 2, 4, 5, 7, 9, 11 }),
+            ("Dorian",           new[] { 0, 2, 3, 5, 7, 9, 10 }),
+            ("Blues",            new[] { 0, 3, 5, 6, 7, 10 }),
+            ("Mixolydian",       new[] { 0, 2, 4, 5, 7, 9, 10 })
+        };
+
+        if (events == null || events.Count < 6)
+        {
+            return new MusicalScale(4, "E Natural Minor", new[] { 0, 2, 3, 5, 7, 8, 10 });
+        }
+
+        double[] weights = new double[12];
+        foreach (var ev in events)
+        {
+            int pc = ((ev.RootPitch % 12) + 12) % 12;
+            weights[pc] += Math.Max(0.1, ev.PeakAmplitude);
+        }
+
+        MusicalScale bestScale = new MusicalScale(4, "E Natural Minor", new[] { 0, 2, 3, 5, 7, 8, 10 });
+        double bestScore = -1.0;
+
+        for (int root = 0; root < 12; root++)
+        {
+            foreach (var (typeName, intervals) in scaleTemplates)
+            {
+                var candidate = new MusicalScale(root, $"{noteNames[root]} {typeName}", intervals);
+                double inScaleWeight = 0;
+                double outScaleWeight = 0;
+
+                for (int pc = 0; pc < 12; pc++)
+                {
+                    if (candidate.PitchClasses.Contains(pc))
+                        inScaleWeight += weights[pc];
+                    else
+                        outScaleWeight += weights[pc];
+                }
+
+                double score = inScaleWeight - outScaleWeight * 0.75;
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestScale = candidate;
+                }
+            }
+        }
+
+        return bestScale;
+    }
 }

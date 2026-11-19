@@ -4588,6 +4588,163 @@ public partial class MainWindow : Window
             TrustedFriendQuickCombo.Items.Add($"{f.Username} ({addrHint})");
         }
         TrustedFriendQuickCombo.SelectedIndex = 0;
+        _ = RenderLobbyFriendsListAsync();
+    }
+
+    private async void RefreshLobbyFriendsBtn_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshTrustedFriendDropdown();
+        await RenderLobbyFriendsListAsync();
+        ShowStageToast("🔄 PRESENCE UPDATED", "Checked friends online status.", "#38BDF8");
+    }
+
+    private async Task RenderLobbyFriendsListAsync()
+    {
+        LobbyFriendsContainer.Children.Clear();
+        var friends = _friends.Friends.ToList();
+
+        if (friends.Count == 0)
+        {
+            var emptyCard = new Border
+            {
+                Background = (WpfBrush)FindResource("BgCardAlt"),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(14),
+                Margin = new Thickness(0, 4, 0, 4)
+            };
+            var emptyStack = new StackPanel();
+            emptyStack.Children.Add(new TextBlock
+            {
+                Text = "No friends added to your circle yet.",
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 13.5,
+                Foreground = (WpfBrush)FindResource("TextPrimary")
+            });
+            emptyStack.Children.Add(new TextBlock
+            {
+                Text = "Go to 'Friends & Trust' on the left menu to enter your friend's code (or share yours) for 1-click play!",
+                FontSize = 12,
+                Foreground = (WpfBrush)FindResource("TextMuted"),
+                Margin = new Thickness(0, 4, 0, 0)
+            });
+            emptyCard.Child = emptyStack;
+            LobbyFriendsContainer.Children.Add(emptyCard);
+            return;
+        }
+
+        foreach (var friend in friends)
+        {
+            var card = new Border
+            {
+                Background = (WpfBrush)FindResource("BgCardAlt"),
+                BorderBrush = (WpfBrush)FindResource("BorderDefault"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(14, 12, 14, 12),
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            var header = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
+            header.Children.Add(new TextBlock
+            {
+                Text = $"🎸 {friend.Username}",
+                FontSize = 15,
+                FontWeight = FontWeights.Bold,
+                Foreground = (WpfBrush)FindResource("TextPrimary"),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            // Live status badge
+            bool hasValidAddress = !string.IsNullOrWhiteSpace(friend.LastAddress) && !friend.LastAddress.Contains("169.254.");
+            var statusBorder = new Border
+            {
+                Background = new SolidColorBrush(hasValidAddress ? WpfColor.FromRgb(6, 78, 59) : WpfColor.FromRgb(40, 40, 50)),
+                CornerRadius = new CornerRadius(5),
+                Padding = new Thickness(7, 2, 7, 2),
+                Margin = new Thickness(10, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            statusBorder.Child = new TextBlock
+            {
+                Text = hasValidAddress ? "🟢 In Lobby" : "⚫ Offline / Searching",
+                FontSize = 11,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(hasValidAddress ? WpfColor.FromRgb(110, 231, 183) : WpfColor.FromRgb(160, 160, 180))
+            };
+            header.Children.Add(statusBorder);
+            info.Children.Add(header);
+
+            info.Children.Add(new TextBlock
+            {
+                Text = $"Friend Code: {friend.FriendCode} • {(friend.IsTrusted ? "⭐ Trusted Friend (Full Song Sync)" : "Regular Friend")}",
+                FontSize = 11.5,
+                Foreground = (WpfBrush)FindResource("TextMuted"),
+                Margin = new Thickness(0, 3, 0, 0)
+            });
+
+            var actions = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+            var syncBtn = new System.Windows.Controls.Button
+            {
+                Content = "⚡ Compare & Sync Songs",
+                Style = (Style)FindResource("FlameButton"),
+                Padding = new Thickness(14, 7, 14, 7),
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+
+            syncBtn.Click += async (_, _) =>
+            {
+                syncBtn.IsEnabled = false;
+                syncBtn.Content = "📡 Connecting...";
+                try
+                {
+                    string targetAddress = friend.LastAddress ?? "";
+                    if (FriendService.SignalingRelay != null)
+                    {
+                        var (found, _, liveAddr, _) = await FriendService.SignalingRelay.ResolvePeerAsync(friend.FriendCode);
+                        if (found && !string.IsNullOrWhiteSpace(liveAddr) && !liveAddr.Contains("169.254."))
+                        {
+                            targetAddress = liveAddr;
+                            friend.LastAddress = liveAddr;
+                            AppConfig.Save();
+                        }
+                    }
+
+                    if (string.IsNullOrWhiteSpace(targetAddress) || targetAddress.Contains("169.254."))
+                    {
+                        ShowStageToast("📡 WAITING FOR PEER", $"Could not find a live tunnel for {friend.Username} yet. Ask them to open GH3-Sync!", "#F59E0B");
+                        return;
+                    }
+
+                    PeerAddressBox.Text = targetAddress;
+                    if (!string.IsNullOrWhiteSpace(friend.TrustToken))
+                        PeerPinBox.Text = friend.TrustToken;
+
+                    ShowStageToast("🎸 CONNECTING TO LOBBY", $"Connecting directly to {friend.Username}...", "#22C55E");
+                    ComparePeerBtn_Click(this, new RoutedEventArgs());
+                }
+                finally
+                {
+                    syncBtn.IsEnabled = true;
+                    syncBtn.Content = "⚡ Compare & Sync Songs";
+                }
+            };
+
+            actions.Children.Add(syncBtn);
+
+            Grid.SetColumn(info, 0);
+            Grid.SetColumn(actions, 1);
+            grid.Children.Add(info);
+            grid.Children.Add(actions);
+
+            card.Child = grid;
+            LobbyFriendsContainer.Children.Add(card);
+        }
     }
 
     private async void TrustedFriendQuickCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)

@@ -109,16 +109,30 @@ public class AudioAnalysisService
                 double freqHz = EstimatePitchYin(samples, pitchSampleStart, 1024, sampleRate);
                 int midiPitch = FrequencyToMidi(freqHz);
 
-                // Estimate true sustain end by tracking when guitar band energy drops below 35% of onset energy
-                int nextPeakFrame = (p + 1 < peakFrames.Count) ? peakFrames[p + 1] : flux.Length - 1;
-                float sustainThreshold = bandEnergy[frame] * 0.38f;
+                // Intelligent Musical Sustain Tracking:
+                // Guitar pick transient is an impulsive attack spike; smooth string resonance settles at ~12-18% of attack.
+                // Track sustain until string vibrations genuinely decay or a major new pick transient begins.
+                int nextPeakFrame = flux.Length - 1;
+                for (int nextP = p + 1; nextP < peakFrames.Count; nextP++)
+                {
+                    // Ignore tiny background noise / cymbal fluctuations (< 0.28 energy); only stop sustain on strong new guitar pick onsets
+                    if (flux[peakFrames[nextP]] >= 0.28f || nextP == p + 1)
+                    {
+                        nextPeakFrame = peakFrames[nextP];
+                        break;
+                    }
+                }
+
+                float floorEnergy = bandEnergy.Length > 0 ? (bandEnergy.Take(Math.Min(300, bandEnergy.Length)).Average() * 0.7f) : 0.005f;
+                float sustainThreshold = Math.Max(bandEnergy[frame] * 0.14f, floorEnergy);
                 int endFrame = frame + 4;
                 while (endFrame < nextPeakFrame && endFrame < bandEnergy.Length && bandEnergy[endFrame] >= sustainThreshold)
                 {
                     endFrame++;
                 }
 
-                double endSec = Math.Max(startSec + 0.08, endFrame / fps);
+                // Generous natural ring-out: at least 0.18s for any pitched onset, or full tracked ring
+                double endSec = Math.Max(startSec + 0.18, endFrame / fps);
 
                 result.TranscribedNotes.Add(new TranscribedNote
                 {
