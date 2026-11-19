@@ -571,4 +571,38 @@ public class ChartStudioToolsService
             return (false, $"Export failed: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Exports a GH3-Sync song project cleanly as a Guitar Hero World Tour: Definitive Edition (GHWTDE) mod folder!
+    /// (Target: GHWTDE/DATA/MODS/Songs/&lt;song_folder&gt; or any custom output directory).
+    /// </summary>
+    public static (bool Ok, string Message) ExportToGhwtdeFolder(CustomSongInfo song, string targetFolder)
+    {
+        if (string.IsNullOrWhiteSpace(song.ProjectDirectory) || !Directory.Exists(song.ProjectDirectory))
+            return (false, "This song does not have an editable project folder to export.");
+
+        try
+        {
+            Directory.CreateDirectory(targetFolder);
+            int count = 0;
+            string[] wantedExts = { ".ini", ".chart", ".mid", ".mp3", ".ogg", ".wav", ".opus", ".jpg", ".jpeg", ".png" };
+            foreach (var f in Directory.GetFiles(song.ProjectDirectory, "*", SearchOption.TopDirectoryOnly))
+            {
+                var ext = Path.GetExtension(f).ToLowerInvariant();
+                if (!wantedExts.Contains(ext)) continue;
+                var dest = Path.Combine(targetFolder, Path.GetFileName(f));
+                File.Copy(f, dest, true);
+                count++;
+            }
+
+            if (count == 0)
+                return (false, "No song files (.chart/.mid/audio) were found in this project folder.");
+
+            return (true, $"Exported '{song.Title}' ({count} files) to GHWT:DE folder:\n{targetFolder}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"GHWT:DE export failed: {ex.Message}");
+        }
+    }
 }

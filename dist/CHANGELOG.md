@@ -4,6 +4,27 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.3.1] - 2026-11-19 — Dual-Intent Friends, In-App Trust Upgrade Handshake & Always-On Silent Internet Sync
+
+### Dual-Intent Friend Requests & Streamlined Clean UI
+* **Dual-Intent Actions:** When entering a friend's Friend Code, choose between `[ ➕ Add Friend ]` (view setlist and presence) and `[ ⭐ Add Trusted Friend ]` (full song download & 1-click sync permissions).
+* **Clear Request Intent on Reception:** Incoming friend requests display their requested tier (`⭐ Trusted Friend Request` vs `Regular Friend Request`). Recipient can accept as trusted or view-only with 1 click.
+* **Streamlined Friends & P2P View:** Removed confusing raw IP and Cloudflare URL boxes from the primary UI. Technical network diagnostics (UPnP, Tailscale, raw IPs) are neatly tucked into collapsed `⚙️ Advanced Network Settings` expanders for advanced users.
+
+### In-App Mutual Trust Upgrade Handshake
+* **1-Click Trust Upgrade:** Either friend can click `[ ⭐ Request Trust Upgrade ]` on an existing regular friend card.
+* **Zero-Touch Key Exchange:** When the friend clicks `[ ⭐ Accept Trust Upgrade ]`, cryptographic trust tokens are generated and exchanged automatically via Global Signaling Relay and direct P2P. Neither user ever has to copy/paste tokens, IPs, or URLs.
+
+### Always-On Silent Internet Sync (Zero-Touch Tunnel)
+* **Zero-Touch Background Tunnel:** On application startup, GH3-Sync automatically spins up an encrypted background Cloudflare Quick Tunnel silently when P2P is enabled.
+* **Instant Rendezvous:** Addresses and heartbeats are registered automatically to the Global P2P Signaling Relay. Friend codes connect and sync across different houses, Wi-Fi networks, and strict CGNAT routers without opening any router ports.
+
+### UI & Splash Screen Bug Fixes
+* **Theme Resource Fallbacks (`BgCardAlt` / `BorderDefault`):** Fixed missing brush resources in theme dictionaries that caused startup exceptions on certain pages.
+* **Splash Screen Lifecycle Decoupling:** The splash screen is guaranteed to fade out and close cleanly before the main window is displayed, preventing any visual lockup over the UI.
+
+---
+
 ## [v1.2.5] - 2026-11-18 — "Keep All Synced Songs" Feature, Real-Time Signaling Relay Fix & Audio Contention Elimination
 
 ### "⭐ Keep Synced Songs" Permanent Library Promotion

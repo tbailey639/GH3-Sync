@@ -1,7 +1,9 @@
 bin/
 obj/
 dist/*.exe
-dist/*.zip
+publish_selfcontained/
+publish_v130/
+*.zip
 dist/*.gh3pack
 dist/*.log
 *.user

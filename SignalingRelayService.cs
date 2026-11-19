@@ -174,7 +174,7 @@ public class SignalingRelayService
         return (false, "", "", normCode);
     }
 
-    public async Task<bool> SendFriendRequestPacketAsync(string targetCode, string senderCode, string senderUsername, string senderAddress, string senderToken)
+    public async Task<bool> SendFriendRequestPacketAsync(string targetCode, string senderCode, string senderUsername, string senderAddress, string senderToken, bool isTrusted = true)
     {
         var targetTopic = CleanTopicCode(targetCode);
         if (string.IsNullOrWhiteSpace(targetTopic)) return false;
@@ -188,12 +188,79 @@ public class SignalingRelayService
                 senderUsername = senderUsername ?? "Player",
                 senderAddress = (senderAddress ?? "").TrimEnd('/'),
                 senderToken = senderToken ?? "",
+                isTrusted = isTrusted,
                 timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
             });
 
             var ntfyPayload = new
             {
                 topic = $"gh3sync-req-{targetTopic}",
+                message = innerJson
+            };
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5.0));
+            var resp = await _http.PostAsJsonAsync("https://ntfy.sh", ntfyPayload, cts.Token);
+            return resp.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> SendTrustUpgradePacketAsync(string targetCode, string senderCode, string senderUsername, string senderAddress, string senderToken)
+    {
+        var targetTopic = CleanTopicCode(targetCode);
+        if (string.IsNullOrWhiteSpace(targetTopic)) return false;
+
+        try
+        {
+            var innerJson = JsonSerializer.Serialize(new
+            {
+                type = "TRUST_UPGRADE_REQUEST",
+                senderCode = NormalizeCode(senderCode),
+                senderUsername = senderUsername ?? "Player",
+                senderAddress = (senderAddress ?? "").TrimEnd('/'),
+                senderToken = senderToken ?? "",
+                timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            });
+
+            var ntfyPayload = new
+            {
+                topic = $"gh3sync-req-{targetTopic}",
+                message = innerJson
+            };
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5.0));
+            var resp = await _http.PostAsJsonAsync("https://ntfy.sh", ntfyPayload, cts.Token);
+            return resp.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> SendTrustUpgradeAcceptPacketAsync(string targetCode, string myCode, string myUsername, string myAddress, string myToken)
+    {
+        var targetTopic = CleanTopicCode(targetCode);
+        if (string.IsNullOrWhiteSpace(targetTopic)) return false;
+
+        try
+        {
+            var innerJson = JsonSerializer.Serialize(new
+            {
+                type = "TRUST_UPGRADE_ACCEPT",
+                targetCode = NormalizeCode(myCode),
+                targetUsername = myUsername ?? "Player",
+                targetAddress = (myAddress ?? "").TrimEnd('/'),
+                targetToken = myToken ?? "",
+                timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            });
+
+            var ntfyPayload = new
+            {
+                topic = $"gh3sync-ack-{targetTopic}",
                 message = innerJson
             };
 
@@ -328,6 +395,7 @@ public class SignalingRelayService
                         string sAddr = "";
                         string sTok = "";
 
+                        bool isTrusted = true;
                         try
                         {
                             using var msgDoc = JsonDocument.Parse(msgText);
@@ -337,6 +405,7 @@ public class SignalingRelayService
                             sName = mr.TryGetProperty("senderUsername", out var sn) ? sn.GetString() ?? "Friend" : "Friend";
                             sAddr = mr.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
                             sTok = mr.TryGetProperty("senderToken", out var st) ? st.GetString() ?? "" : "";
+                            if (mr.TryGetProperty("isTrusted", out var it)) isTrusted = it.GetBoolean();
                         }
                         catch
                         {
@@ -345,12 +414,19 @@ public class SignalingRelayService
                             sName = ExtractField(msgText, "senderUsername");
                             sAddr = ExtractField(msgText, "senderAddress");
                             sTok = ExtractField(msgText, "senderToken");
+                            var trField = ExtractField(msgText, "isTrusted");
+                            if (bool.TryParse(trField, out var parsedTr)) isTrusted = parsedTr;
                         }
 
                         if (type == "FRIEND_REQUEST" && !string.IsNullOrWhiteSpace(sCode) && !sCode.Equals(AppConfig.Current.FriendCode, StringComparison.OrdinalIgnoreCase))
                         {
-                            _friends.ReceiveIncomingRequest(sCode, sName, sAddr, sTok);
-                            _logger?.LogInfo($"[SIGNALING] Received friend request from {sName} ({sCode}) at {sAddr}");
+                            _friends.ReceiveIncomingRequest(sCode, sName, sAddr, sTok, isTrusted);
+                            _logger?.LogInfo($"[SIGNALING] Received friend request from {sName} ({sCode}) at {sAddr} [Trusted: {isTrusted}]");
+                        }
+                        else if (type == "TRUST_UPGRADE_REQUEST" && !string.IsNullOrWhiteSpace(sCode) && !sCode.Equals(AppConfig.Current.FriendCode, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _friends.ReceiveTrustUpgradeRequest(sCode, sName, sAddr, sTok);
+                            _logger?.LogInfo($"[SIGNALING] Received trust upgrade request from {sName} ({sCode}) at {sAddr}");
                         }
                     }
                 }
@@ -418,6 +494,11 @@ public class SignalingRelayService
                         {
                             _friends.HandleRemoteAcceptance(tCode, tName, tAddr, tTok);
                             _logger?.LogInfo($"[SIGNALING] Remote friend {tName} ({tCode}) accepted friend request!");
+                        }
+                        else if (type == "TRUST_UPGRADE_ACCEPT" && !string.IsNullOrWhiteSpace(tCode))
+                        {
+                            _friends.ProcessTrustUpgradeAccepted(tCode, tName, tAddr, tTok);
+                            _logger?.LogInfo($"[SIGNALING] Remote friend {tName} ({tCode}) accepted trust upgrade!");
                         }
                     }
                 }

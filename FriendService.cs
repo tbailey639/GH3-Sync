@@ -365,7 +365,10 @@ public class FriendService
     /// Dispatches a verified friend request over the network.
     /// ONLY adds the friend to the requested list when the remote client explicitly acknowledges receipt with HTTP 200 OK.
     /// </summary>
-    public async Task<SendFriendRequestResult> SendFriendRequestAsync(string rawFriendCode, string? customAddress = null, HttpClient? customClient = null)
+    public Task<SendFriendRequestResult> SendFriendRequestAsync(string rawFriendCode, string? customAddress, HttpClient? customClient = null)
+        => SendFriendRequestAsync(rawFriendCode, asTrusted: true, customAddress, customClient);
+
+    public async Task<SendFriendRequestResult> SendFriendRequestAsync(string rawFriendCode, bool asTrusted = true, string? customAddress = null, HttpClient? customClient = null)
     {
         var lookup = await LookupFriendByCodeAsync(rawFriendCode, customClient);
         var cleanCode = lookup.FriendCode;
@@ -428,7 +431,7 @@ public class FriendService
         {
             if (SignalingRelay != null)
             {
-                var sigSent = await SignalingRelay.SendFriendRequestPacketAsync(cleanCode, AppConfig.Current.FriendCode, AppConfig.Current.Username, myAddress, proposedToken);
+                var sigSent = await SignalingRelay.SendFriendRequestPacketAsync(cleanCode, AppConfig.Current.FriendCode, AppConfig.Current.Username, myAddress, proposedToken, asTrusted);
                 if (sigSent)
                 {
                     lock (_lock)
@@ -441,7 +444,9 @@ public class FriendService
                             Status = "Pending",
                             CreatedAt = DateTime.UtcNow,
                             Address = targetAddress ?? "",
-                            ProposedTrustToken = proposedToken
+                            ProposedTrustToken = proposedToken,
+                            IsTrustedRequest = asTrusted,
+                            RequestType = "Friend"
                         };
                         AppConfig.Current.FriendRequests.RemoveAll(x => x.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
                         AppConfig.Current.FriendRequests.Add(req);
@@ -475,6 +480,7 @@ public class FriendService
             senderUsername = AppConfig.Current.Username,
             senderAddress = myAddress,
             proposedTrustToken = proposedToken,
+            isTrusted = asTrusted,
             timestamp = DateTime.UtcNow
         };
 
@@ -513,6 +519,8 @@ public class FriendService
                             Direction = "Outgoing",
                             Status = "Pending",
                             ProposedTrustToken = proposedToken,
+                            IsTrustedRequest = asTrusted,
+                            RequestType = "Friend",
                             CreatedAt = DateTime.UtcNow
                         };
 
@@ -555,6 +563,7 @@ public class FriendService
                         senderUsername = AppConfig.Current.Username,
                         senderAddress = myAddress,
                         proposedTrustToken = proposedToken,
+                        isTrusted = asTrusted,
                         createdAt = DateTime.UtcNow
                     };
                     using var hubCts = new CancellationTokenSource(TimeSpan.FromSeconds(2.5));
@@ -574,6 +583,8 @@ public class FriendService
                                     Direction = "Outgoing",
                                     Status = "Pending",
                                     ProposedTrustToken = proposedToken,
+                                    IsTrustedRequest = asTrusted,
+                                    RequestType = "Friend",
                                     CreatedAt = DateTime.UtcNow
                                 };
                                 AppConfig.Current.FriendRequests.RemoveAll(x => x.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
@@ -596,7 +607,7 @@ public class FriendService
 
             if (SignalingRelay != null)
             {
-                var sigSent = await SignalingRelay.SendFriendRequestPacketAsync(cleanCode, AppConfig.Current.FriendCode, AppConfig.Current.Username, myAddress, proposedToken);
+                var sigSent = await SignalingRelay.SendFriendRequestPacketAsync(cleanCode, AppConfig.Current.FriendCode, AppConfig.Current.Username, myAddress, proposedToken, asTrusted);
                 if (sigSent)
                 {
                     lock (_lock)
@@ -609,7 +620,9 @@ public class FriendService
                             Status = "Pending",
                             CreatedAt = DateTime.UtcNow,
                             Address = targetAddress,
-                            ProposedTrustToken = proposedToken
+                            ProposedTrustToken = proposedToken,
+                            IsTrustedRequest = asTrusted,
+                            RequestType = "Friend"
                         };
                         AppConfig.Current.FriendRequests.RemoveAll(x => x.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
                         AppConfig.Current.FriendRequests.Add(req);
@@ -643,7 +656,7 @@ public class FriendService
     /// Stores it in IncomingRequests and returns ACK receipt.
     /// </summary>
     public (bool Success, bool Received, string Status, string Username, string FriendCode) ReceiveFriendRequest(
-        string senderCode, string senderUsername, string senderAddress, string? proposedToken)
+        string senderCode, string senderUsername, string senderAddress, string? proposedToken, bool isTrusted = true, string requestType = "Friend")
     {
         if (string.IsNullOrWhiteSpace(senderCode))
             return (false, false, "invalid_code", Profile.Username, Profile.FriendCode);
@@ -678,6 +691,8 @@ public class FriendService
                     Direction = "Incoming",
                     Status = "Pending",
                     ProposedTrustToken = proposedToken ?? "",
+                    IsTrustedRequest = isTrusted,
+                    RequestType = requestType,
                     CreatedAt = DateTime.UtcNow
                 };
                 AppConfig.Current.FriendRequests.Add(req);
@@ -687,6 +702,8 @@ public class FriendService
                 req.Username = cleanName;
                 req.Address = senderAddress?.Trim() ?? req.Address;
                 req.ProposedTrustToken = proposedToken ?? req.ProposedTrustToken;
+                req.IsTrustedRequest = isTrusted;
+                req.RequestType = requestType;
                 req.Status = "Pending";
                 req.CreatedAt = DateTime.UtcNow;
             }
@@ -695,6 +712,235 @@ public class FriendService
             OnFriendRequestReceived?.Invoke(req);
 
             return (true, true, "received", Profile.Username, Profile.FriendCode);
+        }
+    }
+
+    /// <summary>
+    /// Processes an incoming trust upgrade request from an existing friend.
+    /// </summary>
+    public (bool Success, bool Received, string Status, string Username, string FriendCode) ReceiveTrustUpgradeRequest(
+        string senderCode, string senderUsername, string senderAddress, string? proposedToken)
+    {
+        if (string.IsNullOrWhiteSpace(senderCode))
+            return (false, false, "invalid_code", Profile.Username, Profile.FriendCode);
+
+        var cleanCode = senderCode.Trim().ToUpperInvariant();
+        if (!cleanCode.StartsWith("GH3-")) cleanCode = "GH3-" + cleanCode;
+
+        lock (_lock)
+        {
+            var cleanName = string.IsNullOrWhiteSpace(senderUsername) ? $"Peer_{cleanCode[^4..]}" : senderUsername.Trim();
+            var existingFriend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+            if (existingFriend != null && !string.IsNullOrWhiteSpace(senderAddress) && !senderAddress.Contains("169.254."))
+            {
+                existingFriend.LastAddress = senderAddress.Trim();
+            }
+
+            var req = AppConfig.Current.FriendRequests.FirstOrDefault(r =>
+                r.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase) &&
+                r.Direction.Equals("Incoming", StringComparison.OrdinalIgnoreCase));
+
+            if (req == null)
+            {
+                req = new FriendRequestItem
+                {
+                    FriendCode = cleanCode,
+                    Username = cleanName,
+                    Address = senderAddress?.Trim() ?? (existingFriend?.LastAddress ?? ""),
+                    Direction = "Incoming",
+                    Status = "Pending",
+                    ProposedTrustToken = proposedToken ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)),
+                    IsTrustedRequest = true,
+                    RequestType = "TrustUpgrade",
+                    CreatedAt = DateTime.UtcNow
+                };
+                AppConfig.Current.FriendRequests.Add(req);
+            }
+            else
+            {
+                req.Username = cleanName;
+                req.Address = senderAddress?.Trim() ?? req.Address;
+                req.ProposedTrustToken = proposedToken ?? req.ProposedTrustToken;
+                req.IsTrustedRequest = true;
+                req.RequestType = "TrustUpgrade";
+                req.Status = "Pending";
+                req.CreatedAt = DateTime.UtcNow;
+            }
+
+            AppConfig.Save();
+            OnFriendRequestReceived?.Invoke(req);
+
+            return (true, true, "received", Profile.Username, Profile.FriendCode);
+        }
+    }
+
+    /// <summary>
+    /// Requests a trust upgrade from an existing regular friend.
+    /// </summary>
+    public async Task<SendFriendRequestResult> RequestTrustUpgradeAsync(string friendCode, HttpClient? customClient = null)
+    {
+        var cleanCode = friendCode.Trim().ToUpperInvariant();
+        if (!cleanCode.StartsWith("GH3-")) cleanCode = "GH3-" + cleanCode;
+
+        var friend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+        if (friend == null)
+        {
+            return new SendFriendRequestResult { Success = false, Message = "Friend not found in your list." };
+        }
+
+        var myAddress = BestAddressProvider?.Invoke() ?? "http://127.0.0.1:7373";
+        var proposedToken = !string.IsNullOrWhiteSpace(friend.TrustToken) ? friend.TrustToken : Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+
+        if (SignalingRelay != null)
+        {
+            await SignalingRelay.SendTrustUpgradePacketAsync(cleanCode, AppConfig.Current.FriendCode, AppConfig.Current.Username, myAddress, proposedToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(friend.LastAddress) && !friend.LastAddress.Contains("169.254."))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var client = customClient ?? _httpClient;
+                    var url = $"{friend.LastAddress.TrimEnd('/')}/api/friends/trust-upgrade";
+                    var payload = new
+                    {
+                        senderCode = AppConfig.Current.FriendCode,
+                        senderUsername = AppConfig.Current.Username,
+                        senderAddress = myAddress,
+                        proposedTrustToken = proposedToken
+                    };
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3.0));
+                    await client.PostAsJsonAsync(url, payload, cts.Token);
+                }
+                catch { }
+            });
+        }
+
+        lock (_lock)
+        {
+            var outReq = new FriendRequestItem
+            {
+                FriendCode = cleanCode,
+                Username = friend.Username,
+                Address = friend.LastAddress,
+                Direction = "Outgoing",
+                Status = "Pending",
+                ProposedTrustToken = proposedToken,
+                IsTrustedRequest = true,
+                RequestType = "TrustUpgrade",
+                CreatedAt = DateTime.UtcNow
+            };
+            AppConfig.Current.FriendRequests.RemoveAll(x => x.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase) && x.Direction == "Outgoing");
+            AppConfig.Current.FriendRequests.Add(outReq);
+            AppConfig.Save();
+        }
+
+        return new SendFriendRequestResult
+        {
+            Success = true,
+            ReceivedByPeer = true,
+            FriendCode = cleanCode,
+            Username = friend.Username,
+            Message = $"Trust upgrade request sent to {friend.Username}!"
+        };
+    }
+
+    /// <summary>
+    /// Accepts a trust upgrade request from a friend.
+    /// </summary>
+    public async Task<FriendEntry?> AcceptTrustUpgradeAsync(string requestIdOrCode, HttpClient? customClient = null)
+    {
+        FriendRequestItem? targetReq = null;
+        FriendEntry? friend = null;
+
+        lock (_lock)
+        {
+            targetReq = AppConfig.Current.FriendRequests.FirstOrDefault(r =>
+                r.Id.Equals(requestIdOrCode, StringComparison.OrdinalIgnoreCase) ||
+                r.FriendCode.Equals(requestIdOrCode, StringComparison.OrdinalIgnoreCase));
+
+            if (targetReq == null) return null;
+
+            friend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(targetReq.FriendCode, StringComparison.OrdinalIgnoreCase));
+            if (friend == null)
+            {
+                friend = AddFriendByCode(targetReq.FriendCode, targetReq.Username, targetReq.Address);
+            }
+
+            friend.IsTrusted = true;
+            if (!string.IsNullOrEmpty(targetReq.ProposedTrustToken))
+                friend.TrustToken = targetReq.ProposedTrustToken;
+            else if (string.IsNullOrEmpty(friend.TrustToken))
+                friend.TrustToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+
+            AppConfig.Current.FriendRequests.RemoveAll(r => r.FriendCode.Equals(targetReq.FriendCode, StringComparison.OrdinalIgnoreCase));
+            AppConfig.Save();
+        }
+
+        var myAddress = BestAddressProvider?.Invoke() ?? "http://127.0.0.1:7373";
+        if (SignalingRelay != null)
+        {
+            _ = SignalingRelay.SendTrustUpgradeAcceptPacketAsync(
+                friend.FriendCode,
+                AppConfig.Current.FriendCode,
+                AppConfig.Current.Username,
+                myAddress,
+                friend.TrustToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(friend.LastAddress) && !friend.LastAddress.Contains("169.254."))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var client = customClient ?? _httpClient;
+                    var acceptUrl = $"{friend.LastAddress.TrimEnd('/')}/api/friends/trust-upgrade-accept";
+                    var payload = new
+                    {
+                        senderCode = AppConfig.Current.FriendCode,
+                        senderUsername = AppConfig.Current.Username,
+                        senderAddress = myAddress,
+                        trustToken = friend.TrustToken
+                    };
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3.5));
+                    await client.PostAsJsonAsync(acceptUrl, payload, cts.Token);
+                }
+                catch { }
+            });
+        }
+
+        OnFriendRequestAccepted?.Invoke(friend);
+        return friend;
+    }
+
+    /// <summary>
+    /// Processes trust upgrade acceptance from remote friend.
+    /// </summary>
+    public FriendEntry? ProcessTrustUpgradeAccepted(string remoteCode, string remoteUsername, string remoteAddress, string? trustToken)
+    {
+        lock (_lock)
+        {
+            var cleanCode = remoteCode.Trim().ToUpperInvariant();
+            if (!cleanCode.StartsWith("GH3-")) cleanCode = "GH3-" + cleanCode;
+
+            AppConfig.Current.FriendRequests.RemoveAll(r => r.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+
+            var friend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+            if (friend == null)
+            {
+                friend = AddFriendByCode(cleanCode, remoteUsername, remoteAddress);
+            }
+
+            friend.IsTrusted = true;
+            if (!string.IsNullOrEmpty(trustToken)) friend.TrustToken = trustToken;
+            if (!string.IsNullOrWhiteSpace(remoteAddress) && !remoteAddress.Contains("169.254.")) friend.LastAddress = remoteAddress;
+
+            AppConfig.Save();
+            OnFriendRequestAccepted?.Invoke(friend);
+            return friend;
         }
     }
 
@@ -774,9 +1020,9 @@ public class FriendService
         return newFriend;
     }
 
-    public void ReceiveIncomingRequest(string senderCode, string senderUsername, string senderAddress, string? proposedToken)
+    public void ReceiveIncomingRequest(string senderCode, string senderUsername, string senderAddress, string? proposedToken, bool isTrusted = true)
     {
-        ReceiveFriendRequest(senderCode, senderUsername, senderAddress, proposedToken);
+        ReceiveFriendRequest(senderCode, senderUsername, senderAddress, proposedToken, isTrusted, "Friend");
     }
 
     public void HandleRemoteAcceptance(string remoteCode, string remoteUsername, string remoteAddress, string? remoteTrustToken)

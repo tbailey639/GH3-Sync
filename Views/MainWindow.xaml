@@ -1,4 +1,4 @@
-<Window x:Class="GH3_Sync.Views.MainWindow"
+﻿<Window x:Class="GH3_Sync.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="GH3-Sync"
@@ -740,8 +740,8 @@
 
                     <!-- ==================== PAGE 4: FRIENDS & TRUST ==================== -->
                     <StackPanel x:Name="PageFriends" Visibility="Collapsed">
-                        <TextBlock Text="Friends &amp; Trusted Network" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
-                        <TextBlock Text="Only Trusted Friends can download custom songs from your library. Regular friends with a Session PIN can view your setlist only."
+                        <TextBlock Text="Friends" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+                        <TextBlock Text="Add friends with their Friend Code to view online status and 1-click sync custom songs."
                                    FontSize="12.5" Foreground="{DynamicResource TextMuted}" Margin="0,2,0,16"/>
 
                         <!-- User Profile & Friend Code Card -->
@@ -753,44 +753,19 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0">
-                                    <TextBlock Text="Display Name" FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,4"/>
+                                    <TextBlock Text="Your Display Name" FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,4"/>
                                     <DockPanel>
                                         <Button DockPanel.Dock="Right" Content="Save" Style="{StaticResource FlameButton}" Margin="8,0,0,0" Click="SaveUsernameBtn_Click"/>
                                         <TextBox x:Name="ProfileUsernameBox"/>
                                     </DockPanel>
                                 </StackPanel>
                                 <StackPanel Grid.Column="2">
-                                    <TextBlock Text="Permanent Friend Code" FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,4"/>
+                                    <TextBlock Text="Your Permanent Friend Code" FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,4"/>
                                     <DockPanel>
-                                        <Button DockPanel.Dock="Right" Content="📋 Copy Online Invite" Style="{StaticResource FlameButton}" Margin="6,0,0,0" Click="CopyOnlineInviteBtn_Click" ToolTip="Copies your Friend Code + Internet Address so friends in other houses can connect with zero router setup"/>
-                                        <Button DockPanel.Dock="Right" Content="Copy Code" Style="{StaticResource OutlineButton}" Margin="6,0,0,0" Click="CopyFriendCodeBtn_Click" ToolTip="Copy raw Friend Code for local LAN play"/>
+                                        <Button DockPanel.Dock="Right" Content="📋 Copy Code" Style="{StaticResource FlameButton}" Margin="6,0,0,0" Click="CopyFriendCodeBtn_Click" ToolTip="Copy your Friend Code to share with friends"/>
                                         <Button x:Name="ToggleCodeBtn" DockPanel.Dock="Right" Content="Show" Style="{StaticResource OutlineButton}" Margin="6,0,0,0" Click="ToggleFriendCodeBtn_Click"/>
                                         <TextBox x:Name="ProfileFriendCodeBox" IsReadOnly="True" FontFamily="Consolas" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
                                     </DockPanel>
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <!-- Zero-Config Internet Sync Status & 1-Click HTTPS Tunnel -->
-                        <Border Style="{StaticResource GhCard}" Background="#111827" BorderBrush="#38BDF8" BorderThickness="1.2" Margin="0,0,0,14">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel VerticalAlignment="Center">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock x:Name="FriendsTunnelStatusIcon" Text="🌐" FontSize="15" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="FriendsTunnelHeadline" Text="Internet Sync: Local Wi-Fi Ready" FontSize="13.5" FontWeight="Bold" Foreground="#38BDF8" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                    <TextBlock x:Name="FriendsTunnelDetail" Text="If your friend is in another house, click 'Start Free Internet Tunnel' below so you can connect across the internet with zero router configuration."
-                                               FontSize="11.5" Foreground="{DynamicResource TextMuted}" Margin="0,3,0,0" TextWrapping="Wrap"/>
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button x:Name="FriendsStartTunnelBtn" Content="🌐 Start Free Internet Tunnel" Style="{StaticResource BlueButton}" Padding="13,7" Margin="0,0,8,0" Click="FriendsToggleTunnelBtn_Click"
-                                            ToolTip="Opens a secure Cloudflare HTTPS Quick Tunnel so friends on different Wi-Fi networks can connect with zero port forwarding"/>
-                                    <Button Content="📋 Copy Invite" Style="{StaticResource FlameButton}" Padding="11,7" Click="CopyOnlineInviteBtn_Click"
-                                            ToolTip="Copies your complete online invite link (Friend Code + Tunnel/IP) for your friend to paste"/>
                                 </StackPanel>
                             </Grid>
                         </Border>
@@ -800,24 +775,24 @@
                             <StackPanel>
                                 <DockPanel Margin="0,0,0,8">
                                     <Button DockPanel.Dock="Right" Content="🔄 Refresh Status" Style="{StaticResource OutlineButton}" Click="RefreshFriendsBtn_Click"/>
-                                    <TextBlock Text="Add Friend (Zero-Input Auto-Detection)" FontSize="14.5" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+                                    <TextBlock Text="Add a Friend" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
                                 </DockPanel>
-                                <TextBlock Text="Enter or paste your friend's Friend Code or Online Invite Link. Their username is automatically detected across the Internet, LAN &amp; Hub without typing a nickname. A delivery handshake confirms they received the request before adding."
-                                           FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,12" TextWrapping="Wrap"/>
+                                <TextBlock Text="Enter your friend's Friend Code to send a request:"
+                                           FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,10" TextWrapping="Wrap"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="8"/>
+                                        <ColumnDefinition Width="10"/>
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="8"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBox x:Name="AddFriendCodeBox" Grid.Column="0" FontFamily="Consolas" FontSize="13.5" FontWeight="SemiBold"
-                                             ToolTip="Friend Code (e.g. GH3-1234-ABCD or paste online invite)" TextChanged="AddFriendCodeBox_TextChanged"/>
-                                    <Button Grid.Column="2" Content="📋 Paste Invite" Style="{StaticResource OutlineButton}" Padding="11,7" Click="PasteFriendOnlineInviteBtn_Click"
-                                            ToolTip="Paste a friend's online invite link from your clipboard"/>
-                                    <Button x:Name="SendFriendRequestBtn" Grid.Column="4" Content="🚀 Send Friend Request" Style="{StaticResource FlameButton}"
-                                            Padding="18,7" Click="SendFriendRequestBtn_Click"/>
+                                    <TextBox x:Name="AddFriendCodeBox" Grid.Column="0" FontFamily="Consolas" FontSize="14" FontWeight="SemiBold"
+                                             ToolTip="Friend Code (e.g. GH3-5126-A893)" TextChanged="AddFriendCodeBox_TextChanged"/>
+                                    <Button x:Name="SendFriendRequestBtn" Grid.Column="2" Content="➕ Add Friend" Style="{StaticResource OutlineButton}"
+                                            Padding="14,7" Click="SendFriendRequestBtn_Click" ToolTip="Add as Regular Friend (View Setlist &amp; Presence)"/>
+                                    <Button x:Name="SendTrustedFriendRequestBtn" Grid.Column="4" Content="⭐ Add Trusted Friend" Style="{StaticResource FlameButton}"
+                                            Padding="16,7" Click="SendTrustedFriendRequestBtn_Click" ToolTip="Add as Trusted Friend (Full Song Download &amp; 1-Click Sync)"/>
                                 </Grid>
 
                                 <!-- Live Auto-Detection Status Pill -->
@@ -828,28 +803,35 @@
                                         <TextBlock x:Name="AutoDetectStatusText" Text="Detecting player profile..." FontSize="12" Foreground="{DynamicResource TextPrimary}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                     </DockPanel>
                                 </Border>
-
-                                <!-- Optional Direct Address Expander -->
-                                <Expander Header="Advanced: Direct IP / Custom Port (Optional, for manual port-forwarding without LAN/Hub)"
-                                          Foreground="{DynamicResource TextMuted}" FontSize="11" Margin="0,10,0,0">
-                                    <StackPanel Margin="0,6,0,0">
-                                        <DockPanel>
-                                            <TextBlock Text="Direct Host/IP: " Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                            <TextBox x:Name="DirectAddressBox" ToolTip="e.g. 192.168.1.50:7373 or my-ddns.org:7373" FontFamily="Consolas"/>
-                                        </DockPanel>
-                                        <TextBlock Text="Leave empty for automatic LAN broadcast, Cloudflare Tunnel, and Central Admin Hub discovery." FontSize="10.5" Foreground="{DynamicResource TextMuted}" Margin="0,4,0,0"/>
-                                    </StackPanel>
-                                </Expander>
                             </StackPanel>
                         </Border>
 
                         <StackPanel x:Name="FriendsListPanel"/>
+
+                        <!-- Advanced Network / Offline LAN Expander (Collapsed by default) -->
+                        <Expander Header="⚙️ Advanced Network Settings (Optional / Offline LAN Only)"
+                                  Foreground="{DynamicResource TextMuted}" FontSize="11" Margin="0,16,0,0" IsExpanded="False">
+                            <Border Style="{StaticResource GhCard}" Padding="12" Margin="0,6,0,0">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,8">
+                                        <TextBlock Text="Direct Host/IP: " Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBox x:Name="DirectAddressBox" ToolTip="e.g. 192.168.1.50:7373 or my-ddns.org:7373" FontFamily="Consolas"/>
+                                    </DockPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="FriendsStartTunnelBtn" Content="🌐 Restart Internet Tunnel" Style="{StaticResource BlueButton}" Padding="10,5" Margin="0,0,8,0" Click="FriendsToggleTunnelBtn_Click"/>
+                                        <TextBlock x:Name="FriendsTunnelHeadline" Text="Tunnel: Automatic" FontSize="11" Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="FriendsTunnelStatusIcon" Text="" Visibility="Collapsed"/>
+                                        <TextBlock x:Name="FriendsTunnelDetail" Text="" Visibility="Collapsed"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Expander>
                     </StackPanel>
 
                     <!-- ==================== PAGE 5: P2P SYNC & LOBBY ==================== -->
                     <StackPanel x:Name="PageP2P" Visibility="Collapsed">
                         <TextBlock Text="P2P Sync &amp; Lobby Setlist" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
-                        <TextBlock Text="Sync your active Lobby Setlist (up to 10 songs by default) with Trusted Friends. Enable Temporary Session Mode to auto-clean synced songs when GH3 closes."
+                        <TextBlock Text="Sync your active Lobby Setlist with your friends before launching into a match."
                                    FontSize="12.5" Foreground="{DynamicResource TextMuted}" Margin="0,2,0,16"/>
 
                         <!-- Active Temporary Session Banner -->
@@ -883,138 +865,125 @@
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="GH3 Online Multiplayer Rule: Both players must have custom songs synced before playing!"
                                                FontSize="13" FontWeight="Bold" Foreground="{DynamicResource CardWarnTitle}"/>
-                                    <TextBlock Text="If you pick a custom song your friend doesn't have, GH3 will freeze on the loading screen and auto-play as a bot. Use 'Compare Libraries' or 'Paste Invite Code' below so both players have identical songs installed before launching into a match!"
+                                    <TextBlock Text="If you pick a custom song your friend doesn't have, GH3 will freeze on the loading screen and auto-play as a bot. Click 'Compare &amp; Sync Songs' on your friend's card below before launching into a match!"
                                                FontSize="11.5" Foreground="{DynamicResource CardWarnFg}" Margin="0,2,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Grid>
                         </Border>
 
-                        <!-- Network + Lobby Cap Card -->
-                        <Border Style="{StaticResource GhCard}">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel>
-                                    <TextBlock x:Name="P2pNetworkSummary" Text="Detecting Public IP &amp; UPnP NAT Mapping..." FontSize="13" FontWeight="Bold" Foreground="{DynamicResource CardInfoTitle}"/>
-                                    <TextBlock x:Name="P2pPinSummary" Text="Session Pairing PIN: ------" FontSize="12" Foreground="{DynamicResource CardWarnTitle}" FontFamily="Consolas" Margin="0,4,0,0"/>
-                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0" VerticalAlignment="Center">
-                                        <TextBlock Text="My Lobby Auto-Sync Cap:" FontSize="12" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                        <TextBox x:Name="LobbyCapBox" Width="56" Text="10" Padding="6,3"/>
-                                        <Button Content="Update Cap" Style="{StaticResource OutlineButton}" Padding="9,4" Margin="6,0,0,0" Click="SaveLobbyCapBtn_Click"/>
-                                        <TextBlock x:Name="P2pMyLobbyCount" Text="  (0 / 10 songs tagged in My Customs)" FontSize="12" Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                        <Button x:Name="SetlistDraftBtn" Content="⚔️ Setlist Draft" Style="{StaticResource BlueButton}" Margin="0,0,8,0" Click="SetlistDraftBtn_Click" ToolTip="Launch Head-to-Head Best-of-3 Multiplayer Setlist Draft &amp; Match Tracker"/>
-                                        <Button x:Name="CopyLobbyInviteBtn" Content="Copy Lobby Invite Code" Style="{StaticResource FlameButton}" Margin="0,0,8,0" Click="CopyLobbyInviteBtn_Click" ToolTip="Copy a single gh3sync:// invite string containing your address &amp; token for friends to paste"/>
-                                        <Button Content="Refresh NAT / UPnP" Style="{StaticResource OutlineButton}" Click="RefreshNatBtn_Click"/>
-                                    </StackPanel>
-                                    <CheckBox x:Name="ExpiringInviteChk" Content="⏱ Use 4-Hour Expiring Session Invite Token" Margin="0,6,0,0" HorizontalAlignment="Right" FontSize="11.5" ToolTip="Generates a temporary token that automatically expires after 4 hours instead of sharing a permanent friend token"/>
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <!-- Zero-Config CGNAT / Strict-Router P2P (Mesh VPN + 1-Click HTTPS Quick Tunnel) -->
-                        <Border Style="{StaticResource GhCard}" BorderBrush="{DynamicResource CardInfoBorder}">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Margin="0,0,14,0">
-                                    <TextBlock Text="Zero-Config P2P for CGNAT / Strict Routers (Tailscale • ZeroTier • HTTPS Quick Tunnel)" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource CardInfoTitle}"/>
-                                    <TextBlock x:Name="MeshNetworkSummaryText" Text="Scanning for Tailscale / ZeroTier mesh interfaces..." FontSize="12" Foreground="{DynamicResource TextSecondary}" Margin="0,4,0,0" TextWrapping="Wrap"/>
-                                    <TextBlock x:Name="TunnelStatusText" Text="HTTPS Quick Tunnel: Inactive (No port forwarding needed when active)" FontSize="11.5" FontFamily="Consolas" Foreground="{DynamicResource TextMuted}" Margin="0,4,0,0"/>
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button x:Name="StartTunnelBtn" Content="🌐 Start HTTPS Quick Tunnel" Style="{StaticResource BlueButton}" Padding="12,7" Margin="0,0,6,0" Click="ToggleTunnelBtn_Click" ToolTip="Opens an encrypted Cloudflare HTTPS tunnel so friends behind CGNAT/college routers can sync with zero router config"/>
-                                    <Button Content="Rescan Mesh" Style="{StaticResource OutlineButton}" Padding="10,7" Click="RescanMeshBtn_Click"/>
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <!-- 1-Click Friends in Lobby Card (Option B) -->
-                        <Border Style="{StaticResource GhCard}" Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource AccentFlame}" BorderThickness="1" Margin="0,0,0,12">
+                        <!-- 1-Click Friends in Lobby Card (Option B - HERO ELEMENT) -->
+                        <Border Style="{StaticResource GhCard}" Background="{DynamicResource BgCard}" BorderBrush="{DynamicResource AccentFlame}" BorderThickness="1.5" Margin="0,0,0,12">
                             <StackPanel>
                                 <DockPanel Margin="0,0,0,8">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock Text="Friends in Lobby" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
-                                        <Border Background="#064E3B" CornerRadius="5" Padding="6,2" Margin="10,0,0,0">
-                                            <TextBlock Text="Auto-Discovered" FontSize="11" FontWeight="Bold" Foreground="#6EE7B7"/>
+                                        <TextBlock Text="Friends in Lobby" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
+                                        <Border Background="#064E3B" CornerRadius="5" Padding="7,2" Margin="10,0,0,0">
+                                            <TextBlock Text="🟢 Auto-Discovered" FontSize="11" FontWeight="Bold" Foreground="#6EE7B7"/>
                                         </Border>
                                     </StackPanel>
                                     <Button x:Name="RefreshLobbyFriendsBtn" Content="↻ Refresh Presence" Style="{StaticResource OutlineButton}" Padding="10,4" HorizontalAlignment="Right" Click="RefreshLobbyFriendsBtn_Click"/>
                                 </DockPanel>
-                                <TextBlock Text="Your trusted friends are automatically detected when their GH3-Sync is open. Click 'Compare &amp; Sync Songs' to immediately view their setlist with zero manual setup."
-                                           FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,10" TextWrapping="Wrap"/>
+                                <TextBlock Text="Friends in your circle are automatically detected when their GH3-Sync is open. Click 'Compare &amp; Sync Songs' to view their setlist with zero typing."
+                                           FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,12" TextWrapping="Wrap"/>
                                 <StackPanel x:Name="LobbyFriendsContainer"/>
                             </StackPanel>
                         </Border>
 
-                        <!-- Connect to Peer Card -->
-                        <Border Style="{StaticResource GhCard}">
-                            <StackPanel>
-                                <DockPanel Margin="0,0,0,10">
-                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Button x:Name="PasteLobbyInviteBtn" Content="Paste Invite Code" Style="{StaticResource BlueButton}" Padding="10,5" Margin="0,0,10,0" Click="PasteLobbyInviteBtn_Click" ToolTip="Paste a friend's gh3sync:// invite code to auto-fill address, token, and compare libraries"/>
-                                        <TextBlock Text="Quick-Select Trusted Friend:" FontSize="12" Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                        <ComboBox x:Name="TrustedFriendQuickCombo" Width="195" SelectionChanged="TrustedFriendQuickCombo_SelectionChanged"/>
+                        <!-- Lobby Settings & Auto-Sync Cap Card -->
+                        <Border Style="{StaticResource GhCard}" Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="Lobby Auto-Sync Cap:" FontSize="12.5" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBox x:Name="LobbyCapBox" Width="52" Text="10" Padding="6,3"/>
+                                        <Button Content="Update" Style="{StaticResource OutlineButton}" Padding="9,4" Margin="6,0,0,0" Click="SaveLobbyCapBtn_Click"/>
+                                        <TextBlock x:Name="P2pMyLobbyCount" Text="  (0 / 10 songs tagged in My Customs)" FontSize="12" Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center"/>
                                     </StackPanel>
-                                    <TextBlock Text="Direct Connect &amp; Manual Override" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
-                                </DockPanel>
-
-                                <Grid Margin="0,0,0,10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="2*"/>
-                                        <ColumnDefinition Width="12"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="12"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Peer Address (IP:Port or DDNS)" FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,4"/>
-                                        <TextBox x:Name="PeerAddressBox" Text="127.0.0.1:7373"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="2">
-                                        <TextBlock Text="Trust Token (Required to Download) or PIN (View Only)" FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,4"/>
-                                        <TextBox x:Name="PeerPinBox"/>
-                                    </StackPanel>
-                                    <Button Grid.Column="4" Content="Compare Libraries" Style="{StaticResource FlameButton}" VerticalAlignment="Bottom" Click="ComparePeerBtn_Click"/>
-                                </Grid>
-
-                                <CheckBox x:Name="TempSessionModeChk" IsChecked="True" Margin="0,2,0,4"
-                                          Content="Temporary Lobby Session Mode (auto-remove synced songs &amp; restore customs.pak.xen when GH3 closes — keep any song anytime)"/>
-
-                                <!-- Lobby Readiness Banner + Auto-Sync Action -->
-                                <Border x:Name="LobbyMatchBanner" Visibility="Collapsed" CornerRadius="8" Padding="12" Margin="0,8,0,0" Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock x:Name="LobbyMatchTitle" Text="100% Lobby Matched — Ready for Online Match!" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
-                                            <TextBlock x:Name="LobbyMatchSub" Text="" FontSize="12" Foreground="{DynamicResource CardSuccessFg}" Margin="0,2,0,0"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <CheckBox x:Name="ShowFullPeerLibChk" Content="Browse Full Library" Margin="0,0,12,0" Checked="ShowFullPeerLib_Changed" Unchecked="ShowFullPeerLib_Changed"/>
-                                            <Button x:Name="AutoSyncLobbyBtn" Content="Auto-Sync Lobby Setlist" Style="{StaticResource GreenButton}" Click="AutoSyncLobbyBtn_Click"/>
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-
-                                <TextBlock x:Name="PeerCompareStatus" Text="" FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,8,0,0"/>
-                            </StackPanel>
+                                    <CheckBox x:Name="TempSessionModeChk" IsChecked="True" Margin="0,8,0,0"
+                                              Content="Temporary Session Mode (auto-clean synced songs when GH3 closes — keep any song anytime)"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                    <Button x:Name="SetlistDraftBtn" Content="⚔️ Setlist Draft" Style="{StaticResource BlueButton}" Padding="14,6" Click="SetlistDraftBtn_Click" ToolTip="Launch Head-to-Head Multiplayer Setlist Draft &amp; Match Tracker"/>
+                                </StackPanel>
+                            </Grid>
                         </Border>
 
+                        <!-- Lobby Readiness Banner + Auto-Sync Action -->
+                        <Border x:Name="LobbyMatchBanner" Visibility="Collapsed" CornerRadius="8" Padding="12" Margin="0,0,0,12" Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock x:Name="LobbyMatchTitle" Text="100% Lobby Matched — Ready for Online Match!" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
+                                    <TextBlock x:Name="LobbyMatchSub" Text="" FontSize="12" Foreground="{DynamicResource CardSuccessFg}" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <CheckBox x:Name="ShowFullPeerLibChk" Content="Browse Full Library" Margin="0,0,12,0" Checked="ShowFullPeerLib_Changed" Unchecked="ShowFullPeerLib_Changed"/>
+                                    <Button x:Name="AutoSyncLobbyBtn" Content="Auto-Sync Lobby Setlist" Style="{StaticResource GreenButton}" Click="AutoSyncLobbyBtn_Click"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <TextBlock x:Name="PeerCompareStatus" Text="" FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,8"/>
+
+                        <!-- Peer Songs Comparison Container -->
                         <StackPanel x:Name="PeerSongsPanel"/>
+
+                        <!-- Advanced Network & Direct LAN Expander (Collapsed by default) -->
+                        <Expander Header="⚙️ Advanced Network Settings &amp; Direct LAN IP Override (Optional)"
+                                  Foreground="{DynamicResource TextMuted}" FontSize="11" Margin="0,16,0,0" IsExpanded="False">
+                            <Border Style="{StaticResource GhCard}" Padding="14" Margin="0,6,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="Network Diagnostic Status" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource CardInfoTitle}" Margin="0,0,0,4"/>
+                                    <TextBlock x:Name="P2pNetworkSummary" Text="Public IP &amp; NAT Status..." FontSize="11.5" Foreground="{DynamicResource TextSecondary}"/>
+                                    <TextBlock x:Name="P2pPinSummary" Text="Session Pairing PIN: ------" FontSize="11.5" Foreground="{DynamicResource CardWarnTitle}" FontFamily="Consolas" Margin="0,2,0,4"/>
+                                    <TextBlock x:Name="MeshNetworkSummaryText" Text="Mesh Interface Status..." FontSize="11" Foreground="{DynamicResource TextMuted}" Margin="0,2,0,2"/>
+                                    <TextBlock x:Name="TunnelStatusText" Text="HTTPS Tunnel Status..." FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,8"/>
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Button Content="Refresh NAT / UPnP" Style="{StaticResource OutlineButton}" Padding="8,4" Margin="0,0,6,0" Click="RefreshNatBtn_Click"/>
+                                        <Button x:Name="StartTunnelBtn" Content="🌐 Restart HTTPS Tunnel" Style="{StaticResource BlueButton}" Padding="8,4" Margin="0,0,6,0" Click="ToggleTunnelBtn_Click"/>
+                                        <Button Content="Rescan Mesh" Style="{StaticResource OutlineButton}" Padding="8,4" Margin="0,0,6,0" Click="RescanMeshBtn_Click"/>
+                                        <Button x:Name="CopyLobbyInviteBtn" Content="Copy Invite String" Style="{StaticResource OutlineButton}" Padding="8,4" Margin="0,0,6,0" Click="CopyLobbyInviteBtn_Click"/>
+                                        <CheckBox x:Name="ExpiringInviteChk" Content="4-Hour Expiring Token" FontSize="11" VerticalAlignment="Center"/>
+                                    </StackPanel>
+
+                                    <TextBlock Text="Direct IP / Port Override (For LAN play without internet)" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,6"/>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="2*"/>
+                                            <ColumnDefinition Width="10"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="10"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="Peer Address (IP:Port)" FontSize="11" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,2"/>
+                                            <TextBox x:Name="PeerAddressBox" Text="127.0.0.1:7373"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="Trust Token or PIN" FontSize="11" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,2"/>
+                                            <TextBox x:Name="PeerPinBox"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="4" Content="Direct Connect" Style="{StaticResource FlameButton}" VerticalAlignment="Bottom" Click="ComparePeerBtn_Click"/>
+                                    </Grid>
+
+                                    <StackPanel Orientation="Horizontal" Visibility="Collapsed">
+                                        <Button x:Name="PasteLobbyInviteBtn" Click="PasteLobbyInviteBtn_Click"/>
+                                        <ComboBox x:Name="TrustedFriendQuickCombo" SelectionChanged="TrustedFriendQuickCombo_SelectionChanged"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Expander>
                     </StackPanel>
 
-                    <!-- ==================== PAGE 6: IMPORT & CONVERT ==================== -->
-                    <StackPanel x:Name="PageImport" Visibility="Collapsed">
+                    <!-- ==================== PAGE 6: IMPORT & CONVERT ==================== --><StackPanel x:Name="PageImport" Visibility="Collapsed">
                         <TextBlock Text="Import &amp; Convert Songs" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
                         <TextBlock Text="Convert Clone Hero / YARG folders &amp; ZIPs directly into BetterGH3, or import .gh3pack / .gh3song archives safely into your existing songlist."
                                    FontSize="12.5" Foreground="{DynamicResource TextMuted}" Margin="0,2,0,16"/>

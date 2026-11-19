@@ -153,6 +153,8 @@ static bool IsExternalP2pRoute(string path)
     if (path.Equals("/api/friends/accept", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/api/friends/decline", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/api/friends/check-status", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/api/friends/trust-upgrade", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/api/friends/trust-upgrade-accept", StringComparison.OrdinalIgnoreCase)) return true;
     return false;
 }
 
@@ -880,12 +882,13 @@ app.MapPost("/api/friends/request", async (HttpContext context, FriendService fr
     var senderUsername = req.TryGetProperty("senderUsername", out var su) ? su.GetString() ?? "" : "";
     var senderAddress = req.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
     var proposedToken = req.TryGetProperty("proposedTrustToken", out var pt) ? pt.GetString() : null;
+    var isTrusted = !req.TryGetProperty("isTrusted", out var it) || it.GetBoolean();
 
     if (string.IsNullOrWhiteSpace(senderCode))
         return Results.BadRequest(new { error = "senderCode is required." });
 
-    var res = friends.ReceiveFriendRequest(senderCode, senderUsername, senderAddress, proposedToken);
-    logger.LogInfo($"[FRIENDS] Received friend request from {senderUsername} ({senderCode}) at {senderAddress} [Status: {res.Status}]");
+    var res = friends.ReceiveFriendRequest(senderCode, senderUsername, senderAddress, proposedToken, isTrusted);
+    logger.LogInfo($"[FRIENDS] Received friend request from {senderUsername} ({senderCode}) at {senderAddress} [Status: {res.Status}, Trusted: {isTrusted}]");
 
     return Results.Ok(new
     {
@@ -896,6 +899,59 @@ app.MapPost("/api/friends/request", async (HttpContext context, FriendService fr
         friendCode = res.FriendCode,
         message = "Friend request successfully received and waiting for approval."
     });
+});
+
+// P2P Handshake: Remote peer calls this endpoint when they request a trust upgrade
+app.MapPost("/api/friends/trust-upgrade", async (HttpContext context, FriendService friends, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+
+    var senderCode = req.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
+    var senderUsername = req.TryGetProperty("senderUsername", out var su) ? su.GetString() ?? "" : "";
+    var senderAddress = req.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
+    var proposedToken = req.TryGetProperty("proposedTrustToken", out var pt) ? pt.GetString() : null;
+
+    if (string.IsNullOrWhiteSpace(senderCode))
+        return Results.BadRequest(new { error = "senderCode is required." });
+
+    var res = friends.ReceiveTrustUpgradeRequest(senderCode, senderUsername, senderAddress, proposedToken);
+    logger.LogInfo($"[FRIENDS] Received trust upgrade request from {senderUsername} ({senderCode}) at {senderAddress}");
+
+    return Results.Ok(new
+    {
+        success = res.Success,
+        received = res.Received,
+        status = res.Status,
+        username = res.Username,
+        friendCode = res.FriendCode,
+        message = "Trust upgrade request successfully received and waiting for approval."
+    });
+});
+
+// P2P Handshake: Remote peer calls this endpoint when they accept our trust upgrade request
+app.MapPost("/api/friends/trust-upgrade-accept", async (HttpContext context, FriendService friends, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+
+    var senderCode = req.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
+    var senderUsername = req.TryGetProperty("senderUsername", out var su) ? su.GetString() ?? "" : "";
+    var senderAddress = req.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
+    var trustToken = req.TryGetProperty("trustToken", out var tt) ? tt.GetString() : null;
+
+    if (!string.IsNullOrWhiteSpace(senderCode))
+    {
+        var friend = friends.ProcessTrustUpgradeAccepted(senderCode, senderUsername, senderAddress, trustToken);
+        if (friend != null)
+        {
+            logger.LogInfo($"[FRIENDS] Remote peer {friend.Username} ({friend.FriendCode}) accepted trust upgrade! Full song sync enabled.");
+        }
+    }
+
+    return Results.Ok(new { success = true });
 });
 
 // P2P Handshake: Remote peer calls this endpoint when they accept our friend request
@@ -1798,6 +1854,31 @@ else
                 try
                 {
                     await app.StartAsync();
+
+                    // Always-on silent background Internet tunnel for zero-touch friend sync
+                    if (AppConfig.Current.P2pOnlineEnabled)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                syncLogger.LogInfo("[TUNNEL] Auto-starting background Cloudflare Internet tunnel for zero-touch sync...");
+                                var (ok, url) = await tunnelService.StartQuickTunnelAsync();
+                                if (ok && !string.IsNullOrWhiteSpace(url))
+                                {
+                                    syncLogger.LogInfo($"[TUNNEL] Background Cloudflare Internet tunnel ready: {url}");
+                                    if (!string.IsNullOrWhiteSpace(AppConfig.Current.FriendCode))
+                                    {
+                                        await signalingRelay.PublishHeartbeatAsync(AppConfig.Current.FriendCode, AppConfig.Current.Username, url);
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                syncLogger.LogWarn($"[TUNNEL] Background Cloudflare tunnel auto-start note: {ex.Message}");
+                            }
+                        });
+                    }
                 }
                 catch (Exception srvEx)
                 {
@@ -1859,12 +1940,21 @@ else
 
                 await Task.Delay(350);
                 splash.UpdateProgress(100, "Ready to Rock!");
-                await Task.Delay(200);
+                await Task.Delay(150);
+
+                try
+                {
+                    await splash.FadeOutAndCloseAsync();
+                }
+                catch
+                {
+                    try { splash.Close(); } catch { }
+                }
 
                 wpfApp.MainWindow = mainWin;
                 mainWin.Closed += (_, _) => wpfApp.Shutdown();
                 mainWin.Show();
-                await splash.FadeOutAndCloseAsync();
+                mainWin.Activate();
             };
 
             wpfApp.Run();

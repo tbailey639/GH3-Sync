@@ -2081,6 +2081,23 @@ public partial class MainWindow : Window
                 else WpfMessageBox.Show(msg, "Export Clone Hero", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         };
+        var exportGhwtBtn = new System.Windows.Controls.Button { Content = "Export GHWT:DE", Style = (Style)FindResource("OutlineButton"), Margin = new Thickness(0, 0, 6, 0), ToolTip = "Export this song as a Guitar Hero World Tour Definitive Edition mod folder" };
+        exportGhwtBtn.Click += (_, _) =>
+        {
+            var fbd = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "Select Destination Folder for GHWT:DE (e.g. GHWTDE/DATA/MODS/Songs/)",
+                Multiselect = false
+            };
+            if (fbd.ShowDialog() == true && !string.IsNullOrWhiteSpace(fbd.FolderName))
+            {
+                string safeName = $"{song.Artist} - {song.Title}".Replace('/', '_').Replace('\\', '_');
+                string targetSubDir = Path.Combine(fbd.FolderName, safeName);
+                var (ok, msg) = ChartStudioToolsService.ExportToGhwtdeFolder(song, targetSubDir);
+                if (ok) ShowStageToast("🎸 GHWT:DE EXPORT!", msg, "#22C55E");
+                else WpfMessageBox.Show(msg, "Export GHWT:DE", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        };
         var scaleDiffBtn = new System.Windows.Controls.Button { Content = "Scale Diffs (Fill E/M/H)", Style = (Style)FindResource("BlueButton"), Margin = new Thickness(0, 0, 6, 0), ToolTip = "Generate balanced progressive Hard, Medium & Easy tracks on this song" };
         scaleDiffBtn.Click += async (_, _) =>
         {
@@ -2108,6 +2125,7 @@ public partial class MainWindow : Window
             else WpfMessageBox.Show(msg, "Update Error", MessageBoxButton.OK, MessageBoxImage.Error);
         };
         btns.Children.Add(exportChBtn);
+        btns.Children.Add(exportGhwtBtn);
         btns.Children.Add(scaleDiffBtn);
         btns.Children.Add(saveBtn);
         stack.Children.Add(btns);
@@ -4157,6 +4175,16 @@ public partial class MainWindow : Window
 
     private async void SendFriendRequestBtn_Click(object sender, RoutedEventArgs e)
     {
+        await SendFriendRequestInternalAsync(asTrusted: false);
+    }
+
+    private async void SendTrustedFriendRequestBtn_Click(object sender, RoutedEventArgs e)
+    {
+        await SendFriendRequestInternalAsync(asTrusted: true);
+    }
+
+    private async Task SendFriendRequestInternalAsync(bool asTrusted)
+    {
         var rawCode = (AddFriendCodeBox.Text ?? "").Trim();
         if (string.IsNullOrWhiteSpace(rawCode))
         {
@@ -4166,11 +4194,12 @@ public partial class MainWindow : Window
 
         var directAddr = (DirectAddressBox?.Text ?? "").Trim();
         SendFriendRequestBtn.IsEnabled = false;
-        SendFriendRequestBtn.Content = "📡 Delivering Request...";
+        if (SendTrustedFriendRequestBtn != null) SendTrustedFriendRequestBtn.IsEnabled = false;
+        SendFriendRequestBtn.Content = "📡 Delivering...";
 
         try
         {
-            var res = await _friends.SendFriendRequestAsync(rawCode, string.IsNullOrWhiteSpace(directAddr) ? null : directAddr);
+            var res = await _friends.SendFriendRequestAsync(rawCode, asTrusted: asTrusted, customAddress: string.IsNullOrWhiteSpace(directAddr) ? null : directAddr);
 
             if (res.Success && res.ReceivedByPeer)
             {
@@ -4193,7 +4222,12 @@ public partial class MainWindow : Window
         finally
         {
             SendFriendRequestBtn.IsEnabled = true;
-            SendFriendRequestBtn.Content = "🚀 Send Friend Request";
+            SendFriendRequestBtn.Content = "➕ Add Friend";
+            if (SendTrustedFriendRequestBtn != null)
+            {
+                SendTrustedFriendRequestBtn.IsEnabled = true;
+                SendTrustedFriendRequestBtn.Content = "⭐ Add Trusted Friend";
+            }
         }
     }
 
@@ -4286,76 +4320,133 @@ public partial class MainWindow : Window
                 grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                 var left = new StackPanel();
-                left.Children.Add(new TextBlock
+                if (req.RequestType == "TrustUpgrade")
                 {
-                    Text = $"{req.Username}  ({req.FriendCode})",
-                    FontSize = 14.5,
-                    FontWeight = FontWeights.Bold,
-                    Foreground = (WpfBrush)FindResource("TextPrimary")
-                });
+                    left.Children.Add(new TextBlock
+                    {
+                        Text = $"⭐ {req.Username}  ({req.FriendCode})",
+                        FontSize = 14.5,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = (WpfBrush)FindResource("AccentFlameText")
+                    });
+                    left.Children.Add(new TextBlock
+                    {
+                        Text = "Requested Trust Upgrade • Grant full song downloads & 1-click library sync",
+                        FontSize = 12,
+                        Foreground = (WpfBrush)FindResource("CardSuccessTitle"),
+                        Margin = new Thickness(0, 2, 0, 0)
+                    });
+                    Grid.SetColumn(left, 0);
+                    grid.Children.Add(left);
 
-                var addrText = string.IsNullOrWhiteSpace(req.Address) ? "LAN / Mesh" : req.Address;
-                left.Children.Add(new TextBlock
-                {
-                    Text = $"Incoming request • From: {addrText} • Received: {req.CreatedAt:g}",
-                    FontSize = 12,
-                    Foreground = new SolidColorBrush(WpfColor.FromRgb(253, 186, 116)),
-                    Margin = new Thickness(0, 2, 0, 0)
-                });
-                Grid.SetColumn(left, 0);
-                grid.Children.Add(left);
+                    var right = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+                    var acceptTrustBtn = new System.Windows.Controls.Button
+                    {
+                        Content = "⭐ Accept Trust Upgrade",
+                        Style = (Style)FindResource("FlameButton"),
+                        Margin = new Thickness(0, 0, 8, 0),
+                        ToolTip = "Accept trust upgrade and enable mutual 1-click song sync"
+                    };
+                    acceptTrustBtn.Click += async (_, _) =>
+                    {
+                        var added = await _friends.AcceptTrustUpgradeAsync(req.Id);
+                        ShowStageToast("⭐ TRUST GRANTED!", $"{req.Username} is now a Trusted Friend with 1-click song sync enabled!", "#22C55E");
+                        AudioWaveformAndSfxService.PlayStarPowerChime();
+                        RefreshFriendsList();
+                        RefreshTrustedFriendDropdown();
+                    };
 
-                var right = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+                    var declineBtn = new System.Windows.Controls.Button
+                    {
+                        Content = "✕ Decline",
+                        Style = (Style)FindResource("DangerButton"),
+                        ToolTip = "Decline trust upgrade request"
+                    };
+                    declineBtn.Click += (_, _) =>
+                    {
+                        _friends.DeclineFriendRequest(req.Id);
+                        ShowStageToast("✕ DECLINED", $"Trust upgrade request declined.", "#EF4444");
+                        RefreshFriendsList();
+                    };
 
-                var acceptTrustBtn = new System.Windows.Controls.Button
+                    right.Children.Add(acceptTrustBtn);
+                    right.Children.Add(declineBtn);
+                    Grid.SetColumn(right, 1);
+                    grid.Children.Add(right);
+                }
+                else
                 {
-                    Content = "✓ Accept & Trust",
-                    Style = (Style)FindResource("GreenButton"),
-                    Margin = new Thickness(0, 0, 8, 0),
-                    ToolTip = "Accept request and grant Trusted Friend permissions (P2P song download and setlist auto-sync)"
-                };
-                acceptTrustBtn.Click += async (_, _) =>
-                {
-                    var added = await _friends.AcceptFriendRequestAsync(req.Id, asTrusted: true);
-                    ShowStageToast("✓ FRIEND ADDED!", $"{req.Username} is now a Trusted Friend!", "#22C55E");
-                    AudioWaveformAndSfxService.PlayStarPowerChime();
-                    RefreshFriendsList();
-                    RefreshTrustedFriendDropdown();
-                };
+                    left.Children.Add(new TextBlock
+                    {
+                        Text = $"{req.Username}  ({req.FriendCode})",
+                        FontSize = 14.5,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = (WpfBrush)FindResource("TextPrimary")
+                    });
 
-                var acceptRegBtn = new System.Windows.Controls.Button
-                {
-                    Content = "✓ Accept (View Only)",
-                    Style = (Style)FindResource("OutlineButton"),
-                    Margin = new Thickness(0, 0, 8, 0),
-                    ToolTip = "Accept as regular friend (view setlist only, downloads blocked)"
-                };
-                acceptRegBtn.Click += async (_, _) =>
-                {
-                    var added = await _friends.AcceptFriendRequestAsync(req.Id, asTrusted: false);
-                    ShowStageToast("✓ FRIEND ADDED!", $"{req.Username} added as regular friend.", "#38BDF8");
-                    RefreshFriendsList();
-                    RefreshTrustedFriendDropdown();
-                };
+                    var badgeText = req.IsTrustedRequest ? "⭐ Incoming Trusted Friend Request (Requests Song Sync)" : "Incoming Friend Request (View Only)";
+                    left.Children.Add(new TextBlock
+                    {
+                        Text = $"{badgeText} • Received: {req.CreatedAt:g}",
+                        FontSize = 12,
+                        Foreground = new SolidColorBrush(WpfColor.FromRgb(253, 186, 116)),
+                        Margin = new Thickness(0, 2, 0, 0)
+                    });
+                    Grid.SetColumn(left, 0);
+                    grid.Children.Add(left);
 
-                var declineBtn = new System.Windows.Controls.Button
-                {
-                    Content = "✕ Decline",
-                    Style = (Style)FindResource("DangerButton"),
-                    ToolTip = "Decline and remove this friend request"
-                };
-                declineBtn.Click += (_, _) =>
-                {
-                    _friends.DeclineFriendRequest(req.Id);
-                    ShowStageToast("✕ DECLINED", $"Friend request from {req.Username} declined.", "#EF4444");
-                    RefreshFriendsList();
-                };
+                    var right = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
 
-                right.Children.Add(acceptTrustBtn);
-                right.Children.Add(acceptRegBtn);
-                right.Children.Add(declineBtn);
-                Grid.SetColumn(right, 1);
-                grid.Children.Add(right);
+                    var acceptTrustBtn = new System.Windows.Controls.Button
+                    {
+                        Content = "⭐ Accept as Trusted",
+                        Style = (Style)FindResource(req.IsTrustedRequest ? "FlameButton" : "GreenButton"),
+                        Margin = new Thickness(0, 0, 8, 0),
+                        ToolTip = "Accept request and grant Trusted Friend permissions (P2P song download and setlist auto-sync)"
+                    };
+                    acceptTrustBtn.Click += async (_, _) =>
+                    {
+                        var added = await _friends.AcceptFriendRequestAsync(req.Id, asTrusted: true);
+                        ShowStageToast("✓ FRIEND ADDED!", $"{req.Username} is now a Trusted Friend!", "#22C55E");
+                        AudioWaveformAndSfxService.PlayStarPowerChime();
+                        RefreshFriendsList();
+                        RefreshTrustedFriendDropdown();
+                    };
+
+                    var acceptRegBtn = new System.Windows.Controls.Button
+                    {
+                        Content = "✓ Accept (View Only)",
+                        Style = (Style)FindResource("OutlineButton"),
+                        Margin = new Thickness(0, 0, 8, 0),
+                        ToolTip = "Accept as regular friend (view setlist only, downloads blocked)"
+                    };
+                    acceptRegBtn.Click += async (_, _) =>
+                    {
+                        var added = await _friends.AcceptFriendRequestAsync(req.Id, asTrusted: false);
+                        ShowStageToast("✓ FRIEND ADDED!", $"{req.Username} added as regular friend.", "#38BDF8");
+                        RefreshFriendsList();
+                        RefreshTrustedFriendDropdown();
+                    };
+
+                    var declineBtn = new System.Windows.Controls.Button
+                    {
+                        Content = "✕ Decline",
+                        Style = (Style)FindResource("DangerButton"),
+                        ToolTip = "Decline and remove this friend request"
+                    };
+                    declineBtn.Click += (_, _) =>
+                    {
+                        _friends.DeclineFriendRequest(req.Id);
+                        ShowStageToast("✕ DECLINED", $"Friend request from {req.Username} declined.", "#EF4444");
+                        RefreshFriendsList();
+                    };
+
+                    right.Children.Add(acceptTrustBtn);
+                    right.Children.Add(acceptRegBtn);
+                    right.Children.Add(declineBtn);
+                    Grid.SetColumn(right, 1);
+                    grid.Children.Add(right);
+                }
 
                 card.Child = grid;
                 FriendsListPanel.Children.Add(card);
@@ -4396,9 +4487,12 @@ public partial class MainWindow : Window
                     FontWeight = FontWeights.Bold,
                     Foreground = (WpfBrush)FindResource("TextPrimary")
                 });
+                var reqSub = req.RequestType == "TrustUpgrade"
+                    ? "⭐ Trust Upgrade request sent • Waiting for friend to accept..."
+                    : (req.IsTrustedRequest ? "⭐ Trusted Friend request sent • Waiting for player to accept..." : "Friend request sent (View Only) • Waiting for player to accept...");
                 left.Children.Add(new TextBlock
                 {
-                    Text = $"✓ Delivery confirmed to peer • Sent: {req.CreatedAt:g} • Waiting for player to accept...",
+                    Text = $"{reqSub} (Sent {req.CreatedAt:g})",
                     FontSize = 12,
                     Foreground = (WpfBrush)FindResource("TextMuted"),
                     Margin = new Thickness(0, 2, 0, 0)
@@ -4464,20 +4558,10 @@ public partial class MainWindow : Window
             left.Children.Add(new TextBlock { Text = $"{f.Username}  ({f.FriendCode})", FontSize = 14, FontWeight = FontWeights.Bold, Foreground = (WpfBrush)FindResource("TextPrimary") });
             left.Children.Add(new TextBlock
             {
-                Text = f.IsTrusted ? "Trusted Friend (Can Download Songs & Auto-Sync)" : "Regular Friend (PIN View-Only — Downloads Blocked)",
+                Text = f.IsTrusted ? "⭐ Trusted Friend (1-Click Sync Enabled)" : "Regular Friend (Setlist View Only)",
                 FontSize = 12,
                 Foreground = (WpfBrush)FindResource(f.IsTrusted ? "CardSuccessTitle" : "TextMuted")
             });
-            if (!string.IsNullOrWhiteSpace(f.LastAddress))
-            {
-                left.Children.Add(new TextBlock
-                {
-                    Text = $"Last Connection: {f.LastAddress}",
-                    FontSize = 11,
-                    Foreground = (WpfBrush)FindResource("TextMuted"),
-                    Margin = new Thickness(0, 2, 0, 0)
-                });
-            }
             Grid.SetColumn(left, 0);
             grid.Children.Add(left);
 
@@ -4487,7 +4571,7 @@ public partial class MainWindow : Window
             {
                 Content = f.IsTrusted ? "⚡ Sync Songs" : "🎵 View Setlist",
                 Style = (Style)FindResource(f.IsTrusted ? "FlameButton" : "BlueButton"),
-                Padding = new Thickness(12, 6, 12, 6),
+                Padding = new Thickness(14, 6, 14, 6),
                 Margin = new Thickness(0, 0, 8, 0),
                 ToolTip = f.IsTrusted
                     ? $"Compare libraries with {f.Username} and auto-sync missing custom songs"
@@ -4538,33 +4622,46 @@ public partial class MainWindow : Window
             };
             right.Children.Add(syncBtn);
 
-            if (f.IsTrusted && !string.IsNullOrWhiteSpace(f.TrustToken))
+            if (!f.IsTrusted)
             {
-                var copyTokBtn = new System.Windows.Controls.Button
+                var upgradeBtn = new System.Windows.Controls.Button
                 {
-                    Content = "Copy Trust Token",
-                    Style = (Style)FindResource("OutlineButton"),
+                    Content = "⭐ Request Trust Upgrade",
+                    Style = (Style)FindResource("FlameButton"),
+                    Padding = new Thickness(12, 6, 12, 6),
                     Margin = new Thickness(0, 0, 8, 0),
-                    ToolTip = "Copy this friend's Trust Token so they can sync songs from you"
+                    ToolTip = $"Request {f.Username} to upgrade to a Trusted Friend for full 1-click song syncing"
                 };
-                copyTokBtn.Click += (_, _) =>
+                upgradeBtn.Click += async (_, _) =>
                 {
-                    System.Windows.Clipboard.SetText(f.TrustToken);
-                    WpfMessageBox.Show($"Copied Trust Token for {f.Username}. Share it privately so they can download your customs.", "Trust Token Copied", MessageBoxButton.OK, MessageBoxImage.Information);
+                    upgradeBtn.IsEnabled = false;
+                    upgradeBtn.Content = "Sending...";
+                    try
+                    {
+                        var res = await _friends.RequestTrustUpgradeAsync(f.FriendCode);
+                        if (res.Success)
+                        {
+                            ShowStageToast("⭐ TRUST REQUEST SENT!", $"Requested trust upgrade from {f.Username}. When they accept, 1-click sync is enabled!", "#22C55E");
+                            AudioWaveformAndSfxService.PlayStarPowerChime();
+                            RefreshFriendsList();
+                        }
+                        else
+                        {
+                            ShowStageToast("❌ FAILED", res.Message, "#EF4444");
+                            AudioWaveformAndSfxService.PlayNoteMissClunk();
+                        }
+                    }
+                    finally
+                    {
+                        upgradeBtn.IsEnabled = true;
+                        upgradeBtn.Content = "⭐ Request Trust Upgrade";
+                    }
                 };
-                right.Children.Add(copyTokBtn);
+                right.Children.Add(upgradeBtn);
             }
-            var trustBtn = new System.Windows.Controls.Button
-            {
-                Content = f.IsTrusted ? "Revoke Trust" : "Allow Trusted",
-                Style = (Style)FindResource(f.IsTrusted ? "OutlineButton" : "GreenButton"),
-                Margin = new Thickness(0, 0, 8, 0)
-            };
-            trustBtn.Click += (_, _) => { _friends.ToggleTrust(f.FriendCode, !f.IsTrusted); RefreshFriendsList(); RefreshTrustedFriendDropdown(); };
+
             var delBtn = new System.Windows.Controls.Button { Content = "Unfriend", Style = (Style)FindResource("DangerButton") };
             delBtn.Click += (_, _) => { _friends.RemoveFriend(f.FriendCode); RefreshFriendsList(); RefreshTrustedFriendDropdown(); };
-
-            right.Children.Add(trustBtn);
             right.Children.Add(delBtn);
             Grid.SetColumn(right, 1);
             grid.Children.Add(right);
@@ -4607,7 +4704,7 @@ public partial class MainWindow : Window
         {
             var emptyCard = new Border
             {
-                Background = (WpfBrush)FindResource("BgCardAlt"),
+                Background = (WpfBrush)FindResource("BgCard"),
                 CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(14),
                 Margin = new Thickness(0, 4, 0, 4)
@@ -4636,8 +4733,8 @@ public partial class MainWindow : Window
         {
             var card = new Border
             {
-                Background = (WpfBrush)FindResource("BgCardAlt"),
-                BorderBrush = (WpfBrush)FindResource("BorderDefault"),
+                Background = (WpfBrush)FindResource("BgCard"),
+                BorderBrush = (WpfBrush)FindResource("BorderSubtle"),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(14, 12, 14, 12),

@@ -80,6 +80,8 @@ public class FriendRequestItem
     public string Direction { get; set; } = "Incoming"; // "Incoming" (they asked me) or "Outgoing" (I asked them)
     public string Status { get; set; } = "Pending";     // "Pending", "Accepted", "Declined"
     public string ProposedTrustToken { get; set; } = "";
+    public bool IsTrustedRequest { get; set; } = true;
+    public string RequestType { get; set; } = "Friend"; // "Friend" or "TrustUpgrade"
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
