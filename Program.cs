@@ -1886,11 +1886,11 @@ if (args.Contains("--verify-features"))
     // ----- TEST 1: Xbox-Style Asynchronous Friend Requests -----
     try
     {
-        Console.WriteLine("[TEST 1] Dispatching friend request to '5126-A893'...");
-        var sendRes = await friendService.SendFriendRequestAsync("5126-A893", asTrusted: true);
+        Console.WriteLine("[TEST 1] Dispatching friend request to '9999-TEST'...");
+        var sendRes = await friendService.SendFriendRequestAsync("9999-TEST", asTrusted: true);
         Console.WriteLine($"  Send Result: Success={sendRes.Success}, FriendCode={sendRes.FriendCode}, Message={sendRes.Message}");
 
-        var outReq = AppConfig.Current.FriendRequests.FirstOrDefault(r => r.FriendCode == "GH3-5126-A893" && r.Direction == "Outgoing");
+        var outReq = AppConfig.Current.FriendRequests.FirstOrDefault(r => r.FriendCode == "GH3-9999-TEST" && r.Direction == "Outgoing");
         if (sendRes.Success && outReq != null && outReq.Status == "Pending")
         {
             Console.WriteLine("  [PASS] Outgoing request saved in AppConfig as Pending.");
@@ -1916,7 +1916,7 @@ if (args.Contains("--verify-features"))
         }
 
         // Clean up test items
-        AppConfig.Current.FriendRequests.RemoveAll(r => r.FriendCode == "GH3-5126-A893" || r.FriendCode == "GH3-8888-PEER");
+        AppConfig.Current.FriendRequests.RemoveAll(r => r.FriendCode == "GH3-9999-TEST" || r.FriendCode == "GH3-8888-PEER");
         AppConfig.Current.Friends.RemoveAll(f => f.FriendCode == "GH3-8888-PEER");
         AppConfig.Save();
     }

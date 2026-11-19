@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,7 +19,62 @@ namespace GH3_Sync;
 /// </summary>
 public class SignalingRelayService
 {
-    private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(5.0) };
+    public static SocketsHttpHandler CreateFastIPv4Handler()
+    {
+        return new SocketsHttpHandler
+        {
+            PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+            PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
+            ConnectTimeout = TimeSpan.FromSeconds(4),
+            ConnectCallback = async (context, cancellationToken) =>
+            {
+                var host = context.DnsEndPoint.Host;
+                var port = context.DnsEndPoint.Port;
+
+                IPAddress[] addrs;
+                if (IPAddress.TryParse(host, out var parsedIp))
+                {
+                    addrs = new[] { parsedIp };
+                }
+                else
+                {
+                    var entry = await Dns.GetHostEntryAsync(host, cancellationToken);
+                    addrs = entry.AddressList;
+                }
+
+                // Prioritize IPv4 addresses to bypass broken residential ISP IPv6 routes
+                var sorted = addrs
+                    .OrderBy(a => a.AddressFamily == AddressFamily.InterNetwork ? 0 : 1)
+                    .ToList();
+
+                Exception? lastEx = null;
+                foreach (var ip in sorted)
+                {
+                    var socket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+                    {
+                        NoDelay = true
+                    };
+
+                    try
+                    {
+                        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                        linkedCts.CancelAfter(TimeSpan.FromSeconds(2.5));
+                        await socket.ConnectAsync(new IPEndPoint(ip, port), linkedCts.Token);
+                        return new NetworkStream(socket, ownsSocket: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        socket.Dispose();
+                        lastEx = ex;
+                    }
+                }
+
+                throw lastEx ?? new SocketException((int)SocketError.HostUnreachable);
+            }
+        };
+    }
+
+    private static readonly HttpClient _http = new(CreateFastIPv4Handler()) { Timeout = TimeSpan.FromSeconds(8.0) };
     private readonly FriendService _friends;
     private readonly SyncLogger? _logger;
     private CancellationTokenSource? _loopCts;
@@ -86,11 +143,12 @@ public class SignalingRelayService
 
     public async Task<bool> PublishHeartbeatAsync(string friendCode, string username, string address)
     {
-        if (string.IsNullOrWhiteSpace(address) || address.Contains("169.254.") || address.Contains("127.0.0.1"))
-            return false;
-
         var topicKey = CleanTopicCode(friendCode);
         if (string.IsNullOrWhiteSpace(topicKey)) return false;
+
+        var cleanAddr = (address ?? "").Trim();
+        if (cleanAddr.Contains("169.254.") || cleanAddr.Contains("127.0.0.1"))
+            cleanAddr = "";
 
         try
         {
@@ -101,7 +159,7 @@ public class SignalingRelayService
             {
                 code = NormalizeCode(friendCode),
                 username = username ?? "Player",
-                address = address.TrimEnd('/'),
+                address = cleanAddr.TrimEnd('/'),
                 activity = activity,
                 showcase = showcase,
                 timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
@@ -113,7 +171,7 @@ public class SignalingRelayService
                 message = innerJson
             };
 
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4.0));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6.0));
             var resp = await _http.PostAsJsonAsync("https://ntfy.sh", ntfyPayload, cts.Token);
             return resp.IsSuccessStatusCode;
         }
@@ -191,19 +249,19 @@ public class SignalingRelayService
                             peerShowcase = ExtractField(msgText, "showcase");
                         }
 
-                        if (!string.IsNullOrWhiteSpace(peerAddr) && !peerAddr.Contains("169.254."))
+                        var existingFriend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(peerCode, StringComparison.OrdinalIgnoreCase));
+                        if (existingFriend != null)
                         {
-                            var existingFriend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(peerCode, StringComparison.OrdinalIgnoreCase));
-                            if (existingFriend != null)
+                            existingFriend.ActivityStatus = peerActivity;
+                            if (!string.IsNullOrWhiteSpace(peerAddr) && !peerAddr.Contains("169.254."))
                             {
-                                existingFriend.ActivityStatus = peerActivity;
                                 existingFriend.LastAddress = peerAddr;
-                                if (!string.IsNullOrWhiteSpace(peerShowcase)) existingFriend.ShowcaseSong = peerShowcase;
                             }
-                            OnPeerActivityUpdated?.Invoke(peerCode, peerActivity, peerShowcase);
-
-                            return (true, string.IsNullOrWhiteSpace(peerName) ? "Player" : peerName, peerAddr, string.IsNullOrWhiteSpace(peerCode) ? normCode : peerCode);
+                            if (!string.IsNullOrWhiteSpace(peerShowcase)) existingFriend.ShowcaseSong = peerShowcase;
                         }
+                        OnPeerActivityUpdated?.Invoke(peerCode, peerActivity, peerShowcase);
+
+                        return (true, string.IsNullOrWhiteSpace(peerName) ? "Player" : peerName, peerAddr, string.IsNullOrWhiteSpace(peerCode) ? normCode : peerCode);
                     }
                 }
             }
@@ -419,7 +477,7 @@ public class SignalingRelayService
                 var myBestAddress = FriendService.BestAddressProvider?.Invoke() ?? "";
 
                 // 1. Publish our live heartbeat
-                if (!string.IsNullOrWhiteSpace(myBestAddress) && !myBestAddress.Contains("169.254.") && !string.IsNullOrWhiteSpace(myCleanTopic))
+                if (!string.IsNullOrWhiteSpace(myCleanTopic))
                 {
                     await PublishHeartbeatAsync(myCode, AppConfig.Current.Username, myBestAddress);
                 }

@@ -34,7 +34,7 @@ public class SendFriendRequestResult
 public class FriendService
 {
     private readonly object _lock = new();
-    private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(15.0) };
+    private static readonly HttpClient _httpClient = new(SignalingRelayService.CreateFastIPv4Handler()) { Timeout = TimeSpan.FromSeconds(15.0) };
 
     public static Func<string>? BestAddressProvider { get; set; }
     public static SignalingRelayService? SignalingRelay { get; set; }
@@ -239,11 +239,11 @@ public class FriendService
             if (SignalingRelay != null)
             {
                 var (found, sUser, sAddr, sNorm) = await SignalingRelay.ResolvePeerAsync(cleanCode);
-                if (found && !string.IsNullOrWhiteSpace(sAddr))
+                if (found)
                 {
                     if (existingFriend != null)
                     {
-                        existingFriend.LastAddress = sAddr;
+                        if (!string.IsNullOrWhiteSpace(sAddr)) existingFriend.LastAddress = sAddr;
                         if (!string.IsNullOrWhiteSpace(sUser)) existingFriend.Username = sUser;
                         AppConfig.Save();
                     }

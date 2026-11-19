@@ -5672,7 +5672,7 @@ public partial class MainWindow : Window
     /// </summary>
     private static async Task<HttpResponseMessage> SendChallengeHmacGetAsync(string baseUrl, string path, string secret, TimeSpan timeout)
     {
-        using var http = new HttpClient { Timeout = timeout };
+        using var http = new HttpClient(SignalingRelayService.CreateFastIPv4Handler()) { Timeout = timeout };
         var fullUrl = $"{baseUrl.TrimEnd('/')}{path}";
 
         if (!string.IsNullOrWhiteSpace(secret))
@@ -6405,7 +6405,7 @@ public partial class MainWindow : Window
                 {
                     var payload = new { senderCode = AppConfig.Current.FriendCode, isReady = _isLocalLobbyReady };
                     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2.0));
-                    using var client = new HttpClient();
+                    using var client = new HttpClient(SignalingRelayService.CreateFastIPv4Handler());
                     await client.PostAsJsonAsync($"{peerAddr.TrimEnd('/')}/api/lobby/ready", payload, cts.Token);
                 }
                 catch { }
@@ -6564,7 +6564,7 @@ public partial class MainWindow : Window
                 {
                     var payload = new { senderCode = AppConfig.Current.FriendCode, seed = seed, songIds = pickedIds };
                     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2.0));
-                    using var client = new HttpClient();
+                    using var client = new HttpClient(SignalingRelayService.CreateFastIPv4Handler());
                     await client.PostAsJsonAsync($"{peerAddr.TrimEnd('/')}/api/lobby/roulette-roll", payload, cts.Token);
                 }
                 catch { }
@@ -7762,7 +7762,7 @@ public partial class MainWindow : Window
                 {
                     try
                     {
-                        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+                        using var client = new HttpClient(SignalingRelayService.CreateFastIPv4Handler()) { Timeout = TimeSpan.FromSeconds(2) };
                         await client.PostAsync($"{_lastPeerBaseUrl.TrimEnd('/')}/api/lobby/hype-sfx?type={Uri.EscapeDataString(sfxType)}", null);
                     }
                     catch { }
