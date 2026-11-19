@@ -539,12 +539,10 @@ public class SongCreatorService
             // 5b. Optional AI Stadium Crowd Sing-Along & Chants (Chorus & melodic vocal formant choir)
             if (meta.EnableStadiumChants && !string.IsNullOrEmpty(backingAudioPath) && File.Exists(backingAudioPath))
             {
-                onProgress?.Invoke(77, "Layering AI stadium crowd sing-along choir into backing audio...");
-                var chants = await _stadiumChants.GenerateStadiumChantsAsync(backingAudioPath, chartFullPath, exactBpm, (p, m) => onProgress?.Invoke(p, m));
-                if (chants.Success && !string.IsNullOrEmpty(chants.ProcessedAudioPath) && File.Exists(chants.ProcessedAudioPath))
-                {
-                    backingAudioPath = chants.ProcessedAudioPath;
-                }
+                onProgress?.Invoke(77, "Synthesizing authentic stadium concert crowd sing-along choir...");
+                await _stadiumChants.GenerateStadiumChantsAsync(backingAudioPath, chartFullPath, exactBpm, (p, m) => onProgress?.Invoke(p, m));
+                // Note: The concert crowd choir is saved to song_crowd.wav and packed as the dynamic rhythm stream,
+                // keeping backingAudioPath untouched at pristine studio fidelity!
             }
 
             // 6. Generate .ghproj
@@ -555,6 +553,10 @@ public class SongCreatorService
             int safeYear = Math.Clamp(meta.Year, 1900, 2100);
             int safeGuitarTier = Math.Clamp(meta.DiffGuitar, 1, 10);
             int safeBassTier = Math.Clamp(meta.DiffRhythm, 1, 10);
+
+            var crowdStemWav = Path.Combine(targetDir, "song_crowd.wav");
+            string effectiveCrowd = File.Exists(crowdStemWav) ? crowdStemWav : "";
+            string effectiveRhythm = !string.IsNullOrEmpty(rhythmAudioPath) ? rhythmAudioPath : effectiveCrowd;
 
             var projData = new
             {
@@ -573,18 +575,18 @@ public class SongCreatorService
                 cymbalsPath = "",
                 tomsPath = "",
                 guitarPath = guitarAudioPath,
-                bassPath = rhythmAudioPath,
+                bassPath = effectiveRhythm,
                 vocalsPath = "",
                 backingPaths = backingAudioPath,
-                crowdPath = "",
+                crowdPath = effectiveCrowd,
                 previewAudioPath = audioFullPath,
                 guitarPathGh3 = guitarAudioPath,
-                rhythmPathGh3 = rhythmAudioPath,
+                rhythmPathGh3 = effectiveRhythm,
                 backingPathsGh3 = backingAudioPath,
                 coopGuitarPath = guitarAudioPath,
-                coopRhythmPath = rhythmAudioPath,
+                coopRhythmPath = effectiveRhythm,
                 coopBackingPaths = backingAudioPath,
-                crowdPathGh3 = "",
+                crowdPathGh3 = effectiveCrowd,
                 previewAudioPathGh3 = audioFullPath,
                 midiPathGh3 = chosenMidiPath,
                 perfPathGh3 = "",

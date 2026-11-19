@@ -101,6 +101,13 @@ script destroy_intro
 	KillSpawnedScript \{name = move_highway_2d}
 	KillSpawnedScript \{name = intro_buttonup_ripple}
 	KillSpawnedScript \{name = intro_hud_move}
+	if ($current_num_players = 1)
+		soundbussunlock \{music_rhythm}
+		setsoundbussparams \{music_rhythm = {vol = -100.0}}
+		SoundBussLock \{music_rhythm}
+		KillSpawnedScript \{name = crowd_stadium_singalong_monitor}
+		spawnscriptnow \{crowd_stadium_singalong_monitor}
+	endif
 	DoScreenElementMorph \{id = intro_song_info_text
 		alpha = 0}
 	DoScreenElementMorph \{id = intro_artist_info_text
@@ -197,6 +204,10 @@ script downloadcontentlost
 endscript
 
 script SongUnLoadFSBIfDownloaded 
+	KillSpawnedScript \{name = crowd_stadium_singalong_monitor}
+	soundbussunlock \{music_rhythm}
+	setsoundbussparams \{music_rhythm = {vol = 0.0}}
+	SoundBussLock \{music_rhythm}
 	GetContentFolderIndexFromFile ($song_fsb_name)
 	if NOT ($song_fsb_id = -1)
 		if (<device> = content)
@@ -284,6 +295,27 @@ script Downloads_OpenContentFolder
 	return \{TRUE}
 endscript
 
+script crowd_stadium_singalong_monitor 
+	begin
+	if ($current_num_players = 1)
+		if ($game_mode != p2_battle)
+			if ($boss_battle != 1)
+				soundbussunlock \{music_rhythm}
+				if ($player1_status.star_power_used = 1)
+					setsoundbussparams \{music_rhythm = {vol = 4.0}}
+				elseif ($player1_status.multiplier >= 4)
+					setsoundbussparams \{music_rhythm = {vol = 1.0}}
+				else
+					setsoundbussparams \{music_rhythm = {vol = -100.0}}
+				endif
+				SoundBussLock \{music_rhythm}
+			endif
+		endif
+	endif
+	wait \{1 gameframe}
+	repeat
+endscript
+
 script crowd_monitor_performance 
 	lighters_on = FALSE
 	begin
@@ -306,6 +338,21 @@ script crowd_monitor_performance
 			Crowd_ToggleLighters \{Off}
 		endif
 	endif
+	if ($current_num_players = 1)
+		if ($game_mode != p2_battle)
+			if ($boss_battle != 1)
+				soundbussunlock \{music_rhythm}
+				if ($player1_status.star_power_used = 1)
+					setsoundbussparams \{music_rhythm = {vol = 4.0}}
+				elseif ($player1_status.multiplier >= 4)
+					setsoundbussparams \{music_rhythm = {vol = 1.0}}
+				else
+					setsoundbussparams \{music_rhythm = {vol = -100.0}}
+				endif
+				SoundBussLock \{music_rhythm}
+			endif
+		endif
+	endif
 	wait \{1 gameframe}
 	repeat
 endscript
@@ -315,6 +362,13 @@ script Transition_StartRendering
 	startrendering
 	enable_pause
 	change \{is_changing_levels = 0}
+	if ($current_num_players = 1)
+		soundbussunlock \{music_rhythm}
+		setsoundbussparams \{music_rhythm = {vol = -100.0}}
+		SoundBussLock \{music_rhythm}
+		KillSpawnedScript \{name = crowd_stadium_singalong_monitor}
+		spawnscriptnow \{crowd_stadium_singalong_monitor}
+	endif
 	if ($blade_active = 1)
 		gh3_start_pressed
 	endif

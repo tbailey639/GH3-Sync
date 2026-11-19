@@ -937,22 +937,43 @@ public class HoneycombCompilerService
                 hasMatchingSilence = CreateMatchingSilenceWav(ffmpegExe, masterInput, tempSilenceWav);
             }
 
+            // Check for authentic concert crowd sing-along / choir audio candidate
+            string crowdCandidate = "";
+            foreach (var cand in new[] { "song_crowd.wav", "song_crowd.mp3", "crowd.wav", "crowd.mp3" })
+            {
+                var cp = Path.Combine(projectDir, cand);
+                if (File.Exists(cp) && new FileInfo(cp).Length > 1024) { crowdCandidate = cp; break; }
+            }
+
             if (audioMode.Equals("StudioMaster", StringComparison.OrdinalIgnoreCase) || !stems.HasMultiStems)
             {
                 // Studio Master Audio (Beat It / Gently Weeps style):
-                // Untouched original master in backing, silent pad in guitar/rhythm -> ZERO Demucs warble, ZERO double-audio clipping!
-                log($"Audio Mode: Studio Master (Cleanest Fidelity) -> Backing={Path.GetFileName(masterInput)}, Guitar=silent pad (duration-matched)");
+                // Untouched original master in backing, silent pad in guitar, dynamic crowd choir in rhythm!
+                log($"Audio Mode: Studio Master (Cleanest Fidelity) -> Backing={Path.GetFileName(masterInput)}, Guitar=silent pad");
 
                 if (hasMatchingSilence && File.Exists(tempSilenceWav))
                 {
                     await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textGuitar })!;
-                    await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textRhythm })!;
                 }
                 else
                 {
                     await (Task)mConvert.Invoke(fsbObj, new object[] { "", textGuitar })!;
+                }
+
+                if (!string.IsNullOrEmpty(crowdCandidate))
+                {
+                    log($"Assigning dynamic concert crowd choir to rhythm channel ({Path.GetFileName(crowdCandidate)})...");
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { crowdCandidate, textRhythm })!;
+                }
+                else if (hasMatchingSilence && File.Exists(tempSilenceWav))
+                {
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textRhythm })!;
+                }
+                else
+                {
                     await (Task)mConvert.Invoke(fsbObj, new object[] { "", textRhythm })!;
                 }
+
                 await (Task)mConvert.Invoke(fsbObj, new object[] { masterInput, textSong })!;
             }
             else if (audioMode.Equals("HybridBlend", StringComparison.OrdinalIgnoreCase) && stems.LeadStems.Count > 0 && stems.BackingStems.Count > 0)
@@ -970,10 +991,22 @@ public class HoneycombCompilerService
                 {
                     log("Converting hybrid playable lead channel to CBR MP3...");
                     await (Task)mConvert.Invoke(fsbObj, new object[] { tempHybridLead, textGuitar })!;
-                    log("Preparing rhythm/bass track...");
-                    if (string.IsNullOrEmpty(stems.RhythmStem) && hasMatchingSilence && File.Exists(tempSilenceWav))
+                    log("Preparing rhythm/crowd track...");
+                    if (string.IsNullOrEmpty(stems.RhythmStem))
                     {
-                        await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textRhythm })!;
+                        if (!string.IsNullOrEmpty(crowdCandidate))
+                        {
+                            log($"Assigning dynamic concert crowd choir to rhythm channel ({Path.GetFileName(crowdCandidate)})...");
+                            await (Task)mConvert.Invoke(fsbObj, new object[] { crowdCandidate, textRhythm })!;
+                        }
+                        else if (hasMatchingSilence && File.Exists(tempSilenceWav))
+                        {
+                            await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textRhythm })!;
+                        }
+                        else
+                        {
+                            await (Task)mConvert.Invoke(fsbObj, new object[] { "", textRhythm })!;
+                        }
                     }
                     else
                     {
@@ -988,13 +1021,25 @@ public class HoneycombCompilerService
                     if (hasMatchingSilence && File.Exists(tempSilenceWav))
                     {
                         await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textGuitar })!;
-                        await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textRhythm })!;
                     }
                     else
                     {
                         await (Task)mConvert.Invoke(fsbObj, new object[] { "", textGuitar })!;
+                    }
+
+                    if (!string.IsNullOrEmpty(crowdCandidate))
+                    {
+                        await (Task)mConvert.Invoke(fsbObj, new object[] { crowdCandidate, textRhythm })!;
+                    }
+                    else if (hasMatchingSilence && File.Exists(tempSilenceWav))
+                    {
+                        await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textRhythm })!;
+                    }
+                    else
+                    {
                         await (Task)mConvert.Invoke(fsbObj, new object[] { "", textRhythm })!;
                     }
+
                     await (Task)mConvert.Invoke(fsbObj, new object[] { masterInput, textSong })!;
                 }
             }
@@ -1014,10 +1059,22 @@ public class HoneycombCompilerService
                     await (Task)mMix.Invoke(fsbObj, new object[] { stems.LeadStems.ToArray(), textGuitar, "", "", ".mp3", 48000 })!;
                 }
 
-                log("Preparing rhythm/bass track...");
-                if (string.IsNullOrEmpty(stems.RhythmStem) && hasMatchingSilence && File.Exists(tempSilenceWav))
+                log("Preparing rhythm/crowd track...");
+                if (string.IsNullOrEmpty(stems.RhythmStem))
                 {
-                    await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textRhythm })!;
+                    if (!string.IsNullOrEmpty(crowdCandidate))
+                    {
+                        log($"Assigning dynamic concert crowd choir to rhythm channel ({Path.GetFileName(crowdCandidate)})...");
+                        await (Task)mConvert.Invoke(fsbObj, new object[] { crowdCandidate, textRhythm })!;
+                    }
+                    else if (hasMatchingSilence && File.Exists(tempSilenceWav))
+                    {
+                        await (Task)mConvert.Invoke(fsbObj, new object[] { tempSilenceWav, textRhythm })!;
+                    }
+                    else
+                    {
+                        await (Task)mConvert.Invoke(fsbObj, new object[] { "", textRhythm })!;
+                    }
                 }
                 else
                 {
@@ -1035,37 +1092,9 @@ public class HoneycombCompilerService
             log("Generating preview audio...");
             await (Task)mConvert.Invoke(fsbObj, new object[] { previewInput, textPreview })!;
 
-            // 4b. Live Concert Crowd Sing-Along & Chants (Dynamic 4x Lightbar Streak & Star Power Stream)
-            string crowdCandidate = "";
-            foreach (var cand in new[] { "song_crowd.wav", "song_crowd.mp3", "crowd.wav", "crowd.mp3" })
-            {
-                var cp = Path.Combine(projectDir, cand);
-                if (File.Exists(cp)) { crowdCandidate = cp; break; }
-            }
-
-            bool hasCrowdStream = false;
-            if (!string.IsNullOrEmpty(crowdCandidate) && File.Exists(crowdCandidate))
-            {
-                log($"Packing live concert crowd sing-along audio stem ({Path.GetFileName(crowdCandidate)})...");
-                try
-                {
-                    await (Task)mConvert.Invoke(fsbObj, new object[] { crowdCandidate, textCrowd })!;
-                    if (File.Exists(textCrowd) && new FileInfo(textCrowd).Length > 2048)
-                    {
-                        hasCrowdStream = true;
-                    }
-                }
-                catch (Exception crEx)
-                {
-                    log($"Note: Crowd stem packing encountered: {crEx.Message}");
-                }
-            }
-
-            // 5. Combine into encrypted FSB3 and DAT soundbanks
-            log("Packing and encrypting FSB3 and DAT soundbanks...");
-            var filesToProcess = hasCrowdStream
-                ? new[] { textGuitar, textRhythm, textSong, textPreview, textCrowd }
-                : new[] { textGuitar, textRhythm, textSong, textPreview };
+            // 5. Combine into encrypted FSB3 and DAT soundbanks (Stream 0=Guitar, 1=Rhythm/Crowd, 2=Song/Master, 3=Preview)
+            log("Packing and encrypting FSB3 and DAT soundbanks (4 streams: Lead, Rhythm/Crowd, Backing, Preview)...");
+            var filesToProcess = new[] { textGuitar, textRhythm, textSong, textPreview };
             var fsbOutput = Path.Combine(projectDir, songChecksum);
             mCombine.Invoke(fsbObj, new object[] { filesToProcess, fsbOutput });
 
