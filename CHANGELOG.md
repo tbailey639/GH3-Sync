@@ -4,6 +4,22 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.2.1] - 2026-11-18 — Zero-Config Internet Friend Sync & Self-Contained Release
+
+### 1-Click Internet Friend Invites & Seamless WAN Connection
+* **1-Click Online Friend Invites (`📋 Copy Online Invite`):** When playing with friends across the internet (different houses/Wi-Fi), clicking "📋 Copy Online Invite" automatically pairs your Friend Code with your active Cloudflare HTTPS Tunnel address (`GH3-XXXX-XXXX@https://xxxx.trycloudflare.com`) or mesh address. Send this link to your friend on Discord, iMessage, or text.
+* **1-Click HTTPS Internet Tunnel Directly on Friends Page:** Added dedicated Internet Sync status card and **"🌐 Start Free Internet Tunnel"** directly onto the `Friends & Trust` tab. Zero router port-forwarding or network hassle required.
+* **1-Click Clipboard Paste (`📋 Paste Invite`):** Added a 1-click paste button to the Add Friend bar that unpacks friends' online invite links (`GH3-XXXX-XXXX@https://...`), `gh3sync://` base64 invite strings, or raw codes, and triggers instant profile detection.
+* **1-Click "⚡ Sync Songs" Directly on Friend Cards:** Every friend card in `Active Friends` now features a prominent **"⚡ Sync Songs"** button. Clicking it instantly switches to `P2P Sync & Lobby`, populates the friend's address and mutual trust token, and triggers library comparison in 1 click!
+* **Automatic Friend Request Acceptance Polling:** When you send an outgoing friend request over the internet, GH3-Sync automatically checks when your friend clicks "✓ Accept & Trust", auto-promoting them to an active mutual friend and playing the Star Power chime with zero manual refreshing.
+* **Intelligent WAN Connection Guidance:** If a bare Friend Code (`GH3-XXXX-XXXX`) without an address is entered and not found on LAN, GH3-Sync provides clear, actionable instructions on using the Free Internet Tunnel and Online Invite links.
+
+### Zero Prerequisites / Self-Contained Deployment
+* **Fully Self-Contained Single-File Package:** Bundles all .NET 10 Desktop and ASP.NET Core runtimes directly inside `GH3-Sync.exe`. Friends never need to install or download any .NET runtimes manually.
+* **Lzma2 High-Compression Installer:** Packaged with Inno Setup with ultra-compression for fast downloads.
+
+---
+
 ## [v1.2.0] - 2026-11-18 — Verified P2P Friends & Handshake Edition
 
 ### Automatic Username Detection & Handshake Delivery Confirmation

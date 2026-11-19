@@ -158,7 +158,13 @@ public class SecurityService
         var trimmed = (rawUrl ?? "").Trim();
         if (string.IsNullOrWhiteSpace(trimmed)) { error = "Peer address is empty."; return false; }
 
-        if (!trimmed.Contains("://")) trimmed = "http://" + trimmed;
+        if (!trimmed.Contains("://"))
+        {
+            if (trimmed.Contains(".trycloudflare.com", StringComparison.OrdinalIgnoreCase) || trimmed.EndsWith(":443"))
+                trimmed = "https://" + trimmed;
+            else
+                trimmed = "http://" + trimmed;
+        }
         if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
         {
             error = "Invalid URL syntax.";

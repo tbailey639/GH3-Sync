@@ -741,6 +741,7 @@
                         <TextBlock Text="Only Trusted Friends can download custom songs from your library. Regular friends with a Session PIN can view your setlist only."
                                    FontSize="12.5" Foreground="{DynamicResource TextMuted}" Margin="0,2,0,16"/>
 
+                        <!-- User Profile & Friend Code Card -->
                         <Border Style="{StaticResource GhCard}">
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -758,7 +759,8 @@
                                 <StackPanel Grid.Column="2">
                                     <TextBlock Text="Permanent Friend Code" FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,4"/>
                                     <DockPanel>
-                                        <Button DockPanel.Dock="Right" Content="Copy" Style="{StaticResource OutlineButton}" Margin="6,0,0,0" Click="CopyFriendCodeBtn_Click"/>
+                                        <Button DockPanel.Dock="Right" Content="📋 Copy Online Invite" Style="{StaticResource FlameButton}" Margin="6,0,0,0" Click="CopyOnlineInviteBtn_Click" ToolTip="Copies your Friend Code + Internet Address so friends in other houses can connect with zero router setup"/>
+                                        <Button DockPanel.Dock="Right" Content="Copy Code" Style="{StaticResource OutlineButton}" Margin="6,0,0,0" Click="CopyFriendCodeBtn_Click" ToolTip="Copy raw Friend Code for local LAN play"/>
                                         <Button x:Name="ToggleCodeBtn" DockPanel.Dock="Right" Content="Show" Style="{StaticResource OutlineButton}" Margin="6,0,0,0" Click="ToggleFriendCodeBtn_Click"/>
                                         <TextBox x:Name="ProfileFriendCodeBox" IsReadOnly="True" FontFamily="Consolas" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
                                     </DockPanel>
@@ -766,23 +768,52 @@
                             </Grid>
                         </Border>
 
+                        <!-- Zero-Config Internet Sync Status & 1-Click HTTPS Tunnel -->
+                        <Border Style="{StaticResource GhCard}" Background="#111827" BorderBrush="#38BDF8" BorderThickness="1.2" Margin="0,0,0,14">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock x:Name="FriendsTunnelStatusIcon" Text="🌐" FontSize="15" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="FriendsTunnelHeadline" Text="Internet Sync: Local Wi-Fi Ready" FontSize="13.5" FontWeight="Bold" Foreground="#38BDF8" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock x:Name="FriendsTunnelDetail" Text="If your friend is in another house, click 'Start Free Internet Tunnel' below so you can connect across the internet with zero router configuration."
+                                               FontSize="11.5" Foreground="{DynamicResource TextMuted}" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="FriendsStartTunnelBtn" Content="🌐 Start Free Internet Tunnel" Style="{StaticResource BlueButton}" Padding="13,7" Margin="0,0,8,0" Click="FriendsToggleTunnelBtn_Click"
+                                            ToolTip="Opens a secure Cloudflare HTTPS Quick Tunnel so friends on different Wi-Fi networks can connect with zero port forwarding"/>
+                                    <Button Content="📋 Copy Invite" Style="{StaticResource FlameButton}" Padding="11,7" Click="CopyOnlineInviteBtn_Click"
+                                            ToolTip="Copies your complete online invite link (Friend Code + Tunnel/IP) for your friend to paste"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Add Friend Card -->
                         <Border Style="{StaticResource GhCard}">
                             <StackPanel>
                                 <DockPanel Margin="0,0,0,8">
                                     <Button DockPanel.Dock="Right" Content="🔄 Refresh Status" Style="{StaticResource OutlineButton}" Click="RefreshFriendsBtn_Click"/>
                                     <TextBlock Text="Add Friend (Zero-Input Auto-Detection)" FontSize="14.5" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
                                 </DockPanel>
-                                <TextBlock Text="Enter or paste your friend's unique Friend Code. Their username is automatically detected across LAN &amp; Hub without typing a nickname. A delivery handshake confirms they received the request before adding."
+                                <TextBlock Text="Enter or paste your friend's Friend Code or Online Invite Link. Their username is automatically detected across the Internet, LAN &amp; Hub without typing a nickname. A delivery handshake confirms they received the request before adding."
                                            FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,12" TextWrapping="Wrap"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="10"/>
+                                        <ColumnDefinition Width="8"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="8"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBox x:Name="AddFriendCodeBox" Grid.Column="0" FontFamily="Consolas" FontSize="13.5" FontWeight="SemiBold"
-                                             ToolTip="Friend Code (e.g. GH3-1234-ABCD or paste invite)" TextChanged="AddFriendCodeBox_TextChanged"/>
-                                    <Button x:Name="SendFriendRequestBtn" Grid.Column="2" Content="🚀 Send Friend Request" Style="{StaticResource FlameButton}"
+                                             ToolTip="Friend Code (e.g. GH3-1234-ABCD or paste online invite)" TextChanged="AddFriendCodeBox_TextChanged"/>
+                                    <Button Grid.Column="2" Content="📋 Paste Invite" Style="{StaticResource OutlineButton}" Padding="11,7" Click="PasteFriendOnlineInviteBtn_Click"
+                                            ToolTip="Paste a friend's online invite link from your clipboard"/>
+                                    <Button x:Name="SendFriendRequestBtn" Grid.Column="4" Content="🚀 Send Friend Request" Style="{StaticResource FlameButton}"
                                             Padding="18,7" Click="SendFriendRequestBtn_Click"/>
                                 </Grid>
 
@@ -803,7 +834,7 @@
                                             <TextBlock Text="Direct Host/IP: " Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                             <TextBox x:Name="DirectAddressBox" ToolTip="e.g. 192.168.1.50:7373 or my-ddns.org:7373" FontFamily="Consolas"/>
                                         </DockPanel>
-                                        <TextBlock Text="Leave empty for automatic LAN broadcast and Central Admin Hub discovery." FontSize="10.5" Foreground="{DynamicResource TextMuted}" Margin="0,4,0,0"/>
+                                        <TextBlock Text="Leave empty for automatic LAN broadcast, Cloudflare Tunnel, and Central Admin Hub discovery." FontSize="10.5" Foreground="{DynamicResource TextMuted}" Margin="0,4,0,0"/>
                                     </StackPanel>
                                 </Expander>
                             </StackPanel>

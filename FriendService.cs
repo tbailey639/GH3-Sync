@@ -111,17 +111,37 @@ public class FriendService
         var client = customClient ?? _httpClient;
         var input = rawInput.Trim();
 
-        // 1. Direct Address format: http://192.168.1.50:7373 or GH3-XXXX-XXXX@192.168.1.50:7373
+        // 1. Direct Address format: http://192.168.1.50:7373, GH3-XXXX-XXXX@https://..., or gh3sync:// invite
         string? directAddress = null;
         string cleanCode = input;
 
-        if (input.Contains('@'))
+        if (input.StartsWith("gh3sync://", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var b64 = input.Substring("gh3sync://".Length).Trim();
+                var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(b64));
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("addr", out var a))
+                {
+                    directAddress = a.GetString();
+                }
+                if (doc.RootElement.TryGetProperty("code", out var c))
+                {
+                    cleanCode = c.GetString() ?? "";
+                }
+                else if (doc.RootElement.TryGetProperty("friendCode", out var fc))
+                {
+                    cleanCode = fc.GetString() ?? "";
+                }
+            }
+            catch { }
+        }
+        else if (input.Contains('@'))
         {
             var parts = input.Split('@', 2);
             cleanCode = parts[0].Trim();
             directAddress = parts[1].Trim();
-            if (!directAddress.StartsWith("http://") && !directAddress.StartsWith("https://"))
-                directAddress = "http://" + directAddress;
         }
         else if (input.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                  input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
@@ -132,13 +152,22 @@ public class FriendService
 
         if (!string.IsNullOrEmpty(directAddress))
         {
+            if (!directAddress.StartsWith("http://") && !directAddress.StartsWith("https://"))
+            {
+                if (directAddress.Contains(".trycloudflare.com", StringComparison.OrdinalIgnoreCase) || directAddress.EndsWith(":443"))
+                    directAddress = "https://" + directAddress;
+                else
+                    directAddress = "http://" + directAddress;
+            }
+
             try
             {
                 var profileUrl = $"{directAddress.TrimEnd('/')}/api/profile";
-                var resp = await client.GetAsync(profileUrl);
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3.5));
+                var resp = await client.GetAsync(profileUrl, cts.Token);
                 if (resp.IsSuccessStatusCode)
                 {
-                    var data = await resp.Content.ReadFromJsonAsync<JsonElement>();
+                    var data = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cts.Token);
                     var detectedName = data.TryGetProperty("username", out var u) ? u.GetString() ?? "Player" : "Player";
                     var detectedCode = data.TryGetProperty("friendCode", out var c) ? c.GetString() ?? cleanCode : cleanCode;
 
@@ -153,7 +182,16 @@ public class FriendService
                     };
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                return new FriendLookupResult
+                {
+                    Found = false,
+                    FriendCode = cleanCode,
+                    Address = directAddress,
+                    Error = $"Could not reach {directAddress}: {ex.Message}. Make sure your friend has GH3-Sync open and their Internet Tunnel is active."
+                };
+            }
         }
 
         // Normalize Friend Code format (e.g. 1234-ABCD or GH3-1234-ABCD)
@@ -290,7 +328,7 @@ public class FriendService
         {
             Found = false,
             FriendCode = cleanCode,
-            Error = $"Player with Friend Code {cleanCode} not found online. Ensure your friend has GH3-Sync open on the same network or registered to the Hub."
+            Error = $"Player with Friend Code {cleanCode} not found on local Wi-Fi. If your friend is in another house or on a different network, ask them to click '📋 Copy Online Invite' and paste it here, or start the Free Internet Tunnel above!"
         };
     }
 
@@ -342,7 +380,7 @@ public class FriendService
                 Success = false,
                 ReceivedByPeer = false,
                 FriendCode = cleanCode,
-                Message = $"Could not deliver request: {cleanCode} is offline or unreachable on LAN & Hub. Request was NOT added."
+                Message = $"Could not reach {cleanCode} across local Wi-Fi or Hub.\n\nIf your friend is in another house or on different Wi-Fi, have them click '📋 Copy Online Invite' and send you their full invite link, or start the Free Internet Tunnel above!"
             };
         }
 

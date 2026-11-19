@@ -3939,6 +3939,137 @@ public partial class MainWindow : Window
         WpfMessageBox.Show($"Copied Friend Code: {_friends.Profile.FriendCode}", "Copied", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
+    private async void CopyOnlineInviteBtn_Click(object sender, RoutedEventArgs e)
+    {
+        string addr = "";
+        if (_tunnel.IsTunnelActive && !string.IsNullOrWhiteSpace(_tunnel.ActiveTunnelUrl))
+        {
+            addr = _tunnel.ActiveTunnelUrl!;
+        }
+        else
+        {
+            var meshUrl = _tunnel.GetPreferredMeshUrl();
+            if (!string.IsNullOrWhiteSpace(meshUrl))
+            {
+                addr = meshUrl;
+            }
+            else if (!string.IsNullOrWhiteSpace(AppConfig.Current.CustomPublicAddress))
+            {
+                addr = AppConfig.Current.CustomPublicAddress.Trim();
+            }
+            else
+            {
+                var result = WpfMessageBox.Show(
+                    "To invite a friend across the internet (different houses/Wi-Fi), GH3-Sync can start a free, encrypted Cloudflare HTTPS Quick Tunnel with zero router port forwarding.\n\nStart Internet Tunnel now?",
+                    "Start Internet Tunnel for Online Invite?",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    if (FriendsStartTunnelBtn != null)
+                    {
+                        FriendsStartTunnelBtn.IsEnabled = false;
+                        FriendsStartTunnelBtn.Content = "Starting Tunnel...";
+                    }
+                    try
+                    {
+                        var (ok, urlOrErr) = await _tunnel.StartQuickTunnelAsync(step => Dispatcher.Invoke(() => {
+                            if (FriendsTunnelDetail != null) FriendsTunnelDetail.Text = step;
+                        }));
+                        RefreshMeshAndTunnelStatus();
+                        if (ok && !string.IsNullOrWhiteSpace(_tunnel.ActiveTunnelUrl))
+                        {
+                            addr = _tunnel.ActiveTunnelUrl;
+                        }
+                        else
+                        {
+                            WpfMessageBox.Show($"Could not start tunnel: {urlOrErr}\nFalling back to public IP.", "Tunnel Notice", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }
+                    }
+                    finally
+                    {
+                        if (FriendsStartTunnelBtn != null) FriendsStartTunnelBtn.IsEnabled = true;
+                        RefreshMeshAndTunnelStatus();
+                    }
+                }
+
+                if (string.IsNullOrEmpty(addr))
+                {
+                    addr = !string.IsNullOrEmpty(_nat.PublicIp) ? $"{_nat.PublicIp}:{_nat.ExternalPort ?? _port}" : $"127.0.0.1:{_port}";
+                }
+            }
+        }
+
+        if (!addr.StartsWith("http://") && !addr.StartsWith("https://"))
+        {
+            addr = (addr.Contains(".trycloudflare.com", StringComparison.OrdinalIgnoreCase) || addr.EndsWith(":443")) ? "https://" + addr : "http://" + addr;
+        }
+
+        var invite = $"{_friends.Profile.FriendCode}@{addr}";
+        System.Windows.Clipboard.SetText(invite);
+        ShowStageToast("📋 ONLINE INVITE COPIED!", $"{_friends.Profile.Username} • {invite}", "#22C55E");
+        AudioWaveformAndSfxService.PlayStarPowerChime();
+    }
+
+    private async void FriendsToggleTunnelBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_tunnel.IsTunnelActive)
+        {
+            _tunnel.StopTunnel();
+            RefreshMeshAndTunnelStatus();
+            ShowStageToast("INTERNET TUNNEL STOPPED", "Cloudflare Quick Tunnel disconnected cleanly.", "#EAB308");
+            return;
+        }
+
+        if (FriendsStartTunnelBtn != null)
+        {
+            FriendsStartTunnelBtn.IsEnabled = false;
+            FriendsStartTunnelBtn.Content = "Starting Tunnel...";
+        }
+        try
+        {
+            var (ok, urlOrErr) = await _tunnel.StartQuickTunnelAsync(step => Dispatcher.Invoke(() => {
+                if (FriendsTunnelDetail != null) FriendsTunnelDetail.Text = step;
+            }));
+            RefreshMeshAndTunnelStatus();
+            if (ok)
+            {
+                ShowStageToast("⚡ INTERNET TUNNEL READY!", $"Zero-config encrypted URL: {MaskIfPrivate(urlOrErr)}", "#22C55E");
+                AudioWaveformAndSfxService.PlayStarPowerChime();
+            }
+            else
+            {
+                WpfMessageBox.Show(urlOrErr, "Internet Tunnel", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        finally
+        {
+            if (FriendsStartTunnelBtn != null) FriendsStartTunnelBtn.IsEnabled = true;
+            RefreshMeshAndTunnelStatus();
+        }
+    }
+
+    private void PasteFriendOnlineInviteBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var raw = (System.Windows.Clipboard.GetText() ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                ShowStageToast("⚠️ CLIPBOARD EMPTY", "Copy an invite link from your friend first, then click Paste.", "#EF4444");
+                return;
+            }
+
+            AddFriendCodeBox.Text = raw;
+            ShowStageToast("📋 INVITE PASTED", "Friend code & online address loaded from clipboard.", "#38BDF8");
+        }
+        catch (Exception ex)
+        {
+            ShowStageToast("⚠️ PASTE FAILED", ex.Message, "#EF4444");
+        }
+    }
+
     private void SaveUsernameBtn_Click(object sender, RoutedEventArgs e)
     {
         var name = ProfileUsernameBox.Text.Trim();
@@ -4030,7 +4161,12 @@ public partial class MainWindow : Window
                 ShowStageToast("❌ DELIVERY FAILED", res.Message, "#EF4444");
                 AudioWaveformAndSfxService.PlayNoteMissClunk();
                 WpfMessageBox.Show(
-                    $"{res.Message}\n\nThe friend request was NOT added to your requested list because your friend's client could not be reached to confirm receipt.\n\nEnsure your friend has GH3-Sync open on the same network or connected to the Admin Hub, or supply their Direct IP:Port in the Advanced section.",
+                    $"{res.Message}\n\n" +
+                    "Tip for connecting over the Internet:\n" +
+                    "If your friend is in another house or on a different Wi-Fi network:\n" +
+                    "1. Ask your friend to click '🌐 Start Free Internet Tunnel' and '📋 Copy Online Invite'.\n" +
+                    "2. Paste their online invite link (e.g. GH3-XXXX-XXXX@https://...) here.\n\n" +
+                    "No router port-forwarding or manual network configuration required!",
                     "Friend Request Not Delivered",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
@@ -4050,8 +4186,53 @@ public partial class MainWindow : Window
         ShowStageToast("🔄 REFRESHED", "Friends list and pending requests updated.", "#38BDF8");
     }
 
+    private DispatcherTimer? _friendRequestPollTimer;
+    private static readonly HttpClient _friendPollClient = new() { Timeout = TimeSpan.FromSeconds(2.5) };
+
+    private void StartFriendRequestPollTimer()
+    {
+        if (_friendRequestPollTimer != null) return;
+        _friendRequestPollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _friendRequestPollTimer.Tick += async (_, _) =>
+        {
+            var pending = _friends.OutgoingRequests;
+            if (pending.Count == 0) return;
+
+            foreach (var req in pending)
+            {
+                if (string.IsNullOrWhiteSpace(req.Address)) continue;
+                try
+                {
+                    var checkUrl = $"{req.Address.TrimEnd('/')}/api/friends/check-status?code={Uri.EscapeDataString(_friends.Profile.FriendCode)}";
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2.0));
+                    var resp = await _friendPollClient.GetAsync(checkUrl, cts.Token);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        var data = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cts.Token);
+                        if (data.TryGetProperty("isFriend", out var isF) && isF.GetBoolean())
+                        {
+                            var isTrusted = data.TryGetProperty("isTrusted", out var t) && t.GetBoolean();
+                            var token = data.TryGetProperty("trustToken", out var tok) ? tok.GetString() : req.ProposedTrustToken;
+                            var hostName = data.TryGetProperty("username", out var u) ? u.GetString() ?? req.Username : req.Username;
+
+                            _friends.ProcessPeerAcceptedRequest(req.FriendCode, hostName, req.Address, token, isTrusted);
+                            ShowStageToast("🎉 FRIEND ACCEPTED!", $"{hostName} accepted your friend request! Click '⚡ Sync Songs' to start.", "#22C55E");
+                            AudioWaveformAndSfxService.PlayStarPowerChime();
+                            RefreshFriendsList();
+                            RefreshTrustedFriendDropdown();
+                            break;
+                        }
+                    }
+                }
+                catch { }
+            }
+        };
+        _friendRequestPollTimer.Start();
+    }
+
     private void RefreshFriendsList()
     {
+        StartFriendRequestPollTimer();
         FriendsListPanel.Children.Clear();
 
         var incoming = _friends.IncomingRequests;
@@ -4283,6 +4464,34 @@ public partial class MainWindow : Window
             grid.Children.Add(left);
 
             var right = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+            var syncBtn = new System.Windows.Controls.Button
+            {
+                Content = f.IsTrusted ? "⚡ Sync Songs" : "🎵 View Setlist",
+                Style = (Style)FindResource(f.IsTrusted ? "FlameButton" : "BlueButton"),
+                Padding = new Thickness(12, 6, 12, 6),
+                Margin = new Thickness(0, 0, 8, 0),
+                ToolTip = f.IsTrusted
+                    ? $"Compare libraries with {f.Username} and auto-sync missing custom songs"
+                    : $"View {f.Username}'s custom songs setlist"
+            };
+            syncBtn.Click += (_, _) =>
+            {
+                NavP2P.IsChecked = true;
+
+                if (!string.IsNullOrWhiteSpace(f.LastAddress))
+                {
+                    PeerAddressBox.Text = f.LastAddress;
+                }
+                if (!string.IsNullOrWhiteSpace(f.TrustToken))
+                {
+                    PeerPinBox.Text = f.TrustToken;
+                }
+
+                ComparePeerBtn_Click(this, new RoutedEventArgs());
+            };
+            right.Children.Add(syncBtn);
+
             if (f.IsTrusted && !string.IsNullOrWhiteSpace(f.TrustToken))
             {
                 var copyTokBtn = new System.Windows.Controls.Button
@@ -4443,6 +4652,16 @@ public partial class MainWindow : Window
             TunnelStatusText.Foreground = (WpfBrush)FindResource("CardSuccessTitle");
             StartTunnelBtn.Content = "⏹ Stop HTTPS Tunnel";
             StartTunnelBtn.Style = (Style)FindResource("DangerButton");
+
+            if (FriendsTunnelHeadline != null) FriendsTunnelHeadline.Text = $"Internet Sync Ready: {MaskIfPrivate(_tunnel.ActiveTunnelUrl)}";
+            if (FriendsTunnelHeadline != null) FriendsTunnelHeadline.Foreground = (WpfBrush)FindResource("CardSuccessTitle");
+            if (FriendsTunnelStatusIcon != null) FriendsTunnelStatusIcon.Text = "⚡";
+            if (FriendsTunnelDetail != null) FriendsTunnelDetail.Text = "Tunnel is active! Friends across the internet can connect instantly. Click '📋 Copy Online Invite' above and send it to them.";
+            if (FriendsStartTunnelBtn != null)
+            {
+                FriendsStartTunnelBtn.Content = "⏹ Stop Internet Tunnel";
+                FriendsStartTunnelBtn.Style = (Style)FindResource("DangerButton");
+            }
         }
         else
         {
@@ -4450,6 +4669,16 @@ public partial class MainWindow : Window
             TunnelStatusText.Foreground = (WpfBrush)FindResource("TextMuted");
             StartTunnelBtn.Content = "🌐 Start HTTPS Quick Tunnel";
             StartTunnelBtn.Style = (Style)FindResource("BlueButton");
+
+            if (FriendsTunnelHeadline != null) FriendsTunnelHeadline.Text = "Internet Sync: Local Wi-Fi Ready";
+            if (FriendsTunnelHeadline != null) FriendsTunnelHeadline.Foreground = (WpfBrush)new BrushConverter().ConvertFromString("#38BDF8")!;
+            if (FriendsTunnelStatusIcon != null) FriendsTunnelStatusIcon.Text = "🌐";
+            if (FriendsTunnelDetail != null) FriendsTunnelDetail.Text = "If your friend is in another house or on different Wi-Fi, click 'Start Free Internet Tunnel' below so you can connect across the internet with zero router setup.";
+            if (FriendsStartTunnelBtn != null)
+            {
+                FriendsStartTunnelBtn.Content = "🌐 Start Free Internet Tunnel";
+                FriendsStartTunnelBtn.Style = (Style)FindResource("BlueButton");
+            }
         }
     }
 
