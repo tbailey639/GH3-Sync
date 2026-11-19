@@ -13,6 +13,14 @@ public partial class SplashWindow : Window
     public SplashWindow()
     {
         InitializeComponent();
+        try
+        {
+            if (SplashVersionSubtitle != null)
+            {
+                SplashVersionSubtitle.Text = $"v{UpdateService.CurrentAppVersion} • ENCORE & ZERO-TRUST EDITION • BY MAD SCIENTIST";
+            }
+        }
+        catch { }
         _gems = new[] { GemGreen, GemRed, GemYellow, GemBlue, GemOrange };
         Loaded += SplashWindow_Loaded;
     }
@@ -23,7 +31,7 @@ public partial class SplashWindow : Window
         {
             if (SplashVersionSubtitle != null)
             {
-                SplashVersionSubtitle.Text = $"v{UpdateService.CurrentAppVersion}  •  ENCORE & ZERO-TRUST EDITION  •  BY MAD SCIENTIST";
+                SplashVersionSubtitle.Text = $"v{UpdateService.CurrentAppVersion} • ENCORE & ZERO-TRUST EDITION • BY MAD SCIENTIST";
             }
         }
         catch { }

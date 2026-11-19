@@ -1360,13 +1360,21 @@ public class HoneycombCompilerService
                     mixLabels.Add($"[a{i}]");
                 }
 
+                bool norm = AppConfig.Current.NormalizeAudioLoudness;
+                double lufs = AppConfig.Current.AudioTargetLufs <= 0 ? AppConfig.Current.AudioTargetLufs : -14.0;
+                string lufsStr = lufs.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+
                 if (inputs.Count == 1)
                 {
-                    filterSb.Append("[a0]alimiter=limit=0.98[out]");
+                    filterSb.Append(norm
+                        ? $"[a0]loudnorm=I={lufsStr}:LRA=11:TP=-1.5,alimiter=limit=0.98[out]"
+                        : "[a0]alimiter=limit=0.98[out]");
                 }
                 else
                 {
-                    filterSb.Append($"{string.Join("", mixLabels)}amix=inputs={inputs.Count}:duration=longest:normalize=0,alimiter=limit=0.98[out]");
+                    filterSb.Append(norm
+                        ? $"{string.Join("", mixLabels)}amix=inputs={inputs.Count}:duration=longest:normalize=0,loudnorm=I={lufsStr}:LRA=11:TP=-1.5,alimiter=limit=0.98[out]"
+                        : $"{string.Join("", mixLabels)}amix=inputs={inputs.Count}:duration=longest:normalize=0,alimiter=limit=0.98[out]");
                 }
 
                 argsSb.Append($"-filter_complex \"{filterSb}\" -map \"[out]\" -ar 48000 -ac 2 \"{outputWav}\"");

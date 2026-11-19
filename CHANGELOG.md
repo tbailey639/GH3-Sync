@@ -1,221 +1,131 @@
 # GH3-Sync Changelog
 
-Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All notable milestones from Beta 1 through Official Launch `v1.0.0` are documented below.
+Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). Notable major milestones and roadmap releases are documented below.
 
 ---
 
-## [v1.3.2] - 2026-11-19 — Synchronized Match Ready-Up, Party Roulette Co-Op Draft, Live Presence & Showcase Tracks
+## [v1.4.0] - 2026-11-19 — The Concert Master Edition
 
-### Synchronized Match Ready-Up & 3-2-1 Rock Launch Countdown
-* **Live Multiplayer Ready-Up:** Real-time ready state synchronization between players in the P2P Lobby. When both players click `[ 🟢 Ready Up ]`, both screens lock in simultaneously.
-* **Stage Launch Countdown Overlay:** Features an authentic `3... 2... 1... ROCK!` visual overlay with metronome tempo clicks and crowd audio that launches `GH3.exe` on both PCs at the exact same moment.
-* **Audio Contention Safety:** Automatically terminates all menu audio preview threads and background SFX before the game executable starts, eliminating DirectX exclusive-audio deadlocks.
+### 🎯 Bulletproof Cover Art & Metadata Engine
+* **Smart Filename & YouTube Title Sanitizer:** Automatically strips clutter (`[Official Video]`, `(Remastered 2021)`, `[4K]`, `[FLAC]`, `(Audio)`, `[Lyrics]`, track numbers `01 - `) to isolate clean `{Artist} - {Title}`.
+* **Local Embedded Tag Inspection:** Reads existing ID3v2, Vorbis, and FLAC headers directly from dropped audio files before querying the web for instant 100% accuracy.
+* **Multi-Provider Web Cascade:** Tiered search using Deezer Public API ($1000\times 1000$ HD art, lenient search, zero API key), iTunes Search API ($600\times 600$ art), and MusicBrainz / Cover Art Archive.
+* **Interactive 3-Cover Visual Carousel:** Displays 3 selectable artwork thumbnails under the song creator card when multiple covers exist.
 
-### Synchronized Party Roulette (Co-Op Song Draft)
-* **1-Click Co-Op Setlist Roll:** Clicking `[ 🎲 Party Roulette Draft ]` generates a shared deterministic random seed and rolls up to 10 random custom tracks across both connected players.
-* **Instant Setlist Mirroring:** Both players' active Lobby Setlists update in lockstep with matching song slots, ensuring 100% netcode synchronization for multiplayer matches without manual coordination.
+### 📊 Universal "Stage HUD" Progress System (All 8 Screens)
+* **Zero Silent Freezes:** Every operation lasting over 150ms displays active, non-blocking visual feedback.
+* **2-Line Explanatory Readout:** Plain-English explanation of the active step + animated percentage.
+* **Animated 5-Fret Highway Wave:** Visual 🟢 🔴 🟡 🔵 🟠 fret gems pulse along the progress bar to show continuous engine activity.
+* **Full Coverage:** Active across My Customs, ONOGAMI Creator, Tools & Stems, Friends & Trust, P2P Sync & Lobby, Import & Convert, Career Saves, and Settings & Updates.
 
-### Live Friend Activity Status & Rich Presence
-* **Real-Time Activity Broadcast:** Global Signaling Relay heartbeats dynamically broadcast user status (`🎸 Playing GH3`, `🟢 In Lobby`, `⚪ Online`).
-* **Visual Status Badges:** Active friend cards and lobby lists display color-coded status badges so you always know when your friends are waiting in a lobby or mid-song.
+### 🎸 Custom Guitar Hero Rock Dialogs & Victory Showcase
+* **Eliminate Standard Windows Alert Boxes:** Replaced all Win32 silver message boxes with the custom `GuitarHeroModalDialog` suite (Dark Obsidian, theme glow border, rock emblem header, `BackEase` scale bounce animation).
+* **Authentic Audio Cues:** Star Power chime/power chord on success, note-miss clunk on warnings, fret snap on confirmations.
+* **Encore Song Complete Victory Showcase:** Post-creation screen featuring spinning vinyl album art, metadata, BPM, note count, 4 difficulty badges, Soundcheck preview button, and 1-click launch or setlist addition.
 
-### Player Showcase Song / Signature Track
-* **Signature Track Profile Selection:** Choose any custom song from your local library in your profile to serve as your personal signature track.
-* **Direct Audio Preview:** Friends can view your signature track and click `[ ▶ Preview ]` on your card to hear an instant preview of your custom song directly in the UI.
+### ⚡ Dynamic Stage Visuals, Animations & Rock Hardware
+* **Moving Ambient Stage Lights:** Background canvas with slow-sweeping radial spotlights creating stadium stage ambiance.
+* **Floating Theme Particles:** Floating ember/dust particle effects (orange embers on Fire & Flames, cyber blue sparks on Star Power, violet dust on Synthwave).
+* **Reactive LED VU Meters:** Real-time green-yellow-red LED volume bounce bars that react dynamically to audio playback during Soundcheck previews.
+* **Skeuomorphic Rock Hardware:** Vintage Marshall/Fender chrome amp toggle switches for checkboxes, rotary dials (numbered 1 to 11!) for volume/sliders, and live animated gradient borders.
 
-### Connection Quality & Ping Indicator
-* **Live Latency Measurement:** Asynchronously probes peer endpoints (`GET /api/profile`) with round-trip time calculation.
-* **Color-Coded Status Dot:** Displays latency indicators (🟢 `<60ms`, 🟡 `60–140ms`, 🟠 `>140ms`) on active friend entries so you know connection quality before launching.
+### 🎵 Studio-Grade Audio & Stem Mastery
+* **Automatic Loudness Normalization (EBU R128 / ReplayGain):** Automatically normalizes all compiled audio to standard broadcast loudness (-14 LUFS), matching vanilla GH3 and Spotify/YouTube standards.
+* **True Multi-Track Muting on Miss:** Channels 1 & 2 (Guitar stem) mute when notes are missed, Channels 3 & 4 (Backing/Bass/Drums/Vocals) continue rocking uninterrupted, Channels 5 & 6 provide crowd ambience.
+* **Co-Op Bass / Rhythm Auto-Charting:** Automatically analyzes the isolated bass stem to generate a playable Co-Op Bass / Rhythm track for 2-player P2P multiplayer.
+* **Stems Export / Karaoke Mode:** Export isolated stems (`guitar.wav`, `drums.wav`, `vocals.wav`, `bass.wav`) for practice or live backing tracks.
 
-### Instant "Compare Missing" Quick Filter
-* **"Only Show Songs I Don't Have":** Added an instant filter checkbox to the P2P Peer Comparison view. Eliminates visual clutter by hiding tracks already installed locally, letting you see exactly what tracks you need to sync in seconds.
+### 🎼 Neversoft-Accurate Charting & AI Polish
+* **Dynamic HOPO Flow Optimizer:** Automatically analyzes pitch intervals (< 170ms / 16th notes) and marks them as natural hammer-ons/pull-offs for fluid solo playability.
+* **Intelligent Power-Chord & Dual-Fret Detection:** Detects root and 5th harmonics on heavy distortion downbeats to generate authentic 2-fret power chords (🟢+🔴, 🔴+🟡, etc.).
+* **Musical Star Power Placement:** Places Star Power phrases on musical hooks, drum fills, and pre-choruses directly preceding difficult guitar solos.
+* **Stem Separation Cache:** Caches separated Demucs stems by song hash in `tools/cache` so re-charting or adjusting difficulty takes under 2 seconds.
 
-### Lobby Pre-Flight Setlist Auto-Heal & Crash Immunity
-* **Setlist Pre-Flight Verification:** Automatically validates that all 10 lobby songs have valid audio files and pak structures before `GH3.exe` boots, preventing game freezes on custom song loading screens.
-* **Theme Resource Fallback Immunity:** Added universal fallback definitions for `BgCardAlt` and `BorderDefault` across all theme dictionaries (`AppTheme.xaml`, `LightTheme.xaml`, `FireFlamesTheme.xaml`, `StarPowerTheme.xaml`) to eliminate any UI resource-not-found exceptions.
-* **Splash Screen Decoupling:** Re-engineered splash window lifecycle to guarantee dismissal even if modal dialogs or background tasks delay main window activation.
+### 🤝 Social, Tournaments & Competitive Multiplayer
+* **Asymmetric Head-to-Head Rival Scoreboard:** Compares your career score against your friend's score directly on song cards with percentage accuracy, max streak, and point deficits.
+* **"Rock Tour" Tournament Bracket Generator:** Built-in 2-to-8 player tournament organizer featuring double-elimination brackets, shared setlist seeds, and automatic advancement based on `s000.d` save file results.
+* **Live Lobby Hype Soundboard:** Clickable rock sound bites in the P2P Lobby (feedback squeal, drum roll, crowd roar, ready chime) that play on both players' machines in real time.
 
----
+### 🎮 Hardware Calibration & Windows 11 Optimization
+* **Sub-Millisecond Controller Polling Tester:** Detects USB polling rates (125Hz, 500Hz, 1000Hz) with configuration tips for Raphnet, Ardwiino, and Santroller adapters.
+* **Interactive Strum Sync Calibrator:** Interactive highway metronome allowing you to strum your real controller to calculate display/audio lag and auto-patch the offset into BetterGH3.
+* **Windows 11 Gaming Mode (0.5ms Timer Resolution Boost):** Automatically requests Windows 0.5ms high-precision multimedia timer resolution and sets High process priority when launching `GH3.exe`.
+* **Hardware Anti-Overstrum Debounce Filter:** Configurable software debounce delay (15ms, 25ms, 35ms, or Off) to eliminate switch-vibration double strums on older Gibson Les Paul / Kramer guitars.
+* **Whammy & Tilt Sensor Deadzone Calibration:** Fine-tune the return deadzone for whammy bars and accelerometer sensitivity for Star Power tilt.
+* **1-Click Gamepad "Instant Jam" Mode:** Default controller layout for casual friends playing on Xbox, PlayStation, or DualSense pads without guitar controllers.
 
-## [v1.3.1] - 2026-11-19 — Dual-Intent Friends, In-App Trust Upgrade Handshake & Always-On Silent Internet Sync
+### 🛡️ Advanced Security & Zero-Trust Shield
+* **Sonic Quarantine (Zero-Trust Archive Scanner):** Pre-scans all imported ZIP, SNG, and P2P packages with strict extension allowlists, magic-byte binary header validation, and anti-zip-slip protection to destroy any hidden executables or scripts.
+* **Engine Vaccine (Anti-Tamper Hash Guard):** Keeps a cryptographic SHA-256 fingerprint baseline of clean BetterGH3 core files (`core.dll`, `binkw32.dll`, base paks) with 1-click automatic restoration if modified or corrupted.
+* **Emergency Air-Gap Panic Switch:** One-click header button or hotkey (`Ctrl+Shift+X`) that instantly kills the Cloudflare tunnel, drops all P2P connections, rotates trust tokens, and locks the app into offline mode.
+* **Port Stealth & Silent Blackhole:** Drops any network request lacking a valid HMAC handshake signature with zero bytes returned, making port 7373 appear closed and invisible to scanners.
+* **Charter Cryptographic Signatures (`.gh3sig`):** Cryptographically signs original charts with the creator's key so songs display verified original badges and detect unauthorized modifications.
 
-### Dual-Intent Friend Requests & Streamlined Clean UI
-* **Dual-Intent Actions:** When entering a friend's Friend Code, choose between `[ ➕ Add Friend ]` (view setlist and presence) and `[ ⭐ Add Trusted Friend ]` (full song download & 1-click sync permissions).
-* **Clear Request Intent on Reception:** Incoming friend requests display their requested tier (`⭐ Trusted Friend Request` vs `Regular Friend Request`). Recipient can accept as trusted or view-only with 1 click.
-* **Streamlined Friends & P2P View:** Removed confusing raw IP and Cloudflare URL boxes from the primary UI. Technical network diagnostics (UPnP, Tailscale, raw IPs) are neatly tucked into collapsed `⚙️ Advanced Network Settings` expanders for advanced users.
+### 🌟 Exclusive Features GH3 Never Had
+* **AI Stadium Sing-Along & Chant Engine:** Synthesizes stadium crowd voices singing along to your guitar lead melody in audio channels 5 & 6 when rocking high streaks.
+* **Boss Battle Duel Creator:** Converts ANY custom track into a 1v1 Battle Mode duel with battle attacks (Broken String, Whammy Overload, Amp Overload, Lefty Flip) against AI or P2P friends.
+* **"Trade-Off Solo" Asymmetric Co-Op:** Slices solos back and forth between Player 1 and Player 2 for realistic band duals.
+* **Dynamic Venue & Highway Themes:** Auto-applies matching visual highways (Inferno Fire for metal, Neon Grid for synthwave, Star Power Nebula for ballads).
+* **Custom Career Campaign Builder:** Build full custom world tours with named venues, custom song tiers, encores, and boss battles.
+* **AI Guitar Coach & Miss Heatmap:** Reads career saves to map where you missed notes and generates a 10-second practice loop in the Highway Previewer at 50%–100% speed.
+* **"Endless Rock Concert" Seamless Medleys:** Crossfades 3 to 6 songs with live drum fills and aligned beat grids for uninterrupted 15-minute rock party marathons.
+* **AI Lyric Transcription to Section Markers:** Automatically transcribes lyrics via vocal stem speech-to-text and injects them as in-game teleprompter markers.
+* **Tour Poster Merch Studio:** Customizes setlist posters with selectable artistic themes (70s Psychedelic, 80s Hair Metal, 90s Grunge Flyer, Modern Festival).
+* **Offline Local LAN UDP Auto-Discovery:** Broadcasts beacons on the local subnet (`255.255.255.255:7373`) for zero-internet dorm room or LAN party play.
+* **In-App Rock Hall of Fame Achievements:** Unlockable trophies and milestone achievements for charting, streaks, and multiplayer tours.
 
-### In-App Mutual Trust Upgrade Handshake
-* **1-Click Trust Upgrade:** Either friend can click `[ ⭐ Request Trust Upgrade ]` on an existing regular friend card.
-* **Zero-Touch Key Exchange:** When the friend clicks `[ ⭐ Accept Trust Upgrade ]`, cryptographic trust tokens are generated and exchanged automatically via Global Signaling Relay and direct P2P. Neither user ever has to copy/paste tokens, IPs, or URLs.
+### 🌐 Internationalization (8 Supported Languages)
+* **8-Language Localization Suite:** English (Default), Español, Português (Brasil), Français, Deutsch, Italiano, 日本語, and 한국어.
+* **Runtime Live Switching & GH3 Language Auto-Match:** Instant language changes without restarting, with optional auto-detection of your BetterGH3 game language file.
 
-### Always-On Silent Internet Sync (Zero-Touch Tunnel)
-* **Zero-Touch Background Tunnel:** On application startup, GH3-Sync automatically spins up an encrypted background Cloudflare Quick Tunnel silently when P2P is enabled.
-* **Instant Rendezvous:** Addresses and heartbeats are registered automatically to the Global P2P Signaling Relay. Friend codes connect and sync across different houses, Wi-Fi networks, and strict CGNAT routers without opening any router ports.
-
-### UI & Splash Screen Bug Fixes
-* **Theme Resource Fallbacks (`BgCardAlt` / `BorderDefault`):** Fixed missing brush resources in theme dictionaries that caused startup exceptions on certain pages.
-* **Splash Screen Lifecycle Decoupling:** The splash screen is guaranteed to fade out and close cleanly before the main window is displayed, preventing any visual lockup over the UI.
-
----
-
-## [v1.2.5] - 2026-11-18 — "Keep All Synced Songs" Feature, Real-Time Signaling Relay Fix & Audio Contention Elimination
-
-### "⭐ Keep Synced Songs" Permanent Library Promotion
-* **1-Click "⭐ Keep All Synced Songs":** Added a dedicated 1-click button on both the **P2P Sync & Lobby** Temporary Session Banner and the **My Customs** page. Players who like the songs they temporarily synced from friends can now permanently add all of them into their permanent library with zero manual file moving.
-* **Per-Song "⭐ Keep Song" in Peer Library & Customs:** Added per-track Keep buttons in both the Lobby comparison list and song cards, allowing selective permanent saving of any track anytime.
-* **Pre-Session Cleanup Self-Healing:** Promoting songs to permanent automatically clears the temporary backup without reverting custom setlist paks, keeping all charts and audio intact.
-
-### Real-Time Signaling Relay Protocol Enhancement
-* **Reliable ntfy.sh Payload Delivery:** Standardized signaling packet transmission to use structured JSON payloads with regex decoding fallbacks. Friend requests and acceptances now appear on-screen in real time within milliseconds without closing or reopening the application.
-* **Automatic Tailscale / Tunnel Auto-Healing:** When comparing libraries with friends whose IP was previously saved as a local Tailscale CGNAT address (`100.x.x.x`), GH3-Sync automatically queries the Signaling Relay to retrieve their live, globally reachable HTTPS Quick Tunnel address, ensuring seamless connection across different networks.
-
-### Exclusive Audio Contention & Game Freeze Prevention
-* **DirectX 9 / Exclusive Audio Lock Protection:** Silenced background system SoundPlayer effects while `GH3.exe` is running and converted SFX calls to non-blocking asynchronous audio. Prevents Windows audio thread deadlocks when Guitar Hero III operates in exclusive audio mode.
-* **Dynamic Header Version Binding:** Replaced hardcoded version text in the header and window title with live dynamic assembly version binding.
-
----
-
-## [v1.2.4] - 2026-11-18 — Global P2P Signaling Relay, Short Friend Codes & Zero-Crash Focus Engine
-
-### Zero-Config Internet Rendezvous & Global P2P Signaling Relay
-* **Global Signaling Relay (`SignalingRelayService`):** Connect with friends anywhere across the globe using just a Friend Code. No router configuration, no port-forwarding, and no manual URL exchange required.
-* **Short Friend Code Support:** Friend codes can now be entered in short 8-character format (e.g. `5126-A893` or `5126A893`) or standard format (`GH3-5126-A893`).
-* **Dynamic Heartbeats & Live Address Auto-Updating:** Ephemeral Cloudflare tunnel URLs are now automatically kept in sync via background heartbeats every 6 seconds. If either player restarts the app or their tunnel cycles, addresses resolve automatically without breaking connections.
-* **Live Friend Request Delivery & Instant Mutual Acceptance:** Friend requests and mutual acceptances are now delivered over dedicated signaling topics (`gh3sync-req-*` and `gh3sync-ack-*`). Requests and acceptances appear on both screens in real time within 2–3 seconds with zero app restarts.
-* **Automatic Link-Local IP Purge:** Automatically cleanses stale `169.254.*` ("embedded IP") entries from `config.json` and prevents link-local IP addresses from ever blocking legitimate connections.
-
-### DirectX 9 Fullscreen Stability & Shell Fixes
-* **Zero-Crash Fullscreen Engine:** Eliminated modal Win32 message boxes during friend delivery and gameplay. Fullscreen DirectX 9 (`GH3.exe`) will never suffer `D3DERR_DEVICELOST` focus loss crashes. All notifications are delivered via smooth non-blocking in-app toasts and inline UI indicators.
-* **Clean App Shutdown & Tray Restoration:** Eliminated `System.InvalidOperationException` on clicking `[X]`. Added single-click restoration from the Windows system tray.
+### 🧹 Housekeeping & Maintenance
+* **1-Click Smart Cache Cleaner:** Frees up gigabytes of disk space by clearing temporary stems and transit files while keeping custom songs safe.
+* **1-Click Portable Library Vault (`.gh3vault`):** One-click backup and restore of your complete custom library, high scores, presets, and settings.
+* **Dynamic Version Display Everywhere:** Startup splash screen, header badge, and credits synchronize dynamically with `UpdateService.CurrentAppVersion`.
 
 ---
 
-## [v1.2.3] - 2026-11-18 — Deterministic Setlist Slots, Asymmetric Library Mirroring & Netcode Desync Fix
-
-### Multiplayer Setlist Slot Synchronization & Loading Freeze Elimination
-* **Deterministic Song Slot Ordering:** Custom songs in `DATA\customs.pak.xen` (`tier1` and `download_songlist`) are now sorted deterministically in alphabetical order. In Guitar Hero III online multiplayer, song selection is transmitted by tier slot index (`0..N`); deterministic sorting guarantees that both players share identical slot indices regardless of what order songs were downloaded or created in.
-* **Asymmetric Library Detection:** When comparing libraries with a peer, GH3-Sync now checks both directions. If you have extra songs that your friend doesn't have, GH3-Sync alerts you that in BetterGH3, picking a slot beyond your friend's setlist will freeze their loading screen.
-* **1-Click "🪞 Mirror Friend's Setlist (Temp Match)":** Added 1-click setlist mirroring for lobby sessions. When playing with a friend who has fewer songs, clicking Mirror temporarily aligns your `customs.pak.xen` to match your friend's exact song slots and count. Both players load into any custom song instantly with zero loading screen freezes and zero bot takeovers. When GH3 closes, your full library is automatically restored.
-* **Automatic Library Slot Self-Healing:** Added `CustomsPakService.AlignAndSortCustomsPak` into Library Auto-Heal and sync completion, ensuring existing custom installations are automatically aligned for online play.
-
----
-
-## [v1.2.2] - 2026-11-18 — P2P Auto-Healing, Tunnel Resiliency & In-Game Multiplayer Sync Notice
-
-### Peer Address Auto-Healing & Real-Time Network Discovery
-* **Bi-Directional Address Auto-Healing:** P2P requests now include `X-GH3-Sender-Address` and `X-GH3-Sender-Code` verification headers. When a remote friend connects to you over Cloudflare Quick Tunnels or LAN, your client automatically heals and updates their stored connection address without manual re-entry.
-* **Strict APIPA Link-Local IP Filtering (`169.254.*` Elimination):** Excluded disconnected/virtual adapter link-local IP addresses (`169.254.*`) from network discovery and public address resolution. Friends will never receive or get blocked by invalid `169.254.*` addresses.
-* **Cold-Start Tunnel Resiliency & Extended Timeouts:** Increased friend discovery and handshake timeouts from 3.5 seconds to 15–20 seconds with automatic warm-up retries, ensuring Cloudflare edge tunnels establish reliable connections even on first spin-up.
-* **Universal Lobby Invite Code Paste:** The `Paste Invite Code` button on `P2P Sync & Lobby` now accepts all formats (`gh3sync://`, `GH3-XXXX-XXXX@https://...`, `https://...`, or IP:port), auto-associates known friends, loads their mutual trust token, and compares libraries in 1 click.
-* **In-Game Multiplayer Pre-Flight Warning Banner:** Added a clear warning on the `P2P Sync & Lobby` screen explaining that in Guitar Hero III online multiplayer, both players must have identical custom song files installed before picking them in-game to prevent loading screen hangs and auto-playing bots.
-
-### Windows 11 Shell & Process Management Fixes
-* **Eliminated System Tray Freezes:** Converted system tray icon dispatcher calls to asynchronous non-blocking invocations, eliminating UI thread freezes on Windows 11 when interacting with notifications or the tray icon.
-* **Clean App Exit & Orphan Process Cleanup:** Clicking `[X]` now cleanly exits the application and immediately kills any orphaned background `cloudflared.exe` processes, ensuring port 7373 is cleanly released between sessions.
+## [v1.3.0] - 2026-11-19 — The Global Multiplayer & Synchronized Lobby Edition
+* **Synchronized Match Ready-Up & 3-2-1 Rock Launch Countdown:** Both players ready up in the P2P Lobby and launch into `GH3.exe` simultaneously with an authentic visual/audio countdown.
+* **Synchronized Party Roulette (Co-Op Song Draft):** 1-Click co-op song draft picks identical random tracks on both players' machines using a shared random seed.
+* **Live Friend Activity Status & Rich Presence:** Real-time activity broadcasts (🎸 Playing GH3, 🟢 In Lobby, ⚪ Online) with live status badges.
+* **Player Showcase Song / Signature Track:** Select your custom signature track in your profile; friends can listen to a 25-second audio preview directly in the UI.
+* **Connection Quality & Ping Indicator:** Asynchronous ping measurement displays real-time color-coded latency indicators (🟢 <60ms, 🟡 60-140ms, 🟠 >140ms).
+* **Instant 'Compare Missing' Quick Filter:** Checkbox to hide installed tracks and show only missing songs to sync in 1 click.
+* **Dual-Intent Friends & In-App Mutual Trust Upgrade:** Choose between Add Friend (view setlist) and Add Trusted Friend (1-click song sync), with 1-click in-app trust upgrades.
+* **Always-On Silent Background Internet Sync:** Automatically runs background Cloudflare Quick Tunnel and Global Signaling Relay (`ntfy.sh`) for zero-port-forwarding connectivity across different houses and Wi-Fi networks.
+* **Lobby Setlist Pre-Flight Auto-Heal & Theme Fallback Immunity:** Pre-launch validation ensures all 10 lobby songs have valid audio and pak assets. Universal `BgCardAlt` and `BorderDefault` brush definitions eliminate UI resource exceptions.
 
 ---
 
-## [v1.2.1] - 2026-11-18 — Zero-Config Internet Friend Sync & Self-Contained Release
-
-### 1-Click Internet Friend Invites & Seamless WAN Connection
-* **1-Click Online Friend Invites (`📋 Copy Online Invite`):** When playing with friends across the internet (different houses/Wi-Fi), clicking "📋 Copy Online Invite" automatically pairs your Friend Code with your active Cloudflare HTTPS Tunnel address (`GH3-XXXX-XXXX@https://xxxx.trycloudflare.com`) or mesh address. Send this link to your friend on Discord, iMessage, or text.
-* **1-Click HTTPS Internet Tunnel Directly on Friends Page:** Added dedicated Internet Sync status card and **"🌐 Start Free Internet Tunnel"** directly onto the `Friends & Trust` tab. Zero router port-forwarding or network hassle required.
-* **1-Click Clipboard Paste (`📋 Paste Invite`):** Added a 1-click paste button to the Add Friend bar that unpacks friends' online invite links (`GH3-XXXX-XXXX@https://...`), `gh3sync://` base64 invite strings, or raw codes, and triggers instant profile detection.
-* **1-Click "⚡ Sync Songs" Directly on Friend Cards:** Every friend card in `Active Friends` now features a prominent **"⚡ Sync Songs"** button. Clicking it instantly switches to `P2P Sync & Lobby`, populates the friend's address and mutual trust token, and triggers library comparison in 1 click!
-* **Automatic Friend Request Acceptance Polling:** When you send an outgoing friend request over the internet, GH3-Sync automatically checks when your friend clicks "✓ Accept & Trust", auto-promoting them to an active mutual friend and playing the Star Power chime with zero manual refreshing.
-* **Intelligent WAN Connection Guidance:** If a bare Friend Code (`GH3-XXXX-XXXX`) without an address is entered and not found on LAN, GH3-Sync provides clear, actionable instructions on using the Free Internet Tunnel and Online Invite links.
-
-### Zero Prerequisites / Self-Contained Deployment
-* **Fully Self-Contained Single-File Package:** Bundles all .NET 10 Desktop and ASP.NET Core runtimes directly inside `GH3-Sync.exe`. Friends never need to install or download any .NET runtimes manually.
-* **Lzma2 High-Compression Installer:** Packaged with Inno Setup with ultra-compression for fast downloads.
+## [v1.2.0] - 2026-11-18 — Zero-Trust P2P Security & Network Edition
+* **Verified P2P Friends Handshake & Bi-Directional Delivery:** Authenticated friend requests with mutual delivery receipts.
+* **Zero-Input Auto-Detection of Username from Friend Code:** Friend codes immediately preview remote username and online status across LAN beacons, central signaling, and direct P2P.
+* **Keep Synced Songs Permanent Promotion:** 1-Click promotion of temporarily synced multiplayer songs into your permanent customs library.
+* **Deterministic Setlist Slot Ordering:** Custom songs in `DATA\customs.pak.xen` sort deterministically in alphabetical order, guaranteeing identical tier slots for both players and eliminating loading screen desyncs.
+* **Asymmetric Library Mirroring:** Detects when your library has songs your friend is missing and offers 1-click Temporary Setlist Mirroring to prevent BetterGH3 crashes.
+* **Zero-Crash Fullscreen Engine:** Eliminated modal Win32 message boxes during gameplay to prevent DirectX 9 `D3DERR_DEVICELOST` fullscreen focus loss crashes.
 
 ---
 
-## [v1.2.0] - 2026-11-18 — Verified P2P Friends & Handshake Edition
-
-### Automatic Username Detection & Handshake Delivery Confirmation
-* **Zero-Input Auto-Detection of Username from Unique ID:** Friend Codes (`GH3-XXXX-XXXX`) are automatically resolved in real time across **LAN broadcast beacons (`PeerDiscoveryService`)**, **Central Admin Hub (`/api/admin/resolve-friend`)**, and **direct P2P profile queries (`/api/profile`)**. Typing or pasting a Friend Code immediately previews the friend's actual username and live online status with zero manual nickname typing.
-* **Bi-Directional P2P Delivery Handshake:** When adding a friend, GH3-Sync dispatches an actual network handshake request (`POST /api/friends/request`) to the friend's client. The remote client acknowledges receipt with HTTP 200 OK.
-* **Strict Receipt Confirmation Requirement:** GH3-Sync verifies that the friend request was actually received by the friend's client before adding them to the Outgoing Requested list. If the peer is unreachable or offline, the request is **NOT** added to the requested list, and a clear diagnostic alert explains why.
-* **Incoming Friend Request Approval System:** When a friend sends a request, the recipient receives a live animated **GH3 Stage Toast notification** (`"📩 NEW FRIEND REQUEST!"`) and Star Power audio chime. In the upgraded `Friends & Trusted Network` page, incoming requests appear in a dedicated section with 1-click **Accept & Trust** (generating mutual DPAPI-encrypted 32-character Trust Tokens for custom song downloads & setlist auto-sync), **Accept (View Only)**, or **Decline**.
-* **NAT Firewall Relay & Admin Hub Queuing Fallback:** If two players are behind restrictive firewalls/NAT without port forwarding or tunnels, requests automatically queue on the Admin Hub and deliver on the friend's next client heartbeat.
-* **External P2P Security Route Whitelist:** Updated the zero-trust external IP lockdown to whitelist `/api/profile`, `/api/friends/request`, `/api/friends/accept`, `/api/friends/decline`, and `/api/friends/check-status`, allowing direct P2P friend connections while maintaining localhost DNS-rebinding and CSRF shields.
-
----
-
-## [v1.1.0] - 2026-11-18 — Encore & Zero-Trust Edition
-
-### Universal Plug-and-Play Controller Support (DualSense Edge • PlayStation • Xbox • Guitar)
-* **Zero-Driver Multi-Controller Engine (`UnifiedControllerService`):** Instant plug-and-play support for **Sony DualSense Edge (PS5)**, **DualSense**, **DualShock 4**, **Xbox 360 / One / Series**, and **USB / XInput Guitar Controllers** — combining XInput + native Windows HID (`winmm`) with zero external drivers required.
-* **Official Guitar Hero III Mappings Out of the Box:** Automatic Gamepad Mode (`L2 / L1 / R1 / R2 / ✕` on PlayStation, `LT / LB / RB / RT / A` on Xbox) with **Official GH3 Auto-Strum on Fret Press**, plus Official GH3 Guitar Mode (`A / B / Y / X / LB` + Strum Bar) and **1-click custom back-paddle / keyboard keybinding**!
-* **Upgraded Live Controller Diagnostic Tester:** Displays detected controller name (`DualSense Edge (PS5)`, etc.), live 5-fret lights, L2/R2 analog trigger bars, Whammy axis, Star Power, and click-to-bind custom paddle remapping.
-
-### Authentic GH3 Gameplay, Studio Pro Tools & Real Audio Reactivity
-* **Upgraded Playable Highway Previewer:** Working **Star Power Meter & `8x` Activation** (`Create / Share / Back / Right Shift`), live **Mini Rock Meter**, **4 Note-Gem Palettes** (`Classic GH3`, `Colorblind High-Contrast`, `Synthwave Neon`, `Metallic Chrome`), **Post-Song `"★ YOU ROCK!"` Results Overlay**, and 1-click **Custom Keyboard Fret Remapper**.
-* **1-Click Playable Solo Extractor (`✂️ Build Solo Cut`):** Slice any song section or `A→B` loop into its own standalone playable `[SOLO]` custom song (with 2-second count-in + fade-out) compiled straight into BetterGH3!
-* **1-Click Concert Medley Builder (`🎸 Medley`):** Crossfade 2–4 checked custom songs and stitch their `.chart` tempo maps & note tracks seamlessly into one continuous Live Concert Medley.
-* **Real Audio Waveform Scrubber & Beat-Reactive Stage:** Extracts real FFmpeg PCM amplitude envelopes so the bottom Audio Player draws a **clickable Waveform Scrubber** (+ inline Volume Slider & Mute) while the **GH3 Rock Meter** and **5-Fret Spectrum Visualizer** react to real music beats!
-* **Smart Difficulty Scaler & Reverse Export to Clone Hero / YARG (`.zip`):** Generate progressive Easy/Medium/Hard tracks on any song or export your ONOGAMI customs as clean Clone Hero / YARG `.zip` packages.
-* **GH3 Audio/Video Lag Calibration Mini-Game (`🎯 Calibrate`), Chart Quality Scorecard & 8-Tier Venue Tour Ranking (`⚖️ Scorecard`), `Ctrl+K` Spotlight Quick-Command Palette, Compact Setlist View + Artist/GH3-Tour Grouping, Streamer `!sr` Song Request Queue, Discord Setlist Exporter, Multiplayer Best-of-3 Setlist Draft, Tour Stats & Trophies Wall (`🏆 Trophies`), Synthesized GH3 Sound Effects, & 100ms Pre-Flight Launch Check.**
-
-### Zero-Trust Security Upgrades
-* **1-Click `👁 Streamer Privacy Mode`:** Instantly masks Public IP, Mesh IP, Tunnel URL, Session PIN, Invite Codes & Friend Codes across every screen for safe Twitch/YouTube/Discord streaming.
-* **Localhost DNS-Rebinding & Browser CSRF Shield:** Enforces strict local `Host` header allowlist, blocks cross-origin browser `Origin` requests to local APIs, and removes legacy `?pin=` / `?token=` query-string fallbacks.
-* **Mutual Host Identity Verification (ECDSA P-256 Signing + SSH-Style TOFU Fingerprint Pinning):** Every `/api/manifest` is cryptographically signed by a persistent DPAPI-protected Host ECDSA keypair; unexpected host fingerprint changes trigger an immediate tamper warning.
-* **Authenticode Signature Verification on `cloudflared.exe`:** Verifies official `Cloudflare, Inc.` Windows Authenticode certificate chain before launching HTTPS Quick Tunnels.
-* **Invite-Link SSRF Guard + Pre-Connect Confirmation Card**, **Neversoft `.pak.xen` / FMOD `.fsb.xen` Binary Magic-Byte Validation**, **Optional 1-Click Host Approval Popup for Friend Downloads**, and **1-Click `🛡️ Run Live Security Self-Test` (`A+ HARDENED`)** inside `Settings → 🔒 Security & Privacy`.
+## [v1.1.0] - 2026-11-18 — Encore & Universal Hardware Edition
+* **Universal Multi-Controller Engine:** Plug-and-play support for Sony DualSense Edge (PS5), DualSense, DualShock 4, Xbox 360/One/Series, and USB/XInput guitars with zero external drivers.
+* **Official GH3 Auto-Strum on Fret Press:** Gamepad mode with back-paddle remapping and live controller diagnostics.
+* **Playable Solo Extractor:** Slice any solo section or loop into a standalone playable custom song with count-in and fade-out.
+* **Live Concert Medley Builder:** Crossfade 2 to 4 custom songs and stitch their charts into one continuous live medley.
+* **Real Waveform Scrubber & Beat-Reactive Stage:** Clickable FFmpeg PCM audio waveform scrubber with beat-reactive 5-fret spectrum visualizer.
+* **Audio/Video Lag Calibration Mini-Game & Chart Doctor:** Strum-to-the-beat calibrator and automated chart inspection/repair tool.
 
 ---
 
 ## [v1.0.0] - 2026-11-18 — Official Launch (Legends of Rock Edition)
-
-### Iconic Guitar Hero III Animated Stage UI & Theme Studio
-* **Master UI Animations Toggle (`Enable UI Animations & Stage Effects`):** Instantly toggle all stage effects on or off from `Settings → Appearance & Overlay`.
-* **Animated GH3 Rock Meter & Streak Multiplier Ring:** Live Red→Yellow→Green GH3 gauge arc with animated needle in the top header (reacting to BetterGH3/library health & subtly bouncing to preview audio) paired with a dynamic `1x → 4x → ⚡ 8x` Streak Multiplier ring in the sidebar.
-* **Rising "Lou's Inferno" Concert Stage Embers & 5-Fret Fretboard Gems:** 22 softly drifting glowing embers & fret sparks behind workspace panels, 5-fret glowing gems on sidebar navigation, flowing 5-fret top shimmer, **Staggered Setlist Card Cascade**, **Spinning Vinyl / Album Disc** + **5-Fret Neon Audio Spectrum Visualizer**, and animated **GH3 Stage Toast Notification Banners**.
-* **5 Custom Guitar Hero Stage Themes:** **Dark GH3**, **Light GH3**, **⚡ Star Power (Cyber Blue)**, **🔥 Through the Fire & Flames**, and **🌌 Encore Synthwave**.
-* **Power-User Keyboard Shortcuts:** `Ctrl+F` (Search Customs), `F5` (Refresh), `Ctrl+1..8` (Jump Pages), and `Space` (Play/Pause Preview).
-
-### Security Hardening & Privacy Suite
-* **Strict External-IP API Lockdown:** External/Internet & proxied tunnel IPs can ONLY ever reach `/api/auth/challenge`, `/api/manifest`, `/api/download/*`, and `/api/download-customs-pak`; all desktop/local routes (`/api/status`, `/api/open-folder`, `/api/settings/*`, `/obs-overlay`, etc.) return `403 Forbidden`.
-* **Challenge-Response HMAC-SHA256 P2P Authentication:** Trust Tokens, 4-Hour Expiring Invite Tokens, and Session PINs never cross the wire in plaintext — single-use 90-second nonces prevent replay attacks, protected by unified 5-attempt IP lockout.
-* **Per-Transfer Salted AES-256-GCM (`GH3E` v2) & Encrypted `.gh3backup` Profile Backups:** Unique random salt per P2P transfer plus passphrase-encrypted (`PBKDF2-SHA256` 150k + `AES-256-GCM`) profile backup & restore.
-* **Settings → 🔒 Security & Privacy Dashboard:** Live security status badges, live Blocked IPs & auth audit log with manual IP ban/unban, **1-Click Rotate All Tokens & PIN**, strict SHA-256 verification on updates & `yt-dlp.exe`, `ArgumentList`-only process execution, and real streaming Zip-Bomb & double-extension/Zip-Slip archive defense.
-
-### Zero-Config Multiplayer, Gameplay & Charting Tools
-* **Zero-Config CGNAT / Strict-Router P2P:** Auto-detects **Tailscale** (`100.64.0.0/10`) & **ZeroTier** mesh VPN interfaces plus a **1-Click Cloudflare HTTPS Quick Tunnel (`cloudflared`)** and **4-Hour Expiring Session Invites** for zero port-forwarding sync.
-* **Playable Highway Previewer + Co-Op Split-Screen + A→B Solo Looper + Visual Note Editor:** Play Lead or Co-Op Bass tracks using an XInput Guitar Controller or Keyboard (`A S J K L` + `Space`/`Enter`), preview **Lead + Co-Op Bass side-by-side in Split-Screen**, loop A→B sections at `50%–100%` speed, or click lanes in Edit Mode to fix notes & HOPOs.
-* **Real `s000.d` Career Save Score Auto-Importer:** Safely scans Guitar Hero III's career save (read-only) on refresh and automatically when `GH3.exe` closes to import real in-game scores & stars into your library and Friend Leaderboard.
-* **Streamer OBS "Now Playing" Loopback Browser Overlay:** 1-click copyable local-only transparent animated OBS widget (`http://127.0.0.1:7373/obs-overlay`) with spinning cover art and 5-fret spectrum bars.
-* **Venue Customizer & Bulk Metadata Editor:** Pick any GH3 Concert Stage Venue (`Backyard Bash` → `Lou's Inferno`) in Edit Song or batch-update Genre, Year, Charter & Venue across multiple selected songs.
-* **1-Click Chorus Encore 30-Second Audio Preview (`▶ 30s`):** Listen to a 30-second song preview directly on Chorus Encore search cards before downloading.
-* **Live Guitar Controller Diagnostic Tester**, **Custom GH3 Highway Skin Studio**, **BetterGH3 Live `_log.txt` Verifier & Presets**, **Auto-Fetch Cover Art**, **Batch Volume Soundcheck (`-14 LUFS`)**, **Real-Guitar Practice Stem Exporter**, **Optional `yt-dlp` Importer**, **Encore Roulette (`🎰`)**, **Note Intensity Sparklines**, **Concert Setlist Poster PNG**, **Custom Tags**, and **1-Click Library Auto-Heal**.
+* **Iconic Animated Stage UI & 5 Stage Themes:** Dark GH3, Light GH3, Star Power Cyber Blue, Through the Fire & Flames, and Encore Synthwave.
+* **Interactive 3D Playable Highway Previewer:** Watch charts flow in 60 FPS synced to audio before launching the game.
+* **ONOGAMI AI Song Creator:** Automated Demucs stem separation, Basic Pitch transcription, and Honeycomb pak compilation.
+* **Full Clone Hero & YARG Conversion:** Native `.sng` package extraction, MIDI conversion, and variable tempo mapping.
+* **Paired Career Save Profiles & Inno Setup Single-File Installer.**
 
 ---
 
-## [v0.9.0-rc] - 2026-11-18 — Release Candidate
-* Added Interactive Mini Highway Chart Previewer with live `±250ms` Sync Offset tuner, 5-second **Instant Re-Chart Cache**, FFmpeg `-14 LUFS` Loudness Normalization & Audio Trim/Fade, **Chart Doctor** auto-fixer, **1-Click Lobby Invite Codes** (`gh3sync://...`) & Saved Setlist Presets, **Discord Rich Presence**, Electric Guitar HUD Size/Opacity & peer-sync strum pulse, **Clone Hero / YARG Full Library Migration Wizard**, **BetterGH3 Quick-Tweaks**, and **Tap Tempo**.
-
-## [v0.8.0-beta] - 2026-11-18 — Beta 8
-* Replaced text HUD with transparent per-pixel alpha **Electric Guitar In-Game HUD Overlay** (blue strings when online, silver when offline), fixed Moonscraper `.chart` time-signature `2 ^ den` conversion bug (`Hit The Floor` & 6/8–7/8 charts), added Chorus Encore smart filters & Classic 5-Fret open-note option, interactive editable **Batch Queue**, multi-file Drag-and-Drop, Album Art thumbnails, Duplicate Song Detector, and 6-tab Settings.
-
-## [v0.7.0-beta] - 2026-11-18 — Beta 7
-* Introduced **ONOGAMI AI Charting Engine v2** (Smart Multi-Lead Basic Pitch across Guitar/Piano/Other/Bass/Vocals, Librosa precision beat-grid & onset alignment, 2-bar Riff Memory, forced HOPOs, 3-note chords, Co-Op Bass), **Game Audio Mix Modes** (Studio Master / Isolated Lead Stem / Hybrid Blend), and built-in **Chorus Encore Community Chart Search** with pure-C# `.sng` extractor.
-
-## [v0.6.0-beta] - 2026-11-18 — Beta 6
-* Added **Silent In-App Auto-Updater** with the Electric Guitar blue-strings progress overlay, fixed shutdown `Mutex` crash, fixed `customs.pak.xen` PAK header re-hashing corruption on song delete/merge, and added automatic header self-repair.
-
-## [v0.5.0-beta] - 2026-11-17 — Beta 5
-* Rebuilt GH3-Sync as a native Windows 11 WPF desktop app with Demucs 6-Stem isolation, Spotify Basic Pitch pitch-to-MIDI transcription, dark/light themes, paired Career Save snapshots, and GitHub Releases auto-updater.
-
-## [v0.4.0-beta] - 2026-11-16 — Beta 4
-* Integrated bundled Honeycomb compiler & FFmpeg for automated 1-click `.pak.xen` / `.fsb.xen` compilation and direct GH3 installation.
-
-## [v0.3.0-beta] - 2026-11-15 — Beta 3
-* Added Public IP resolution, automatic router UPnP / NAT-PMP port mapping, and external Trusted Friend P2P sync.
-
-## [v0.2.0-beta] - 2026-11-14 — Beta 2
-* Improved BetterGH3 library detection, song packaging integrity, and P2P sync stability.
-
-## [v0.1.0-beta] - 2026-11-14 — Beta 1
-* Initial release of GH3-Sync: Guitar Hero III / BetterGH3 custom song detection and encrypted P2P song synchronization.
+## 📦 Archived Beta Milestones (v0.1.0 – v0.9.0-rc)
+* **Beta 1 through Beta 8 (2026-11-14 to 2026-11-18):** Initial WPF UI architecture, Python Demucs + Basic Pitch integration, FSB3 multichannel audio compilation, Honeycomb compiler integration, Web UI bridge, and GitHub auto-updater foundations.

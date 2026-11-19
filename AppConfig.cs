@@ -143,7 +143,15 @@ public class AppConfigData
     public Dictionary<string, List<string>> SongTags { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, SongScoreRecord> LocalHighScores { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
-    // v1.1.0 Encore & Zero-Trust Settings
+    // v1.4.0 Concert Master Edition Settings
+    public string Language { get; set; } = "en";
+    public int ControllerDebounceMs { get; set; } = 25;             // Hardware anti-overstrum debounce (0ms - 100ms)
+    public bool EnableHighPrecisionTimer { get; set; } = true;      // Windows 11 0.5ms microsecond timing boost
+    public double AudioTargetLufs { get; set; } = -14.0;            // EBU R128 target loudness
+    public bool StemSeparationGpuEnabled { get; set; } = true;      // GPU acceleration for AI demux/pitch
+    public bool ZeroTrustQuarantineEnabled { get; set; } = true;    // Sonic Quarantine archive pre-scanner
+    public bool EnableStadiumChants { get; set; } = true;           // AI Stadium Sing-Along & crowd chants
+
     public bool StreamerPrivacyMode { get; set; } = false;
     public bool CompactSetlistView { get; set; } = false;
     public string GroupByMode { get; set; } = "None"; // None, Artist, Tier

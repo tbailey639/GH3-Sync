@@ -64,6 +64,17 @@ public class CloneHeroImportService
             }
             else if (File.Exists(sourcePath) && sourcePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             {
+                if (AppConfig.Current.ZeroTrustQuarantineEnabled)
+                {
+                    onProgress?.Invoke(5, "Running Sonic Quarantine pre-scan on archive...");
+                    var scan = SonicQuarantineService.ScanZipArchive(sourcePath);
+                    if (!scan.IsSafe)
+                    {
+                        _logger.LogWarn($"[Sonic Quarantine Blocked]: {scan.Reason}");
+                        return new CloneHeroImportResult { Success = false, Message = $"Security Block (Sonic Quarantine): {scan.Reason}" };
+                    }
+                }
+
                 onProgress?.Invoke(10, "Scanning & extracting Clone Hero archive safely...");
                 tempExtractDir = Path.Combine(Path.GetTempPath(), $"gh3_ch_import_{Guid.NewGuid():N}");
                 SecurityService.ExtractCloneHeroZipSafely(sourcePath, tempExtractDir, _logger);

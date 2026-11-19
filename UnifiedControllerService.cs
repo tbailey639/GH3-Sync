@@ -264,6 +264,7 @@ public static class UnifiedControllerService
             }
 
             ApplyCustomRawButtonOverrides(snap);
+            ApplyDebounceFilter(snap);
             return snap;
         }
 
@@ -367,6 +368,7 @@ public static class UnifiedControllerService
                 }
 
                 ApplyCustomRawButtonOverrides(snap);
+                ApplyDebounceFilter(snap);
                 return snap;
             }
         }
@@ -387,6 +389,33 @@ public static class UnifiedControllerService
                 if ((snap.RawButtonsMask & (1u << rawIdx)) != 0)
                     snap.Frets[i] = true;
             }
+        }
+    }
+
+    private static long _lastStrumTimestamp = 0;
+    private static bool _lastStrumWasUp = false;
+
+    private static void ApplyDebounceFilter(UnifiedControllerSnapshot snap)
+    {
+        int debounceMs = AppConfig.Current.ControllerDebounceMs;
+        if (debounceMs <= 0) return;
+
+        long now = Environment.TickCount64;
+        bool hasStrum = snap.StrumUp || snap.StrumDown;
+
+        if (hasStrum)
+        {
+            bool isOppositeStrum = (snap.StrumUp && !_lastStrumWasUp) || (snap.StrumDown && _lastStrumWasUp);
+            if (isOppositeStrum && (now - _lastStrumTimestamp) < debounceMs)
+            {
+                // Rebound bounce detected: suppress false overstrum
+                snap.StrumUp = false;
+                snap.StrumDown = false;
+                return;
+            }
+
+            _lastStrumTimestamp = now;
+            _lastStrumWasUp = snap.StrumUp;
         }
     }
 

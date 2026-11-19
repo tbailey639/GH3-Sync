@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -12,13 +12,14 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Threading;
 
 using WinForms = System.Windows.Forms;
 using WpfBrush = System.Windows.Media.Brush;
 using WpfColor = System.Windows.Media.Color;
-using WpfMessageBox = System.Windows.MessageBox;
+using WpfMessageBox = GH3_Sync.Views.GuitarHeroModalDialog;
 
 namespace GH3_Sync.Views;
 
@@ -73,6 +74,9 @@ public partial class MainWindow : Window
     private int _creatorPreviewStartMs = 5000;
     private double _creatorTrimStartSec = 0.0;
     private double _creatorTrimEndSec = 0.0;
+    private byte[]? _creatorCoverArtBytes;
+    private string? _creatorCoverArtPath;
+    private List<ArtworkCandidate> _creatorArtworkCandidates = new();
     private readonly List<DateTime> _tapTempoStamps = new();
     private bool _tapTempoLocked = false;
     private string? _lastCreatedChartPath;
@@ -239,6 +243,17 @@ public partial class MainWindow : Window
     {
         Title = $"GH3-Sync v{UpdateService.CurrentAppVersion}";
         if (HeaderVersionBadge != null) HeaderVersionBadge.Text = $"v{UpdateService.CurrentAppVersion}";
+
+        if (!string.IsNullOrWhiteSpace(AppConfig.Current.Language))
+        {
+            LocalizationService.SetLanguage(AppConfig.Current.Language);
+            ApplyLocalizationStrings();
+        }
+
+        if (AppConfig.Current.EnableHighPrecisionTimer)
+        {
+            EngineVaccineService.EnableHighPrecisionTimer();
+        }
 
         // Purge any stale 169.254.* addresses from friends list & input boxes
         foreach (var fr in AppConfig.Current.Friends)
@@ -629,6 +644,16 @@ public partial class MainWindow : Window
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         bool ctrl = (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) != 0;
+        bool shift = (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Shift) != 0;
+
+        if (ctrl && shift && e.Key == System.Windows.Input.Key.X)
+        {
+            EngineVaccineService.TriggerPanicAirGap();
+            WpfMessageBox.Show("EMERGENCY AIR-GAP ACTIVATED!\n\nAll external network ports, UPnP mappings, and P2P sync tunnels have been terminated and blackholed.", "AIR-GAP SHIELD", MessageBoxButton.OK, MessageBoxImage.Warning);
+            e.Handled = true;
+            return;
+        }
+
         if (ctrl && e.Key == System.Windows.Input.Key.K)
         {
             OpenCommandPalette();
@@ -3037,10 +3062,11 @@ public partial class MainWindow : Window
     private async void FetchCreatorMetaBtn_Click(object sender, RoutedEventArgs e)
     {
         FetchCreatorMetaBtn.IsEnabled = false;
+        PageCreator_StageHud.Report(20, "FETCHING METADATA & ALBUM ART", "Querying Deezer HD (1000×1000), Apple iTunes, and embedded tags...");
         CrProgressLabel.Text = "Fetching album art & track metadata...";
         try
         {
-            var res = await _albumMeta.FetchMetadataAndCoverAsync(CrTitleBox.Text.Trim(), CrArtistBox.Text.Trim());
+            var res = await _albumMeta.FetchMetadataAndCoverAsync(CrTitleBox.Text.Trim(), CrArtistBox.Text.Trim(), CrAudioPathBox?.Text?.Trim());
             if (res.Found)
             {
                 if (!string.IsNullOrWhiteSpace(res.Title)) CrTitleBox.Text = res.Title;
@@ -3049,12 +3075,144 @@ public partial class MainWindow : Window
                 if (res.Year > 0) CrYearBox.Text = res.Year.ToString();
                 if (!string.IsNullOrWhiteSpace(res.Genre)) CrGenreBox.Text = res.Genre;
                 CrProgressLabel.Text = res.Message;
+
+                _creatorArtworkCandidates = res.Candidates ?? new List<ArtworkCandidate>();
+                _creatorCoverArtBytes = res.CoverArtBytes;
+
+                UpdateArtworkCarouselUi();
+                PageCreator_StageHud.Finish($"Found HD artwork ({_creatorArtworkCandidates.Count} candidate(s)) & tags for {res.Artist} - {res.Title}");
             }
-            else CrProgressLabel.Text = res.Message;
+            else
+            {
+                CrProgressLabel.Text = res.Message;
+                PageCreator_StageHud.Reset();
+            }
         }
         finally
         {
             FetchCreatorMetaBtn.IsEnabled = true;
+        }
+    }
+
+    private void UpdateArtworkCarouselUi()
+    {
+        if (_creatorArtworkCandidates == null || _creatorArtworkCandidates.Count == 0)
+        {
+            CrArtCarouselContainer.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        CrArtCarouselContainer.Visibility = Visibility.Visible;
+        HighlightArtCard(1);
+
+        if (_creatorArtworkCandidates.Count >= 1)
+        {
+            var c1 = _creatorArtworkCandidates[0];
+            CrArtLabel1.Text = c1.Title;
+            CrArtSource1.Text = $"{c1.Source} ({c1.Width}×{c1.Height})";
+            LoadImageIntoControl(CrArtImg1, c1.ImageBytes);
+            CrArtCard1.Visibility = Visibility.Visible;
+        }
+
+        if (_creatorArtworkCandidates.Count >= 2)
+        {
+            var c2 = _creatorArtworkCandidates[1];
+            CrArtLabel2.Text = c2.Title;
+            CrArtSource2.Text = $"{c2.Source} ({c2.Width}×{c2.Height})";
+            LoadImageIntoControl(CrArtImg2, c2.ImageBytes);
+            CrArtCard2.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            CrArtCard2.Visibility = Visibility.Collapsed;
+        }
+
+        if (_creatorArtworkCandidates.Count >= 3)
+        {
+            var c3 = _creatorArtworkCandidates[2];
+            CrArtLabel3.Text = c3.Title;
+            CrArtSource3.Text = $"{c3.Source} ({c3.Width}×{c3.Height})";
+            LoadImageIntoControl(CrArtImg3, c3.ImageBytes);
+            CrArtCard3.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            CrArtCard3.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private static void LoadImageIntoControl(System.Windows.Controls.Image imgCtrl, byte[]? bytes)
+    {
+        if (bytes == null || bytes.Length == 0) return;
+        try
+        {
+            var bmp = new BitmapImage();
+            using var ms = new MemoryStream(bytes);
+            bmp.BeginInit();
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.StreamSource = ms;
+            bmp.EndInit();
+            bmp.Freeze();
+            imgCtrl.Source = bmp;
+        }
+        catch { }
+    }
+
+    private void HighlightArtCard(int index)
+    {
+        var activeBrush = (System.Windows.Media.Brush)FindResource("AccentFlame");
+        var subtleBrush = (System.Windows.Media.Brush)FindResource("BorderSubtle");
+
+        CrArtCard1.BorderBrush = index == 1 ? activeBrush : subtleBrush;
+        CrArtCard2.BorderBrush = index == 2 ? activeBrush : subtleBrush;
+        CrArtCard3.BorderBrush = index == 3 ? activeBrush : subtleBrush;
+    }
+
+    private void CrArtCard1_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        HighlightArtCard(1);
+        if (_creatorArtworkCandidates != null && _creatorArtworkCandidates.Count >= 1)
+            _creatorCoverArtBytes = _creatorArtworkCandidates[0].ImageBytes;
+    }
+
+    private void CrArtCard2_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        HighlightArtCard(2);
+        if (_creatorArtworkCandidates != null && _creatorArtworkCandidates.Count >= 2)
+            _creatorCoverArtBytes = _creatorArtworkCandidates[1].ImageBytes;
+    }
+
+    private void CrArtCard3_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        HighlightArtCard(3);
+        if (_creatorArtworkCandidates != null && _creatorArtworkCandidates.Count >= 3)
+            _creatorCoverArtBytes = _creatorArtworkCandidates[2].ImageBytes;
+    }
+
+    private void CrArtCustomPickBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Select Album Art Image (JPG/PNG)",
+            Filter = "Image Files (*.jpg;*.jpeg;*.png)|*.jpg;*.jpeg;*.png|All Files (*.*)|*.*"
+        };
+        if (dlg.ShowDialog() == true)
+        {
+            try
+            {
+                byte[] bytes = File.ReadAllBytes(dlg.FileName);
+                _creatorCoverArtBytes = bytes;
+                _creatorCoverArtPath = dlg.FileName;
+                CrArtCarouselContainer.Visibility = Visibility.Visible;
+                CrArtLabel1.Text = "Custom Pick";
+                CrArtSource1.Text = Path.GetFileName(dlg.FileName);
+                LoadImageIntoControl(CrArtImg1, bytes);
+                HighlightArtCard(1);
+            }
+            catch (Exception ex)
+            {
+                WpfMessageBox.Show($"Failed to load image: {ex.Message}", "Image Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         }
     }
 
@@ -3570,6 +3728,7 @@ public partial class MainWindow : Window
             {
                 CrProgressBar.Value = pct;
                 CrProgressLabel.Text = msg;
+                PageCreator_StageHud.Report(pct, "CREATING GUITAR HERO III CUSTOM", msg);
             }));
 
             CrResultBox.Visibility = Visibility.Visible;
@@ -3596,9 +3755,39 @@ public partial class MainWindow : Window
                 lines.Add($"• Folder: {result.ProjectDirectory}");
                 CrResultText.Text = string.Join("\n", lines);
                 RefreshSongsList();
+
+                PageCreator_StageHud.Finish($"Encore Ready: {meta.Artist} - {meta.Title} compiled cleanly!");
+
+                try
+                {
+                    SongVictoryDialog.ShowVictory(
+                        this,
+                        meta.Title,
+                        meta.Artist,
+                        meta.Album,
+                        meta.Year.ToString(),
+                        (int)Math.Round(result.DetectedBpm),
+                        result.TranscribedNoteCount,
+                        null,
+                        _creatorCoverArtBytes,
+                        _lastCreatedAudioPath,
+                        onPlayInGh3: () => LaunchGh3(),
+                        onHighwayPreview: () =>
+                        {
+                            if (File.Exists(_lastCreatedChartPath))
+                                OpenHighwayPreview(meta.Title, meta.Artist, _lastCreatedChartPath, _lastCreatedAudioPath, result.ProjectDirectory);
+                        },
+                        onAudioPreview: () =>
+                        {
+                            if (File.Exists(_lastCreatedAudioPath))
+                                PlayAudioPreview(_lastCreatedAudioPath, meta.Title);
+                        });
+                }
+                catch { }
             }
             else
             {
+                PageCreator_StageHud.SetError("COMPILATION FAILED", result.Message);
                 CrResultBox.Background = new SolidColorBrush(WpfColor.FromRgb(43, 16, 20));
                 CrResultBox.BorderBrush = new SolidColorBrush(WpfColor.FromRgb(239, 68, 68));
                 CrResultText.Foreground = new SolidColorBrush(WpfColor.FromRgb(254, 202, 202));
@@ -6485,6 +6674,36 @@ public partial class MainWindow : Window
         SettingsOverlayOpacitySlider.Value = opPct;
         SettingsOverlayOpacityLabel.Text = $"Opacity: {opPct}%";
         CommunityClassicFretsChk.IsChecked = AppConfig.Current.ConvertOpenNotesToClassicGh3;
+
+        // v1.4.0 Concert Master Edition Settings
+        if (SettingsTimerBoostChk != null) SettingsTimerBoostChk.IsChecked = AppConfig.Current.EnableHighPrecisionTimer;
+        if (SettingsZeroTrustChk != null) SettingsZeroTrustChk.IsChecked = AppConfig.Current.ZeroTrustQuarantineEnabled;
+        if (SettingsGpuToggleChk != null) SettingsGpuToggleChk.IsChecked = AppConfig.Current.StemSeparationGpuEnabled;
+        if (SettingsDebounceSlider != null)
+        {
+            SettingsDebounceSlider.Value = AppConfig.Current.ControllerDebounceMs;
+            if (SettingsDebounceValueText != null)
+                SettingsDebounceValueText.Text = AppConfig.Current.ControllerDebounceMs == 0 ? "Off (0 ms)" : $"{AppConfig.Current.ControllerDebounceMs} ms";
+        }
+        if (SettingsLufsSlider != null)
+        {
+            SettingsLufsSlider.Value = AppConfig.Current.AudioTargetLufs;
+            if (SettingsLufsValueText != null)
+                SettingsLufsValueText.Text = $"{AppConfig.Current.AudioTargetLufs:F1} LUFS";
+        }
+        if (SettingsLanguageCombo != null)
+        {
+            string curLang = AppConfig.Current.Language ?? "en";
+            foreach (var item in SettingsLanguageCombo.Items)
+            {
+                if (item is ComboBoxItem cbi && cbi.Tag is string tag && tag.Equals(curLang, StringComparison.OrdinalIgnoreCase))
+                {
+                    SettingsLanguageCombo.SelectedItem = cbi;
+                    break;
+                }
+            }
+        }
+
         UpdateThemeCardSelection();
     }
 
@@ -6768,6 +6987,26 @@ public partial class MainWindow : Window
         CrNormalizeLoudnessChk.IsChecked = AppConfig.Current.NormalizeAudioLoudness;
         if (int.TryParse(SettingsLobbyCapBox.Text, out var cap))
             AppConfig.Current.MaxLobbyAutoSyncSongs = Math.Clamp(cap, 1, 25);
+
+        // v1.4.0 Concert Master Edition Settings
+        if (SettingsTimerBoostChk != null)
+        {
+            AppConfig.Current.EnableHighPrecisionTimer = SettingsTimerBoostChk.IsChecked == true;
+            if (AppConfig.Current.EnableHighPrecisionTimer)
+                EngineVaccineService.EnableHighPrecisionTimer();
+            else
+                EngineVaccineService.DisableHighPrecisionTimer();
+        }
+        if (SettingsZeroTrustChk != null) AppConfig.Current.ZeroTrustQuarantineEnabled = SettingsZeroTrustChk.IsChecked == true;
+        if (SettingsGpuToggleChk != null) AppConfig.Current.StemSeparationGpuEnabled = SettingsGpuToggleChk.IsChecked == true;
+        if (SettingsDebounceSlider != null) AppConfig.Current.ControllerDebounceMs = (int)Math.Round(SettingsDebounceSlider.Value);
+        if (SettingsLufsSlider != null) AppConfig.Current.AudioTargetLufs = SettingsLufsSlider.Value;
+        if (SettingsLanguageCombo?.SelectedItem is ComboBoxItem langItem && langItem.Tag is string langCode)
+        {
+            LocalizationService.SetLanguage(langCode);
+            ApplyLocalizationStrings();
+        }
+
         AppConfig.Save();
 
         // If user switched to Offline Mode, immediately close UPnP port 7373!
@@ -6782,6 +7021,55 @@ public partial class MainWindow : Window
 
         SettingsSaveStatus.Text = "Settings saved!";
         RefreshAllUiState();
+    }
+
+    private void SettingsLanguageCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SettingsLanguageCombo?.SelectedItem is ComboBoxItem item && item.Tag is string lang)
+        {
+            LocalizationService.SetLanguage(lang);
+            ApplyLocalizationStrings();
+        }
+    }
+
+    private void SettingsDebounceSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (SettingsDebounceValueText != null)
+        {
+            int ms = (int)Math.Round(e.NewValue);
+            SettingsDebounceValueText.Text = ms == 0 ? "Off (0 ms)" : $"{ms} ms";
+        }
+    }
+
+    private void SettingsLufsSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (SettingsLufsValueText != null)
+        {
+            SettingsLufsValueText.Text = $"{e.NewValue:F1} LUFS";
+        }
+    }
+
+    private void AirGapPanicBtn_Click(object sender, RoutedEventArgs e)
+    {
+        EngineVaccineService.TriggerPanicAirGap();
+        if (SettingsP2pOnlineChk != null) SettingsP2pOnlineChk.IsChecked = false;
+        WpfMessageBox.Show("EMERGENCY AIR-GAP ACTIVATED!\n\nAll external network ports, UPnP mappings, and P2P sync tunnels have been terminated and blackholed.", "AIR-GAP SHIELD", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    private void ApplyLocalizationStrings()
+    {
+        try
+        {
+            if (NavCustoms != null) NavCustoms.Content = LocalizationService.Get("nav_customs", "🎸 My Customs");
+            if (NavCreator != null) NavCreator.Content = LocalizationService.Get("nav_creator", "⚡ Song Creator");
+            if (NavAiTools != null) NavAiTools.Content = LocalizationService.Get("nav_tools", "🛠 Tools & Stems");
+            if (NavFriends != null) NavFriends.Content = LocalizationService.Get("nav_friends", "👥 Friends & Trust");
+            if (NavP2P != null) NavP2P.Content = LocalizationService.Get("nav_p2p", "🌐 P2P Sync & Lobby");
+            if (NavImport != null) NavImport.Content = LocalizationService.Get("nav_import", "📦 Import & Convert");
+            if (NavSaves != null) NavSaves.Content = LocalizationService.Get("nav_career", "💾 Career Saves");
+            if (NavSettings != null) NavSettings.Content = LocalizationService.Get("nav_settings", "⚙ Settings");
+        }
+        catch { }
     }
 
     private void CleanTempFilesBtn_Click(object sender, RoutedEventArgs e)

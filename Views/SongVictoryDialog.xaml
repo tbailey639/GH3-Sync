@@ -1,0 +1,233 @@
+<Window x:Class="GH3_Sync.Views.SongVictoryDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Encore! Song Ready"
+        Width="580" SizeToContent="Height" MaxHeight="720"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        KeyDown="Window_KeyDown"
+        TextOptions.TextFormattingMode="Display">
+
+    <Window.Resources>
+        <ControlTemplate x:Key="VictoryBtnTemplate" TargetType="Button">
+            <Border x:Name="b" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="8" Padding="{TemplateBinding Padding}">
+                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="b" Property="Opacity" Value="0.92"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter TargetName="b" Property="Opacity" Value="0.75"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+    </Window.Resources>
+
+    <Border Margin="16" CornerRadius="16" BorderThickness="1.5" BorderBrush="#F59E0B"
+            x:Name="VictoryCard">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Color="#181324" Offset="0"/>
+                <GradientStop Color="#0F0C17" Offset="0.5"/>
+                <GradientStop Color="#09070E" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.Background>
+        <Border.Effect>
+            <DropShadowEffect Color="#F59E0B" BlurRadius="28" ShadowDepth="0" Opacity="0.55"/>
+        </Border.Effect>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/> <!-- Title Bar -->
+                <RowDefinition Height="Auto"/> <!-- Banner -->
+                <RowDefinition Height="*"/>    <!-- Song Showcase -->
+                <RowDefinition Height="Auto"/> <!-- Actions -->
+            </Grid.RowDefinitions>
+
+            <!-- Title Bar -->
+            <Border Grid.Row="0" Background="#130F1C" CornerRadius="14,14,0,0"
+                    BorderThickness="0,0,0,1" BorderBrush="#2A223B"
+                    Padding="16,10" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
+                        <Ellipse Width="8" Height="8" Fill="#22C55E" Margin="0,0,3,0"/>
+                        <Ellipse Width="8" Height="8" Fill="#EF4444" Margin="0,0,3,0"/>
+                        <Ellipse Width="8" Height="8" Fill="#EAB308" Margin="0,0,3,0"/>
+                        <Ellipse Width="8" Height="8" Fill="#3B82F6" Margin="0,0,3,0"/>
+                        <Ellipse Width="8" Height="8" Fill="#F97316" Margin="0,0,0,0"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Column="1" Text="★ ENCORE COMPLETE • TOUR SETLIST EXPANDED ★"
+                               Foreground="#FCD34D" FontWeight="Bold" FontSize="12.5"
+                               VerticalAlignment="Center"/>
+
+                    <Button Grid.Column="2" Content="✕" Width="26" Height="26"
+                            Background="Transparent" BorderThickness="0" Foreground="#94A3B8"
+                            FontSize="13" FontWeight="Bold" Cursor="Hand" Click="Close_Click"/>
+                </Grid>
+            </Border>
+
+            <!-- Banner -->
+            <Border Grid.Row="1" Background="#1C152B" BorderThickness="0,0,0,1" BorderBrush="#2C2344"
+                    Padding="20,12">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="🎸 SONG COMPILED TO GUITAR HERO III!"
+                               Foreground="#34D399" FontWeight="Black" FontSize="16"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="Audio stems mixed, chart notes verified, and pak archive updated successfully."
+                               Foreground="#94A3B8" FontSize="11.5" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Song Showcase Content -->
+            <Grid Grid.Row="2" Margin="22,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="140"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Album Art & Vinyl -->
+                <Grid Grid.Column="0" VerticalAlignment="Top">
+                    <!-- Spinning Vinyl Record peeking behind album art -->
+                    <Border Width="110" Height="110" CornerRadius="55" Background="#111116"
+                            BorderBrush="#333344" BorderThickness="2" Margin="24,0,0,0"
+                            HorizontalAlignment="Left" VerticalAlignment="Center">
+                        <Border.Effect>
+                            <DropShadowEffect Color="Black" BlurRadius="10" ShadowDepth="2" Opacity="0.7"/>
+                        </Border.Effect>
+                        <Grid>
+                            <!-- Vinyl Grooves -->
+                            <Ellipse Width="85" Height="85" Stroke="#222230" StrokeThickness="1.5"/>
+                            <Ellipse Width="60" Height="60" Stroke="#222230" StrokeThickness="1"/>
+                            <!-- Center Label -->
+                            <Ellipse Width="38" Height="38" Fill="#E11D48"/>
+                            <Ellipse Width="10" Height="10" Fill="#09070E"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Album Art Cover -->
+                    <Border Width="115" Height="115" CornerRadius="8" Background="#1E192B"
+                            BorderBrush="#F59E0B" BorderThickness="1.5" HorizontalAlignment="Left">
+                        <Border.Effect>
+                            <DropShadowEffect Color="#000000" BlurRadius="14" ShadowDepth="2" Opacity="0.8"/>
+                        </Border.Effect>
+                        <Image x:Name="ArtImage" Stretch="UniformToFill"/>
+                    </Border>
+                </Grid>
+
+                <!-- Song Details -->
+                <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
+                    <!-- Title -->
+                    <TextBlock x:Name="TxtSongTitle" Text="Song Title" Foreground="#F8FAFC"
+                               FontWeight="Black" FontSize="17" TextTrimming="CharacterEllipsis"/>
+                    <!-- Artist -->
+                    <TextBlock x:Name="TxtArtist" Text="Artist Name" Foreground="#FB923C"
+                               FontWeight="Bold" FontSize="13.5" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                    <!-- Album / Year -->
+                    <TextBlock x:Name="TxtAlbumYear" Text="Album • 2026" Foreground="#94A3B8"
+                               FontSize="12" Margin="0,2,0,10" TextTrimming="CharacterEllipsis"/>
+
+                    <!-- Stats Row -->
+                    <Border Background="#151121" BorderBrush="#282038" BorderThickness="1" CornerRadius="8"
+                            Padding="12,8" Margin="0,0,0,10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                                <TextBlock Text="BPM" Foreground="#64748B" FontSize="10.5" FontWeight="Bold" HorizontalAlignment="Center"/>
+                                <TextBlock x:Name="TxtBpm" Text="120" Foreground="#F8FAFC" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                                <TextBlock Text="NOTES" Foreground="#64748B" FontSize="10.5" FontWeight="Bold" HorizontalAlignment="Center"/>
+                                <TextBlock x:Name="TxtNoteCount" Text="1,240" Foreground="#F8FAFC" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                                <TextBlock Text="DURATION" Foreground="#64748B" FontSize="10.5" FontWeight="Bold" HorizontalAlignment="Center"/>
+                                <TextBlock x:Name="TxtDuration" Text="3:45" Foreground="#F8FAFC" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Difficulty Badges -->
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="CHARTS:" Foreground="#64748B" FontSize="10.5" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <Border x:Name="BadgeEasy" Background="#064E3B" BorderBrush="#059669" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,0">
+                            <TextBlock Text="EASY" Foreground="#34D399" FontSize="10" FontWeight="Bold"/>
+                        </Border>
+                        <Border x:Name="BadgeMedium" Background="#78350F" BorderBrush="#D97706" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,0">
+                            <TextBlock Text="MED" Foreground="#FBBF24" FontSize="10" FontWeight="Bold"/>
+                        </Border>
+                        <Border x:Name="BadgeHard" Background="#1E3A8A" BorderBrush="#2563EB" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,4,0">
+                            <TextBlock Text="HARD" Foreground="#60A5FA" FontSize="10" FontWeight="Bold"/>
+                        </Border>
+                        <Border x:Name="BadgeExpert" Background="#7F1D1D" BorderBrush="#DC2626" BorderThickness="1" CornerRadius="4" Padding="6,2">
+                            <TextBlock Text="EXPERT" Foreground="#F87171" FontSize="10" FontWeight="Bold"/>
+                        </Border>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+
+            <!-- Action Buttons Footer -->
+            <Border Grid.Row="3" Background="#110E18" CornerRadius="0,0,14,14"
+                    BorderThickness="0,1,0,0" BorderBrush="#261E34"
+                    Padding="18,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Preview / Inspect Buttons -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <Button x:Name="BtnAudioPreview" Content="🎵 Audio Preview" Height="34" Padding="12,4"
+                                Foreground="#E2E8F0" FontWeight="SemiBold" FontSize="12"
+                                Background="#1F1A2D" BorderBrush="#352D4B" BorderThickness="1"
+                                Template="{StaticResource VictoryBtnTemplate}" Cursor="Hand" Click="AudioPreview_Click"
+                                Margin="0,0,8,0"/>
+                        <Button x:Name="BtnHighwayPreview" Content="🔍 Highway Preview" Height="34" Padding="12,4"
+                                Foreground="#E2E8F0" FontWeight="SemiBold" FontSize="12"
+                                Background="#1F1A2D" BorderBrush="#352D4B" BorderThickness="1"
+                                Template="{StaticResource VictoryBtnTemplate}" Cursor="Hand" Click="HighwayPreview_Click"/>
+                    </StackPanel>
+
+                    <!-- Launch / Close Buttons -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button x:Name="BtnLaunchGh3" Content="🎸 Play in GH3 Now" Height="36" Padding="16,6"
+                                Foreground="White" FontWeight="Bold" FontSize="12.5"
+                                Template="{StaticResource VictoryBtnTemplate}" Cursor="Hand" Click="LaunchGh3_Click">
+                            <Button.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#10B981" Offset="0"/>
+                                    <GradientStop Color="#059669" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Button.Background>
+                        </Button>
+                        <Button Content="Done" Height="36" Padding="16,6" Margin="8,0,0,0"
+                                Foreground="#94A3B8" FontWeight="SemiBold" FontSize="12.5"
+                                Background="#1A1624" BorderBrush="#2D263E" BorderThickness="1"
+                                Template="{StaticResource VictoryBtnTemplate}" Cursor="Hand" Click="Close_Click"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

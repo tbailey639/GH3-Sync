@@ -12,7 +12,7 @@ using System.Windows.Shapes;
 
 using WpfBrush = System.Windows.Media.Brush;
 using WpfColor = System.Windows.Media.Color;
-using WpfMessageBox = System.Windows.MessageBox;
+using WpfMessageBox = GH3_Sync.Views.GuitarHeroModalDialog;
 
 namespace GH3_Sync.Views;
 

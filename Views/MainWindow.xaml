@@ -1,6 +1,7 @@
 ﻿<Window x:Class="GH3_Sync.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:GH3_Sync.Views"
         Title="GH3-Sync"
         Icon="pack://application:,,,/Assets/app_icon.ico"
         Width="1360" Height="880"
@@ -68,7 +69,7 @@
                             <TextBlock Text="GH3" FontSize="21" FontWeight="Black" Foreground="{DynamicResource TextPrimary}"/>
                             <TextBlock Text="-SYNC" FontSize="21" FontWeight="Black" Foreground="{DynamicResource FlameGradient}"/>
                             <Border Background="{DynamicResource VersionBadgeBg}" BorderBrush="{DynamicResource VersionBadgeBorder}" BorderThickness="1" CornerRadius="5" Padding="7,1" Margin="10,0,0,0" VerticalAlignment="Center">
-                                <TextBlock x:Name="HeaderVersionBadge" Text="v1.2.5" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
+                                <TextBlock x:Name="HeaderVersionBadge" Text="v1.4.0" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
                             </Border>
                         </StackPanel>
                         <TextBlock Text="Guitar Hero III Companion  •  Encore &amp; Zero-Trust Edition  •  by Mad Scientist" FontSize="11.5" Foreground="{DynamicResource TextMuted}"/>
@@ -260,6 +261,7 @@
 
                     <!-- ==================== PAGE 1: MY CUSTOMS ==================== -->
                     <StackPanel x:Name="PageCustoms">
+                        <views:StageHudProgressControl x:Name="PageCustoms_StageHud" Visibility="Collapsed" Margin="0,0,0,12"/>
                         <Grid Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -372,6 +374,7 @@
 
                     <!-- ==================== PAGE 2: SONG CREATOR ==================== -->
                     <StackPanel x:Name="PageCreator" Visibility="Collapsed">
+                        <views:StageHudProgressControl x:Name="PageCreator_StageHud" Visibility="Collapsed" Margin="0,0,0,12"/>
                         <TextBlock Text="ONOGAMI Song Creator" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
                         <TextBlock Text="Create custom songs with dynamic beat tracking, pitch-mapped charting, stem separation, and batch compilation."
                                    FontSize="12.5" Foreground="{DynamicResource TextMuted}" Margin="0,2,0,14"/>
@@ -508,6 +511,80 @@
                                     <Button x:Name="UrlImportBtn" DockPanel.Dock="Right" Content="⬇ Grab Audio URL" Style="{StaticResource BlueButton}" Padding="11,5" Margin="8,0,0,0" Click="UrlImportBtn_Click" ToolTip="Paste a YouTube / SoundCloud / audio URL (uses optional managed yt-dlp add-on)"/>
                                     <TextBox x:Name="UrlImportBox" ToolTip="Optional: paste a song URL here and click 'Grab Audio URL'"/>
                                 </DockPanel>
+
+                                <!-- Interactive 3-Cover Artwork Carousel Picker -->
+                                <Border x:Name="CrArtCarouselContainer" Visibility="Collapsed" Margin="0,0,0,14"
+                                        Background="{DynamicResource BgCardHover}" BorderBrush="{DynamicResource BorderSubtle}"
+                                        BorderThickness="1" CornerRadius="10" Padding="12">
+                                    <StackPanel>
+                                        <DockPanel Margin="0,0,0,8">
+                                            <TextBlock Text="🎨 Cover Art Carousel (Click candidate to select best HD match)"
+                                                       FontSize="12.5" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"
+                                                       VerticalAlignment="Center"/>
+                                            <Button x:Name="CrArtCustomPickBtn" DockPanel.Dock="Right" Content="Browse Local Image..."
+                                                    Style="{StaticResource OutlineButton}" Padding="8,3" FontSize="11"
+                                                    Click="CrArtCustomPickBtn_Click"/>
+                                        </DockPanel>
+
+                                        <Grid Margin="0,4,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="10"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="10"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- Candidate 1 -->
+                                            <Border x:Name="CrArtCard1" Grid.Column="0" Background="{DynamicResource BgCard}"
+                                                    BorderBrush="{DynamicResource AccentFlame}" BorderThickness="1.5"
+                                                    CornerRadius="8" Padding="8" Cursor="Hand" MouseLeftButtonDown="CrArtCard1_Click">
+                                                <StackPanel HorizontalAlignment="Center">
+                                                    <Border Width="90" Height="90" CornerRadius="6" Background="#0C0A12" ClipToBounds="True">
+                                                        <Image x:Name="CrArtImg1" Stretch="UniformToFill"/>
+                                                    </Border>
+                                                    <TextBlock x:Name="CrArtLabel1" Text="Candidate 1" FontSize="10.5" FontWeight="Bold"
+                                                               Foreground="{DynamicResource TextPrimary}" Margin="0,6,0,0"
+                                                               HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock x:Name="CrArtSource1" Text="HD Deezer (1000×1000)" FontSize="9.5"
+                                                               Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- Candidate 2 -->
+                                            <Border x:Name="CrArtCard2" Grid.Column="2" Background="{DynamicResource BgCard}"
+                                                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1.5"
+                                                    CornerRadius="8" Padding="8" Cursor="Hand" MouseLeftButtonDown="CrArtCard2_Click">
+                                                <StackPanel HorizontalAlignment="Center">
+                                                    <Border Width="90" Height="90" CornerRadius="6" Background="#0C0A12" ClipToBounds="True">
+                                                        <Image x:Name="CrArtImg2" Stretch="UniformToFill"/>
+                                                    </Border>
+                                                    <TextBlock x:Name="CrArtLabel2" Text="Candidate 2" FontSize="10.5" FontWeight="Bold"
+                                                               Foreground="{DynamicResource TextPrimary}" Margin="0,6,0,0"
+                                                               HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock x:Name="CrArtSource2" Text="Apple iTunes (600×600)" FontSize="9.5"
+                                                               Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- Candidate 3 -->
+                                            <Border x:Name="CrArtCard3" Grid.Column="4" Background="{DynamicResource BgCard}"
+                                                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1.5"
+                                                    CornerRadius="8" Padding="8" Cursor="Hand" MouseLeftButtonDown="CrArtCard3_Click">
+                                                <StackPanel HorizontalAlignment="Center">
+                                                    <Border Width="90" Height="90" CornerRadius="6" Background="#0C0A12" ClipToBounds="True">
+                                                        <Image x:Name="CrArtImg3" Stretch="UniformToFill"/>
+                                                    </Border>
+                                                    <TextBlock x:Name="CrArtLabel3" Text="Candidate 3" FontSize="10.5" FontWeight="Bold"
+                                                               Foreground="{DynamicResource TextPrimary}" Margin="0,6,0,0"
+                                                               HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock x:Name="CrArtSource3" Text="Embedded / MusicBrainz" FontSize="9.5"
+                                                               Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
 
                                 <!-- Auto-Chart & Audio Mix Tuning Row -->
                                 <Grid x:Name="ChartTuningRow" Margin="0,0,0,14">
@@ -652,6 +729,7 @@
 
                     <!-- ==================== PAGE 3: TOOLS & STEMS ==================== -->
                     <StackPanel x:Name="PageAiTools" Visibility="Collapsed">
+                        <views:StageHudProgressControl x:Name="PageAiTools_StageHud" Visibility="Collapsed" Margin="0,0,0,12"/>
                         <TextBlock Text="Tools &amp; Stem Separation" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
                         <TextBlock Text="Manage the song compiler and optional 6-stem separation package." FontSize="12.5" Foreground="{DynamicResource TextMuted}" Margin="0,2,0,16"/>
 
@@ -740,6 +818,7 @@
 
                     <!-- ==================== PAGE 4: FRIENDS & TRUST ==================== -->
                     <StackPanel x:Name="PageFriends" Visibility="Collapsed">
+                        <views:StageHudProgressControl x:Name="PageFriends_StageHud" Visibility="Collapsed" Margin="0,0,0,12"/>
                         <TextBlock Text="Friends" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
                         <TextBlock Text="Add friends with their Friend Code to view online status and 1-click sync custom songs."
                                    FontSize="12.5" Foreground="{DynamicResource TextMuted}" Margin="0,2,0,16"/>
@@ -841,6 +920,7 @@
 
                     <!-- ==================== PAGE 5: P2P SYNC & LOBBY ==================== -->
                     <StackPanel x:Name="PageP2P" Visibility="Collapsed">
+                        <views:StageHudProgressControl x:Name="PageP2P_StageHud" Visibility="Collapsed" Margin="0,0,0,12"/>
                         <TextBlock Text="P2P Sync &amp; Lobby Setlist" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
                         <TextBlock Text="Sync your active Lobby Setlist with your friends before launching into a match."
                                    FontSize="12.5" Foreground="{DynamicResource TextMuted}" Margin="0,2,0,16"/>
@@ -1022,7 +1102,9 @@
                         </Expander>
                     </StackPanel>
 
-                    <!-- ==================== PAGE 6: IMPORT & CONVERT ==================== --><StackPanel x:Name="PageImport" Visibility="Collapsed">
+                    <!-- ==================== PAGE 6: IMPORT & CONVERT ==================== -->
+                    <StackPanel x:Name="PageImport" Visibility="Collapsed">
+                        <views:StageHudProgressControl x:Name="PageImport_StageHud" Visibility="Collapsed" Margin="0,0,0,12"/>
                         <TextBlock Text="Import &amp; Convert Songs" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
                         <TextBlock Text="Convert Clone Hero / YARG folders &amp; ZIPs directly into BetterGH3, or import .gh3pack / .gh3song archives safely into your existing songlist."
                                    FontSize="12.5" Foreground="{DynamicResource TextMuted}" Margin="0,2,0,16"/>
@@ -1060,6 +1142,7 @@
 
                     <!-- ==================== PAGE 7: CAREER SAVES ==================== -->
                     <StackPanel x:Name="PageSaves" Visibility="Collapsed">
+                        <views:StageHudProgressControl x:Name="PageSaves_StageHud" Visibility="Collapsed" Margin="0,0,0,12"/>
                         <TextBlock Text="Career Saves &amp; Profile Snapshots" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,10"/>
 
                         <!-- Clear Honest GH3 Save Warning Banner -->
@@ -1097,6 +1180,7 @@
 
                     <!-- ==================== PAGE 8: SETTINGS ==================== -->
                     <StackPanel x:Name="PageSettings" Visibility="Collapsed">
+                        <views:StageHudProgressControl x:Name="PageSettings_StageHud" Visibility="Collapsed" Margin="0,0,0,12"/>
                         <TextBlock Text="Settings" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,4"/>
                         <TextBlock Text="Configure paths, P2P privacy, Stage Themes &amp; UI Animations, BetterGH3 Tweaks, component updates, How-To Guide, Credits, and logs."
                                    FontSize="12.5" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,14"/>
@@ -1139,7 +1223,44 @@
                                     <CheckBox x:Name="SettingsMinLaunchChk" Content="Minimize GH3-Sync to system tray when launching GH3.exe" Margin="0,0,0,8"/>
                                     <CheckBox x:Name="SettingsP2pOnlineChk" Content="Online P2P Sharing Enabled (uncheck for Offline Mode — blocks external peers &amp; closes UPnP port 7373)" Margin="0,0,0,8"/>
                                     <CheckBox x:Name="SettingsDiscordRpcChk" Content="Enable Discord Rich Presence (show live Guitar Hero III / GH3-Sync status on Discord)" Margin="0,0,0,8"/>
-                                    <CheckBox x:Name="SettingsNormalizeDefaultChk" Content="Auto-Normalize created song volume to -14 LUFS by default (matches official GH3 loudness)" Margin="0,0,0,14"/>
+                                    <CheckBox x:Name="SettingsNormalizeDefaultChk" Content="Auto-Normalize created song volume to -14 LUFS by default (matches official GH3 loudness)" Margin="0,0,0,10"/>
+
+                                    <!-- Language & Internationalization -->
+                                    <TextBlock Text="Language &amp; Internationalization (8 Supported Languages)" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,6"/>
+                                    <DockPanel Margin="0,0,0,12">
+                                        <ComboBox x:Name="SettingsLanguageCombo" Width="260" HorizontalAlignment="Left" SelectionChanged="SettingsLanguageCombo_SelectionChanged">
+                                            <ComboBoxItem Content="🇺🇸 English (US)" Tag="en"/>
+                                            <ComboBoxItem Content="🇪🇸 Español" Tag="es"/>
+                                            <ComboBoxItem Content="🇧🇷 Português (Brasil)" Tag="pt-BR"/>
+                                            <ComboBoxItem Content="🇫🇷 Français" Tag="fr"/>
+                                            <ComboBoxItem Content="🇩🇪 Deutsch" Tag="de"/>
+                                            <ComboBoxItem Content="🇮🇹 Italiano" Tag="it"/>
+                                            <ComboBoxItem Content="🇯🇵 日本語" Tag="ja"/>
+                                            <ComboBoxItem Content="🇰🇷 한국어" Tag="ko"/>
+                                        </ComboBox>
+                                    </DockPanel>
+
+                                    <!-- Performance & Hardware Engine -->
+                                    <TextBlock Text="Performance &amp; Hardware Engine (Windows 11 Boost)" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,8"/>
+                                    <CheckBox x:Name="SettingsTimerBoostChk" Content="Enable Windows 11 High-Precision Timer Boost (0.5ms microsecond note timing)" Margin="0,0,0,6"/>
+                                    <CheckBox x:Name="SettingsZeroTrustChk" Content="Active Zero-Trust Sonic Quarantine (Pre-scan archives against zip bombs &amp; exploits)" Margin="0,0,0,6"/>
+                                    <CheckBox x:Name="SettingsGpuToggleChk" Content="Hardware GPU Acceleration for AI Demucs stem separation &amp; Basic Pitch" Margin="0,0,0,10"/>
+
+                                    <StackPanel Margin="0,4,0,10">
+                                        <DockPanel Margin="0,0,0,4">
+                                            <TextBlock x:Name="SettingsDebounceValueText" DockPanel.Dock="Right" Text="25 ms" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
+                                            <TextBlock Text="Guitar Controller Anti-Overstrum Debounce Filter (0ms = off, 25ms = recommended):" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
+                                        </DockPanel>
+                                        <Slider x:Name="SettingsDebounceSlider" Minimum="0" Maximum="100" Value="25" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="SettingsDebounceSlider_ValueChanged"/>
+                                    </StackPanel>
+
+                                    <StackPanel Margin="0,4,0,12">
+                                        <DockPanel Margin="0,0,0,4">
+                                            <TextBlock x:Name="SettingsLufsValueText" DockPanel.Dock="Right" Text="-14.0 LUFS" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
+                                            <TextBlock Text="EBU R128 Broadcast Loudness Normalization Target:" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
+                                        </DockPanel>
+                                        <Slider x:Name="SettingsLufsSlider" Minimum="-20" Maximum="-10" Value="-14" TickFrequency="0.5" ValueChanged="SettingsLufsSlider_ValueChanged"/>
+                                    </StackPanel>
 
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,14">
                                         <TextBlock Text="Lobby Auto-Sync Song Cap (1-25):" FontSize="12.5" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,10,0"/>
@@ -1148,6 +1269,7 @@
 
                                     <StackPanel Orientation="Horizontal">
                                         <Button Content="Save Settings" Style="{StaticResource FlameButton}" Padding="18,9" Click="SettingsSaveGeneral_Click"/>
+                                        <Button x:Name="AirGapPanicBtn" Content="⚡ Emergency Air-Gap" Style="{StaticResource OutlineButton}" Foreground="#EF4444" BorderBrush="#EF4444" Margin="10,0,0,0" Padding="14,8" Click="AirGapPanicBtn_Click" ToolTip="Instantly cut all external P2P connections, UPnP mappings, and close external tunnels (Ctrl+Shift+X)"/>
                                         <TextBlock x:Name="SettingsSaveStatus" Text="" FontSize="12" Foreground="{DynamicResource CardSuccessTitle}" VerticalAlignment="Center" Margin="14,0,0,0"/>
                                     </StackPanel>
                                 </StackPanel>
@@ -1426,7 +1548,7 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel>
-                                        <TextBlock Text="GH3-Sync v1.0.0 — Created by Mad Scientist" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+                                        <TextBlock x:Name="CreditsVersionTitle" Text="GH3-Sync v1.4.0 — Created by Mad Scientist" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
                                         <StackPanel Orientation="Horizontal" Margin="0,4,0,4">
                                             <TextBlock Text="GitHub: " FontSize="12.5" Foreground="{DynamicResource TextMuted}"/>
                                             <TextBlock FontSize="12.5">
