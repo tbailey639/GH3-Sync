@@ -277,15 +277,15 @@ public partial class MainWindow : Window
         try
         {
             var menu = new WinForms.ContextMenuStrip();
-            menu.Items.Add("Open GH3-Sync", null, (_, _) => Dispatcher.Invoke(RestoreWindow));
-            menu.Items.Add("Launch Guitar Hero III", null, (_, _) => Dispatcher.Invoke(() => LaunchGh3Btn_Click(this, new RoutedEventArgs())));
-            menu.Items.Add("Check for Updates", null, (_, _) => Dispatcher.Invoke(async () =>
+            menu.Items.Add("Open GH3-Sync", null, (_, _) => Dispatcher.BeginInvoke(RestoreWindow));
+            menu.Items.Add("Launch Guitar Hero III", null, (_, _) => Dispatcher.BeginInvoke(() => LaunchGh3Btn_Click(this, new RoutedEventArgs())));
+            menu.Items.Add("Check for Updates", null, (_, _) => Dispatcher.BeginInvoke(async () =>
             {
                 RestoreWindow();
                 await RunUpdateCheckAsync(silentIfUpToDate: false);
             }));
             menu.Items.Add(new WinForms.ToolStripSeparator());
-            menu.Items.Add("Exit GH3-Sync", null, (_, _) => Dispatcher.Invoke(ExitApplication));
+            menu.Items.Add("Exit GH3-Sync", null, (_, _) => Dispatcher.BeginInvoke(ExitApplication));
 
             System.Drawing.Icon? trayIco = null;
             try
@@ -302,16 +302,19 @@ public partial class MainWindow : Window
                 ContextMenuStrip = menu,
                 Visible = true
             };
-            _trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(RestoreWindow);
+            _trayIcon.DoubleClick += (_, _) => Dispatcher.BeginInvoke(RestoreWindow);
         }
         catch { }
     }
 
     private void RestoreWindow()
     {
-        Show();
-        WindowState = WindowState.Normal;
+        if (!IsVisible) Show();
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Activate();
+        Topmost = true;
+        Topmost = false;
+        Focus();
     }
 
     private void InitializeStageEmbers()
@@ -636,28 +639,20 @@ public partial class MainWindow : Window
 
     public void ExitApplication()
     {
+        if (_isExiting) return;
         _isExiting = true;
         _stageAnimTimer.Stop();
         StopAudioPreview();
-        _trayIcon?.Dispose();
+        try { _tunnel?.StopTunnel(); } catch { }
+        TunnelAndMeshService.KillAllOrphanCloudflaredProcesses();
+        try { _trayIcon?.Dispose(); } catch { }
         Close();
+        System.Windows.Application.Current.Shutdown();
     }
 
     private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        if (!_isExiting)
-        {
-            e.Cancel = true;
-            Hide();
-            _trayIcon?.ShowBalloonTip(1800, "GH3-Sync Running in Tray",
-                "GH3-Sync stays active in the background for P2P sync. Double-click the tray icon to reopen.",
-                WinForms.ToolTipIcon.Info);
-        }
-        else
-        {
-            StopAudioPreview();
-            _trayIcon?.Dispose();
-        }
+        ExitApplication();
     }
 
     // ==================== LAUNCH GH3 & HYPERLINKS ====================
@@ -4479,10 +4474,21 @@ public partial class MainWindow : Window
             {
                 NavP2P.IsChecked = true;
 
-                if (!string.IsNullOrWhiteSpace(f.LastAddress))
+                var addr = (f.LastAddress ?? "").Trim();
+                if (addr.Contains("169.254.") || string.IsNullOrWhiteSpace(addr))
                 {
-                    PeerAddressBox.Text = f.LastAddress;
+                    PeerAddressBox.Text = "";
+                    if (!string.IsNullOrWhiteSpace(f.TrustToken))
+                    {
+                        PeerPinBox.Text = f.TrustToken;
+                    }
+                    PeerCompareStatus.Text = $"Paste {f.Username}'s Online Invite (or click 'Paste Invite Code') to connect over the Internet.";
+                    ShowStageToast("🔗 ENTER ONLINE INVITE", $"Paste {f.Username}'s Online Invite link to connect over the Internet!", "#F59E0B");
+                    PeerAddressBox.Focus();
+                    return;
                 }
+
+                PeerAddressBox.Text = addr;
                 if (!string.IsNullOrWhiteSpace(f.TrustToken))
                 {
                     PeerPinBox.Text = f.TrustToken;
@@ -4549,8 +4555,15 @@ public partial class MainWindow : Window
         int idx = TrustedFriendQuickCombo.SelectedIndex - 1;
         if (idx < 0 || idx >= _trustedDropdownEntries.Count) return;
         var friend = _trustedDropdownEntries[idx];
-        if (!string.IsNullOrWhiteSpace(friend.LastAddress))
-            PeerAddressBox.Text = friend.LastAddress.Replace("http://", "", StringComparison.OrdinalIgnoreCase).Replace("https://", "", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(friend.LastAddress) && !friend.LastAddress.Contains("169.254."))
+        {
+            PeerAddressBox.Text = friend.LastAddress;
+        }
+        else if (friend.LastAddress != null && friend.LastAddress.Contains("169.254."))
+        {
+            PeerAddressBox.Text = "";
+            ShowStageToast("🔗 NEW INVITE NEEDED", $"Select friend has an outdated IP. Paste their Online Invite code to connect!", "#F59E0B");
+        }
         if (!string.IsNullOrWhiteSpace(friend.TrustToken))
             PeerPinBox.Text = friend.TrustToken;
     }
@@ -4612,6 +4625,18 @@ public partial class MainWindow : Window
                         req.Headers.Add("X-GH3-Auth-Nonce", nonce);
                         req.Headers.Add("X-GH3-Auth-Timestamp", ts);
                         req.Headers.Add("X-GH3-Auth-Hmac", hmac);
+
+                        var myAddr = FriendService.BestAddressProvider?.Invoke() ?? "";
+                        var myCode = AppConfig.Current.FriendCode;
+                        if (!string.IsNullOrWhiteSpace(myAddr) && !myAddr.Contains("169.254."))
+                        {
+                            req.Headers.Add("X-GH3-Sender-Address", myAddr);
+                        }
+                        if (!string.IsNullOrWhiteSpace(myCode))
+                        {
+                            req.Headers.Add("X-GH3-Sender-Code", myCode);
+                        }
+
                         return await http.SendAsync(req);
                     }
                 }
@@ -4627,6 +4652,18 @@ public partial class MainWindow : Window
             else
                 fallbackReq.Headers.Add("X-GH3-PIN", secret);
         }
+
+        var myFallbackAddr = FriendService.BestAddressProvider?.Invoke() ?? "";
+        var myFallbackCode = AppConfig.Current.FriendCode;
+        if (!string.IsNullOrWhiteSpace(myFallbackAddr) && !myFallbackAddr.Contains("169.254."))
+        {
+            fallbackReq.Headers.Add("X-GH3-Sender-Address", myFallbackAddr);
+        }
+        if (!string.IsNullOrWhiteSpace(myFallbackCode))
+        {
+            fallbackReq.Headers.Add("X-GH3-Sender-Code", myFallbackCode);
+        }
+
         return await http.SendAsync(fallbackReq);
     }
 
@@ -4797,20 +4834,38 @@ public partial class MainWindow : Window
         try
         {
             var raw = (System.Windows.Clipboard.GetText() ?? "").Trim();
-            if (!raw.StartsWith("gh3sync://", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(raw))
             {
-                WpfMessageBox.Show("Copy a 'gh3sync://...' Lobby Invite Code from a friend first, then click 'Paste Invite Code'.",
-                    "Paste Invite Code", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowStageToast("⚠️ CLIPBOARD EMPTY", "Copy an invite link from your friend first, then click Paste.", "#EF4444");
                 return;
             }
 
-            var b64 = raw.Substring("gh3sync://".Length).Trim();
-            var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(b64));
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            var addr = root.TryGetProperty("addr", out var a) ? a.GetString() ?? "" : "";
-            var token = root.TryGetProperty("token", out var t) ? t.GetString() ?? "" : "";
-            var host = root.TryGetProperty("host", out var h) ? h.GetString() ?? "Friend" : "Friend";
+            string addr = "";
+            string token = "";
+            string host = "Friend";
+            string friendCode = "";
+
+            if (raw.StartsWith("gh3sync://", StringComparison.OrdinalIgnoreCase))
+            {
+                var b64 = raw.Substring("gh3sync://".Length).Trim();
+                var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(b64));
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                addr = root.TryGetProperty("addr", out var a) ? a.GetString() ?? "" : "";
+                token = root.TryGetProperty("token", out var t) ? t.GetString() ?? "" : "";
+                host = root.TryGetProperty("host", out var h) ? h.GetString() ?? "Friend" : "Friend";
+                if (root.TryGetProperty("code", out var c)) friendCode = c.GetString() ?? "";
+            }
+            else if (raw.Contains('@'))
+            {
+                var parts = raw.Split('@', 2);
+                friendCode = parts[0].Trim();
+                addr = parts[1].Trim();
+            }
+            else
+            {
+                addr = raw;
+            }
 
             if (!SecurityService.ValidatePeerUrl(addr, out var safeBaseUrl, out var urlErr))
             {
@@ -4818,23 +4873,27 @@ public partial class MainWindow : Window
                 return;
             }
 
-            string authLabel = token.StartsWith("INV-", StringComparison.OrdinalIgnoreCase) ? "4-Hour Expiring Invite Token"
-                             : token.Length > 10 ? "Trusted Friend Token"
-                             : "View-Only Session PIN";
-            var confirm = WpfMessageBox.Show(
-                $"Connect to Lobby Invite?\n\n" +
-                $"Host: {host}\n" +
-                $"Address: {safeBaseUrl}\n" +
-                $"Auth Type: {authLabel}\n\n" +
-                $"Proceed with Challenge-HMAC encrypted connection?",
-                "Confirm Peer Invite",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-            if (confirm != MessageBoxResult.Yes) return;
+            // If friend code is known or matches, retrieve mutual trust token & update friend address
+            var matchFriend = AppConfig.Current.Friends.FirstOrDefault(f =>
+                (!string.IsNullOrEmpty(friendCode) && f.FriendCode.Equals(friendCode, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrEmpty(f.LastAddress) && safeBaseUrl.Contains(f.LastAddress.Replace("http://", "").Replace("https://", "").TrimEnd('/'), StringComparison.OrdinalIgnoreCase)));
+
+            if (matchFriend != null)
+            {
+                host = matchFriend.Username;
+                if (string.IsNullOrEmpty(token) && !string.IsNullOrEmpty(matchFriend.TrustToken))
+                {
+                    token = matchFriend.TrustToken;
+                }
+                matchFriend.LastAddress = safeBaseUrl;
+                AppConfig.Save();
+            }
 
             PeerAddressBox.Text = safeBaseUrl;
-            PeerPinBox.Text = token;
+            if (!string.IsNullOrEmpty(token)) PeerPinBox.Text = token;
+
             PeerCompareStatus.Text = $"Loaded verified invite from {host} ({safeBaseUrl}) — connecting...";
+            ShowStageToast("🎸 INVITE LOADED!", $"Connected to {host} ({safeBaseUrl})", "#22C55E");
             ComparePeerBtn_Click(sender, e);
         }
         catch (Exception ex)

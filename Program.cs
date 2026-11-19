@@ -184,6 +184,25 @@ app.Use(async (context, next) =>
 
     if (isExternal)
     {
+        // Auto-heal / update friend's live connection address when remote peer connects
+        if (context.Request.Headers.TryGetValue("X-GH3-Sender-Code", out var sc) &&
+            context.Request.Headers.TryGetValue("X-GH3-Sender-Address", out var sa))
+        {
+            var sCode = sc.ToString().Trim().ToUpperInvariant();
+            var sAddr = sa.ToString().Trim();
+            if (!string.IsNullOrEmpty(sCode) && !string.IsNullOrEmpty(sAddr) && !sAddr.Contains("169.254."))
+            {
+                if (!sCode.StartsWith("GH3-")) sCode = "GH3-" + sCode;
+                var friend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(sCode, StringComparison.OrdinalIgnoreCase));
+                if (friend != null && friend.LastAddress != sAddr)
+                {
+                    friend.LastAddress = sAddr;
+                    AppConfig.Save();
+                    syncLogger.LogInfo($"[FRIENDS] Auto-updated live address for {friend.Username} to {sAddr}");
+                }
+            }
+        }
+
         if (securityService.IsIpBlocked(effectiveIp))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
@@ -253,19 +272,20 @@ string GetBestPublicOrLanAddress()
     {
         var custom = AppConfig.Current.CustomPublicAddress.Trim();
         if (!custom.StartsWith("http://") && !custom.StartsWith("https://")) custom = "http://" + custom;
-        return custom;
+        if (!custom.Contains("169.254.")) return custom;
     }
 
     var meshUrl = tunnelService.GetPreferredMeshUrl();
     if (!string.IsNullOrWhiteSpace(meshUrl))
         return meshUrl;
 
-    if (!string.IsNullOrEmpty(natService.PublicIp))
+    if (!string.IsNullOrEmpty(natService.PublicIp) && !natService.PublicIp.StartsWith("169.254."))
     {
         return $"http://{natService.PublicIp}:{natService.ExternalPort ?? port}";
     }
 
-    return $"http://{GetLocalIpAddress()}:{port}";
+    var localIp = GetLocalIpAddress();
+    return $"http://{localIp}:{port}";
 }
 
 string GetLocalIpAddress()
@@ -276,10 +296,34 @@ string GetLocalIpAddress()
         socket.Connect("8.8.8.8", 65530);
         if (socket.LocalEndPoint is IPEndPoint endPoint)
         {
-            return endPoint.Address.ToString();
+            var ipStr = endPoint.Address.ToString();
+            if (!ipStr.StartsWith("169.254.") && !ipStr.StartsWith("127."))
+                return ipStr;
         }
     }
     catch { }
+
+    try
+    {
+        var nics = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+            .Where(n => n.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up &&
+                        n.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback);
+
+        foreach (var nic in nics)
+        {
+            foreach (var ip in nic.GetIPProperties().UnicastAddresses)
+            {
+                if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    var s = ip.Address.ToString();
+                    if (!s.StartsWith("169.254.") && !s.StartsWith("127."))
+                        return s;
+                }
+            }
+        }
+    }
+    catch { }
+
     return "127.0.0.1";
 }
 

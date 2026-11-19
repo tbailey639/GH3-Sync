@@ -34,7 +34,7 @@ public class SendFriendRequestResult
 public class FriendService
 {
     private readonly object _lock = new();
-    private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(3.5) };
+    private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(15.0) };
 
     public static Func<string>? BestAddressProvider { get; set; }
 
@@ -163,7 +163,7 @@ public class FriendService
             try
             {
                 var profileUrl = $"{directAddress.TrimEnd('/')}/api/profile";
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3.5));
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15.0));
                 var resp = await client.GetAsync(profileUrl, cts.Token);
                 if (resp.IsSuccessStatusCode)
                 {
@@ -356,6 +356,25 @@ public class FriendService
         var existing = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
         if (existing != null)
         {
+            var targetAddressCandidate = !string.IsNullOrWhiteSpace(customAddress) ? customAddress.Trim() : lookup.Address;
+            if (!string.IsNullOrWhiteSpace(targetAddressCandidate) && !targetAddressCandidate.Contains("169.254."))
+            {
+                if (!targetAddressCandidate.StartsWith("http://") && !targetAddressCandidate.StartsWith("https://"))
+                {
+                    targetAddressCandidate = (targetAddressCandidate.Contains(".trycloudflare.com", StringComparison.OrdinalIgnoreCase) || targetAddressCandidate.EndsWith(":443")) ? "https://" + targetAddressCandidate : "http://" + targetAddressCandidate;
+                }
+                existing.LastAddress = targetAddressCandidate;
+                AppConfig.Save();
+                return new SendFriendRequestResult
+                {
+                    Success = true,
+                    ReceivedByPeer = true,
+                    FriendCode = cleanCode,
+                    Username = existing.Username,
+                    Message = $"Updated connection address for {existing.Username} to {targetAddressCandidate}!"
+                };
+            }
+
             return new SendFriendRequestResult
             {
                 Success = false,
@@ -369,7 +388,7 @@ public class FriendService
         var targetAddress = !string.IsNullOrWhiteSpace(customAddress) ? customAddress.Trim() : lookup.Address;
         if (!targetAddress.StartsWith("http://") && !targetAddress.StartsWith("https://") && !string.IsNullOrWhiteSpace(targetAddress))
         {
-            targetAddress = "http://" + targetAddress;
+            targetAddress = (targetAddress.Contains(".trycloudflare.com", StringComparison.OrdinalIgnoreCase) || targetAddress.EndsWith(":443")) ? "https://" + targetAddress : "http://" + targetAddress;
         }
 
         if (string.IsNullOrWhiteSpace(targetAddress))
@@ -400,8 +419,17 @@ public class FriendService
         try
         {
             var reqUrl = $"{targetAddress.TrimEnd('/')}/api/friends/request";
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4.0));
-            var resp = await client.PostAsJsonAsync(reqUrl, payload, cts.Token);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20.0));
+            HttpResponseMessage resp;
+            try
+            {
+                resp = await client.PostAsJsonAsync(reqUrl, payload, cts.Token);
+            }
+            catch (Exception) when (!cts.IsCancellationRequested)
+            {
+                await Task.Delay(1000, cts.Token);
+                resp = await client.PostAsJsonAsync(reqUrl, payload, cts.Token);
+            }
 
             if (resp.IsSuccessStatusCode)
             {

@@ -288,6 +288,18 @@ public class TunnelAndMeshService : IDisposable
         }
     }
 
+    public static void KillAllOrphanCloudflaredProcesses()
+    {
+        try
+        {
+            foreach (var p in Process.GetProcessesByName("cloudflared"))
+            {
+                try { p.Kill(true); } catch { }
+            }
+        }
+        catch { }
+    }
+
     public void StopTunnel()
     {
         Process? toKill;
@@ -312,6 +324,8 @@ public class TunnelAndMeshService : IDisposable
             _logger.LogInfo("[TUNNEL] Stopped HTTPS Quick Tunnel.");
             TunnelStateChanged?.Invoke(null);
         }
+
+        KillAllOrphanCloudflaredProcesses();
     }
 
     public void Dispose()

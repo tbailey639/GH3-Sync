@@ -866,6 +866,23 @@
                             </Grid>
                         </Border>
 
+                        <!-- In-Game Multiplayer Custom Song Notice -->
+                        <Border Style="{StaticResource GhCard}" Background="{DynamicResource CardWarnBg}" BorderBrush="{DynamicResource CardWarnBorder}" BorderThickness="1" Padding="12" Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="💡" FontSize="18" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="GH3 Online Multiplayer Rule: Both players must have custom songs synced before playing!"
+                                               FontSize="13" FontWeight="Bold" Foreground="{DynamicResource CardWarnTitle}"/>
+                                    <TextBlock Text="If you pick a custom song your friend doesn't have, GH3 will freeze on the loading screen and auto-play as a bot. Use 'Compare Libraries' or 'Paste Invite Code' below so both players have identical songs installed before launching into a match!"
+                                               FontSize="11.5" Foreground="{DynamicResource CardWarnFg}" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
                         <!-- Network + Lobby Cap Card -->
                         <Border Style="{StaticResource GhCard}">
                             <Grid>

@@ -4,6 +4,21 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.2.2] - 2026-11-18 — P2P Auto-Healing, Tunnel Resiliency & In-Game Multiplayer Sync Notice
+
+### Peer Address Auto-Healing & Real-Time Network Discovery
+* **Bi-Directional Address Auto-Healing:** P2P requests now include `X-GH3-Sender-Address` and `X-GH3-Sender-Code` verification headers. When a remote friend connects to you over Cloudflare Quick Tunnels or LAN, your client automatically heals and updates their stored connection address without manual re-entry.
+* **Strict APIPA Link-Local IP Filtering (`169.254.*` Elimination):** Excluded disconnected/virtual adapter link-local IP addresses (`169.254.*`) from network discovery and public address resolution. Friends will never receive or get blocked by invalid `169.254.*` addresses.
+* **Cold-Start Tunnel Resiliency & Extended Timeouts:** Increased friend discovery and handshake timeouts from 3.5 seconds to 15–20 seconds with automatic warm-up retries, ensuring Cloudflare edge tunnels establish reliable connections even on first spin-up.
+* **Universal Lobby Invite Code Paste:** The `Paste Invite Code` button on `P2P Sync & Lobby` now accepts all formats (`gh3sync://`, `GH3-XXXX-XXXX@https://...`, `https://...`, or IP:port), auto-associates known friends, loads their mutual trust token, and compares libraries in 1 click.
+* **In-Game Multiplayer Pre-Flight Warning Banner:** Added a clear warning on the `P2P Sync & Lobby` screen explaining that in Guitar Hero III online multiplayer, both players must have identical custom song files installed before picking them in-game to prevent loading screen hangs and auto-playing bots.
+
+### Windows 11 Shell & Process Management Fixes
+* **Eliminated System Tray Freezes:** Converted system tray icon dispatcher calls to asynchronous non-blocking invocations, eliminating UI thread freezes on Windows 11 when interacting with notifications or the tray icon.
+* **Clean App Exit & Orphan Process Cleanup:** Clicking `[X]` now cleanly exits the application and immediately kills any orphaned background `cloudflared.exe` processes, ensuring port 7373 is cleanly released between sessions.
+
+---
+
 ## [v1.2.1] - 2026-11-18 — Zero-Config Internet Friend Sync & Self-Contained Release
 
 ### 1-Click Internet Friend Invites & Seamless WAN Connection
