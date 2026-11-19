@@ -4,6 +4,25 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). Nota
 
 ---
 
+## [v1.4.1] - 2026-11-19 — Instant P2P Signaling & Concert Crowd Master
+
+### 🚀 Instant P2P Friend Rendezvous & Signaling Relay Fix
+* **ntfy.sh Time-Window Stream Filter (`since=10m`):** Eliminates 40+ second chunked stream buffering delays by querying only active heartbeats within the past 10 minutes, cutting friend resolution latency down to ~300ms.
+* **Prioritized Signaling Pipeline:** Reordered peer resolution to query the Global Signaling Relay immediately after self-detection, preventing 2-second localhost AdminHub timeouts.
+* **Auto-Fallback on Tunnel Rotation & HTTP 502/530:** Automatically falls back to the Global P2P Signaling Relay if direct HTTP encounters stale Cloudflare tunnels or network errors, ensuring friend requests and acknowledgments deliver reliably across different networks.
+
+### 🎤 Dynamic Concert Stadium Crowd Choir (Option A)
+* **Channel 1 Rhythm Buss Injection:** Seamlessly bakes authentic stadium crowd singing and hype chants directly into the song's audio package during compilation.
+* **In-Game QB Script Modulation:** Real-time volume crossfade triggers the stadium crowd choir once the player reaches a 4x multiplier (10+ note streak) and explodes in volume during Star Power activation.
+
+### 🎨 UI & Layout Refinements
+* **Condensed Song Actions:** Replaced crowded row buttons with a clean 3-dot context menu for secondary actions.
+* **Batch Selection Bar:** Select All and multi-item deletion/re-charting support in My Customs.
+* **Multi-Cover Studio Clear Button:** Dedicated reset button to wipe artwork and reload variations.
+* **Zero-Trust Security Status Clean-up:** Removed redundant debug badges for a sleek, authentic Guitar Hero aesthetic.
+
+---
+
 ## [v1.4.0] - 2026-11-19 — The Concert Master Edition
 
 ### 🎯 Bulletproof Cover Art & Metadata Engine
