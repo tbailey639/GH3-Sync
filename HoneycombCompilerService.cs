@@ -917,11 +917,12 @@ public class HoneycombCompilerService
         var textRhythm = Path.Combine(projectDir, $"{songChecksum}_rhythm.mp3");
         var textSong = Path.Combine(projectDir, $"{songChecksum}_song.mp3");
         var textPreview = Path.Combine(projectDir, $"{songChecksum}_preview.mp3");
+        var textCrowd = Path.Combine(projectDir, $"{songChecksum}_crowd.mp3");
         var tempHybridLead = Path.Combine(projectDir, $"{songChecksum}_hybrid_lead.wav");
         var tempHybridBack = Path.Combine(projectDir, $"{songChecksum}_hybrid_back.wav");
         var tempSilenceWav = Path.Combine(projectDir, $"{songChecksum}_silence.wav");
 
-        var tempFiles = new List<string> { textGuitar, textRhythm, textSong, textPreview, tempHybridLead, tempHybridBack, tempSilenceWav };
+        var tempFiles = new List<string> { textGuitar, textRhythm, textSong, textPreview, textCrowd, tempHybridLead, tempHybridBack, tempSilenceWav };
 
         try
         {
@@ -1034,9 +1035,37 @@ public class HoneycombCompilerService
             log("Generating preview audio...");
             await (Task)mConvert.Invoke(fsbObj, new object[] { previewInput, textPreview })!;
 
+            // 4b. Live Concert Crowd Sing-Along & Chants (Dynamic 4x Lightbar Streak & Star Power Stream)
+            string crowdCandidate = "";
+            foreach (var cand in new[] { "song_crowd.wav", "song_crowd.mp3", "crowd.wav", "crowd.mp3" })
+            {
+                var cp = Path.Combine(projectDir, cand);
+                if (File.Exists(cp)) { crowdCandidate = cp; break; }
+            }
+
+            bool hasCrowdStream = false;
+            if (!string.IsNullOrEmpty(crowdCandidate) && File.Exists(crowdCandidate))
+            {
+                log($"Packing live concert crowd sing-along audio stem ({Path.GetFileName(crowdCandidate)})...");
+                try
+                {
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { crowdCandidate, textCrowd })!;
+                    if (File.Exists(textCrowd) && new FileInfo(textCrowd).Length > 2048)
+                    {
+                        hasCrowdStream = true;
+                    }
+                }
+                catch (Exception crEx)
+                {
+                    log($"Note: Crowd stem packing encountered: {crEx.Message}");
+                }
+            }
+
             // 5. Combine into encrypted FSB3 and DAT soundbanks
             log("Packing and encrypting FSB3 and DAT soundbanks...");
-            var filesToProcess = new[] { textGuitar, textRhythm, textSong, textPreview };
+            var filesToProcess = hasCrowdStream
+                ? new[] { textGuitar, textRhythm, textSong, textPreview, textCrowd }
+                : new[] { textGuitar, textRhythm, textSong, textPreview };
             var fsbOutput = Path.Combine(projectDir, songChecksum);
             mCombine.Invoke(fsbObj, new object[] { filesToProcess, fsbOutput });
 
@@ -1171,6 +1200,15 @@ public class HoneycombCompilerService
             dict["previewAudioPath"] = primaryAudio;
             dict["isCoopAudio"] = false;
         }
+
+        string crowdCandidate = "";
+        foreach (var cName in new[] { "song_crowd.wav", "song_crowd.mp3", "crowd.wav", "crowd.mp3" })
+        {
+            var cp = Path.Combine(projectDir, cName);
+            if (File.Exists(cp)) { crowdCandidate = cp; break; }
+        }
+        dict["crowdPathGh3"] = crowdCandidate;
+        dict["crowdPath"] = crowdCandidate;
 
         // 3. Ensure all required Honeycomb NumericUpDown & metadata fields exist and stay within valid bounds
         //    (Prevents WinForms "Value of '0' is not valid for 'Value'. 'Value' should be between 'Minimum' and 'Maximum'")

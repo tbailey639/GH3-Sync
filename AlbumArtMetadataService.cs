@@ -344,7 +344,26 @@ public class AlbumArtMetadataService
         if (deezerRes?.Candidates != null) allCandidates.AddRange(deezerRes.Candidates);
         if (itunesRes?.Candidates != null) allCandidates.AddRange(itunesRes.Candidates);
 
-        result.Candidates = allCandidates.DistinctBy(c => c.Url).Take(5).ToList();
+        result.Candidates = allCandidates.DistinctBy(c => c.Url).Take(6).ToList();
+
+        // Download candidate cover art bytes in parallel so the multi-cover studio displays all options cleanly!
+        var dlTasks = result.Candidates.Select(async cand =>
+        {
+            if (cand.ImageBytes != null && cand.ImageBytes.Length > 1024) return;
+            if (string.IsNullOrWhiteSpace(cand.Url)) return;
+            try
+            {
+                using var candCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                candCts.CancelAfter(TimeSpan.FromSeconds(6.0));
+                var bytes = await _http.GetByteArrayAsync(cand.Url, candCts.Token);
+                if (bytes != null && bytes.Length > 1024)
+                {
+                    cand.ImageBytes = bytes;
+                }
+            }
+            catch { }
+        });
+        await Task.WhenAll(dlTasks);
 
         // Pick the best match (prefer Deezer 1000x1000 uncompressed art if matched, otherwise iTunes)
         var best = deezerRes?.Found == true ? deezerRes : (itunesRes?.Found == true ? itunesRes : null);
@@ -360,7 +379,12 @@ public class AlbumArtMetadataService
             result.ArtworkUrl = best.ArtworkUrl;
             result.PreviewAudioUrl = best.PreviewAudioUrl;
 
-            if (!string.IsNullOrWhiteSpace(result.ArtworkUrl))
+            // Use candidate 0's downloaded bytes, or fetch if somehow missed
+            if (result.Candidates.Count > 0 && result.Candidates[0].ImageBytes != null)
+            {
+                result.CoverArtBytes = result.Candidates[0].ImageBytes;
+            }
+            else if (!string.IsNullOrWhiteSpace(result.ArtworkUrl))
             {
                 try
                 {
@@ -370,21 +394,27 @@ public class AlbumArtMetadataService
                     if (imgBytes.Length > 1024)
                     {
                         result.CoverArtBytes = imgBytes;
-                        if (result.Candidates.Count > 0 && result.Candidates[0].ImageBytes == null)
+                        if (result.Candidates.Count > 0)
                             result.Candidates[0].ImageBytes = imgBytes;
-
-                        if (!string.IsNullOrWhiteSpace(saveToDirectory) && Directory.Exists(saveToDirectory))
-                        {
-                            var outPath = Path.Combine(saveToDirectory, "album.jpg");
-                            await File.WriteAllBytesAsync(outPath, imgBytes, ct);
-                            result.SavedArtworkPath = outPath;
-                        }
                     }
                 }
                 catch (Exception dlEx)
                 {
                     _logger?.LogWarn($"[METADATA] Could not download cover from {result.ArtworkUrl}: {dlEx.Message}");
                 }
+            }
+
+            if (result.CoverArtBytes != null && !string.IsNullOrWhiteSpace(saveToDirectory) && Directory.Exists(saveToDirectory))
+            {
+                try
+                {
+                    var outJpg = Path.Combine(saveToDirectory, "album.jpg");
+                    var outPng = Path.Combine(saveToDirectory, "album.png");
+                    await File.WriteAllBytesAsync(outJpg, result.CoverArtBytes, ct);
+                    await File.WriteAllBytesAsync(outPng, result.CoverArtBytes, ct);
+                    result.SavedArtworkPath = outJpg;
+                }
+                catch { }
             }
 
             result.Message = $"✓ Matched '{result.Title}' — {result.Album} ({(result.Year > 0 ? result.Year.ToString() : "N/A")}) via {best.Message}";
@@ -402,7 +432,7 @@ public class AlbumArtMetadataService
     {
         try
         {
-            var url = $"https://api.deezer.com/search?q={Uri.EscapeDataString(query)}&limit=5";
+            var url = $"https://api.deezer.com/search?q={Uri.EscapeDataString(query)}&limit=8";
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(6.0));
 
@@ -465,7 +495,7 @@ public class AlbumArtMetadataService
     {
         try
         {
-            var url = $"https://itunes.apple.com/search?term={Uri.EscapeDataString(query)}&media=music&entity=song&limit=5";
+            var url = $"https://itunes.apple.com/search?term={Uri.EscapeDataString(query)}&media=music&entity=song&limit=6";
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(6.0));
 

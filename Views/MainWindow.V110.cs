@@ -287,23 +287,22 @@ public partial class MainWindow
         var dp = new DockPanel();
 
         var rightBtns = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        var playBtn = new System.Windows.Controls.Button { Content = "▶", Style = (Style)FindResource("OutlineButton"), Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(0, 0, 5, 0) };
-        playBtn.Click += (_, _) =>
-        {
-            var ap = Gh3Service.FindSongAudioPath(song);
-            if (!string.IsNullOrEmpty(ap)) PlayAudioPreview(ap, song.Title, song);
-        };
-        var hwBtn = new System.Windows.Controls.Button { Content = "🎸", Style = (Style)FindResource("OutlineButton"), Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(0, 0, 5, 0), ToolTip = "Open Playable Highway Previewer" };
-        hwBtn.Click += (_, _) =>
-        {
-            var ch = ChartDoctorService.FindChartFileInProject(song.ProjectDirectory);
-            if (!string.IsNullOrEmpty(ch)) OpenHighwayPreview(song.Title, song.Artist, ch, Gh3Service.FindSongAudioPath(song), song.ProjectDirectory, song.SongId);
-        };
-        var editBtn = new System.Windows.Controls.Button { Content = "Edit", Style = (Style)FindResource("OutlineButton"), Padding = new Thickness(8, 3, 8, 3) };
+
+        var editBtn = new System.Windows.Controls.Button { Content = "Edit", Style = (Style)FindResource("OutlineButton"), Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(0, 0, 5, 0) };
         editBtn.Click += (_, _) => OpenEditSongDialog(song);
-        rightBtns.Children.Add(playBtn);
-        rightBtns.Children.Add(hwBtn);
         rightBtns.Children.Add(editBtn);
+
+        var moreBtn = new System.Windows.Controls.Button { Content = "⋮", Style = (Style)FindResource("OutlineButton"), FontWeight = FontWeights.Bold, Padding = new Thickness(8, 2, 8, 2), ToolTip = "More Actions" };
+        moreBtn.Click += (_, _) =>
+        {
+            var menu = BuildSongContextMenu(song);
+            menu.PlacementTarget = moreBtn;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        };
+        rightBtns.Children.Add(moreBtn);
+
+        row.ContextMenu = BuildSongContextMenu(song);
         DockPanel.SetDock(rightBtns, Dock.Right);
         dp.Children.Add(rightBtns);
 
@@ -346,8 +345,6 @@ public partial class MainWindow
         }
 
         string defaultTitle = $"Live Encore Medley ({picked.Count} Songs)";
-        MedleyBuilderBtn.IsEnabled = false;
-        MedleyBuilderBtn.Content = "Building...";
         PageCustoms_StageHud.Report(25, "BUILDING CONCERT MEDLEY", $"Stitching stems & calculating crossfade markers for {picked.Count} tracks...");
         try
         {
@@ -368,11 +365,6 @@ public partial class MainWindow
         catch (Exception ex)
         {
             PageCustoms_StageHud.SetError("MEDLEY ERROR", ex.Message);
-        }
-        finally
-        {
-            MedleyBuilderBtn.IsEnabled = true;
-            MedleyBuilderBtn.Content = "🎸 Medley";
         }
     }
 

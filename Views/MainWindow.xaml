@@ -72,7 +72,7 @@
                                 <TextBlock x:Name="HeaderVersionBadge" Text="v1.4.0" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
                             </Border>
                         </StackPanel>
-                        <TextBlock Text="Guitar Hero III Companion  •  Encore &amp; Zero-Trust Edition  •  by Mad Scientist" FontSize="11.5" Foreground="{DynamicResource TextMuted}"/>
+                        <TextBlock Text="Guitar Hero III Companion  •  Studio Edition  •  by Mad Scientist" FontSize="11.5" Foreground="{DynamicResource TextMuted}"/>
                     </StackPanel>
                 </StackPanel>
 
@@ -272,25 +272,43 @@
                                 <TextBlock x:Name="CustomsGamePathLabel" Text="Scanning library..." FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,2,0,0"/>
                             </StackPanel>
                             <WrapPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                <Button Content="Refresh" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="RefreshSongs_Click" ToolTip="F5"/>
-                                <Button x:Name="HallOfFameBtn" Content="🏆 Hall of Fame" Style="{StaticResource GoldButton}" Padding="10,6" Margin="0,0,6,0" Click="HallOfFameBtn_Click" ToolTip="View In-App Rock Hall of Fame &amp; Achievements Trophy Showcase"/>
-                                <Button x:Name="TournamentBracketBtn" Content="🏆 Tournament" Style="{StaticResource GoldButton}" Padding="10,6" Margin="0,0,6,0" Click="TournamentBracketBtn_Click" ToolTip="Generate Rock Tour Tournament Bracket (4/8/16 players, song vetoes, match scorecards)"/>
-                                <Button x:Name="BossBattleModalBtn" Content="⚡ Boss Duel" Style="{StaticResource PurpleButton}" Padding="10,6" Margin="0,0,6,0" Click="BossBattleModalBtn_Click" ToolTip="Generate GH3 Boss Battle Duel with authentic battle power-up gems!"/>
-                                <Button x:Name="SpinRouletteBtn" Content="🎰 Roulette" Style="{StaticResource BlueButton}" Padding="10,6" Margin="0,0,6,0" Click="SpinRouletteBtn_Click" ToolTip="Spin Encore Roulette to pick a random song!"/>
-                                <Button x:Name="ExportPosterBtn" Content="🖼 Setlist Poster" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="ExportSetlistPosterBtn_Click" ToolTip="Export a high-res Concert Tour Poster PNG for Discord"/>
-                                <Button x:Name="VolumeSoundcheckBtn" Content="🔊 Soundcheck" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="VolumeSoundcheckBtn_Click" ToolTip="Scan &amp; batch-normalize existing custom songs to -14 LUFS"/>
-                                <Button x:Name="AutoHealLibraryBtn" Content="🩺 Auto-Heal" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="AutoHealLibraryBtn_Click" ToolTip="Scan customs.pak.xen, soundbanks &amp; plugins and auto-heal issues"/>
-                                <Button x:Name="BulkEditBtn" Content="✏️ Bulk Edit" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="BulkEditBtn_Click" ToolTip="Batch-edit Genre, Year, Charter, Volume &amp; Venue across checked songs"/>
-                                <Button x:Name="MedleyBuilderBtn" Content="🎸 Medley" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="MedleyBuilderBtn_Click" ToolTip="Stitch 2–4 checked songs into a single playable Live Concert Medley!"/>
-                                <Button x:Name="CompareChartsBtn" Content="⚖️ Scorecard" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="CompareChartsBtn_Click" ToolTip="Compare Chart Quality Scorecards (Grade S-C, Peak NPS, HOPO%, Chords, GH3 Venue Tier)"/>
-                                <Button x:Name="CalibrateLagBtn" Content="🎯 Calibrate" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="CalibrateLagBtn_Click" ToolTip="Launch GH3 Audio/Video Lag Calibration Mini-Game"/>
-                                <Button x:Name="TrophiesWallBtn" Content="🏆 Trophies" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="TrophiesWallBtn_Click" ToolTip="View Legends of Rock Lifetime Stats &amp; Trophies Wall"/>
-                                <Button x:Name="SongRequestsBtn" Content="🎤 Requests" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="SongRequestsBtn_Click" ToolTip="Open Streamer !sr Song Request Queue"/>
-                                <Button x:Name="CopyDiscordSetlistBtn" Content="📋 Discord" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="CopyDiscordSetlistBtn_Click" ToolTip="Copy Discord-formatted setlist with tiers, high scores &amp; stars"/>
-                                <Button x:Name="CopyObsOverlayBtn" Content="📺 OBS Overlay" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="CopyObsOverlayBtn_Click" ToolTip="Copy local OBS Studio Browser Source URL (http://127.0.0.1:7373/obs-overlay)"/>
-                                <Button x:Name="ExportLobbyPackBtn" Content="Export Lobby" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="ExportLobbyPack_Click"/>
-                                <Button x:Name="ExportSelectedBtn" Content="Selected (0)" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="ExportSelectedPack_Click"/>
-                                <Button Content="Export All" Style="{StaticResource FlameButton}" Padding="11,6" Click="ExportAllPack_Click"/>
+                                <Button Content="Refresh" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="RefreshSongs_Click" ToolTip="Refresh song library (F5)"/>
+                                <Button x:Name="BulkEditBtn" Content="✏️ Bulk Edit" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="BulkEditBtn_Click" ToolTip="Batch-edit Genre, Year, Charter &amp; Venue across checked songs"/>
+                                <Button x:Name="PartyModesMenuBtn" Content="🎮 Party Modes ▾" Style="{StaticResource GoldButton}" Padding="11,6" Margin="0,0,6,0" Click="PartyModesMenuBtn_Click" ToolTip="Hall of Fame, Tournaments, Boss Duels, Roulette &amp; Medleys">
+                                    <Button.ContextMenu>
+                                        <ContextMenu Background="#14121E" Foreground="White" BorderBrush="{DynamicResource BorderSubtle}">
+                                            <MenuItem Header="🏆 Rock Hall of Fame &amp; Achievements" Click="HallOfFameBtn_Click"/>
+                                            <MenuItem Header="🏆 Rock Tour Tournament Bracket" Click="TournamentBracketBtn_Click"/>
+                                            <MenuItem Header="⚡ Boss Battle Duel Generator" Click="BossBattleModalBtn_Click"/>
+                                            <MenuItem Header="🎰 Encore Roulette (Pick Random Song)" Click="SpinRouletteBtn_Click"/>
+                                            <MenuItem Header="🖼 Export Concert Tour Poster (Discord)" Click="ExportSetlistPosterBtn_Click"/>
+                                            <MenuItem Header="🎸 Live Concert Medley Builder" Click="MedleyBuilderBtn_Click"/>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                </Button>
+                                <Button x:Name="StudioToolsMenuBtn" Content="🔧 Studio Tools ▾" Style="{StaticResource BlueButton}" Padding="11,6" Margin="0,0,6,0" Click="StudioToolsMenuBtn_Click" ToolTip="Soundcheck, Auto-Heal, Lag Calibration &amp; Scorecards">
+                                    <Button.ContextMenu>
+                                        <ContextMenu Background="#14121E" Foreground="White" BorderBrush="{DynamicResource BorderSubtle}">
+                                            <MenuItem Header="🔊 Soundcheck (-14 LUFS Batch Normalization)" Click="VolumeSoundcheckBtn_Click"/>
+                                            <MenuItem Header="🩺 Auto-Heal Library &amp; PAK Integrity" Click="AutoHealLibraryBtn_Click"/>
+                                            <MenuItem Header="⚖️ Chart Quality Scorecards &amp; Tier Analyzer" Click="CompareChartsBtn_Click"/>
+                                            <MenuItem Header="🎯 Audio/Video Lag Calibration Mini-Game" Click="CalibrateLagBtn_Click"/>
+                                            <MenuItem Header="🏆 Lifetime Stats &amp; Trophies Wall" Click="TrophiesWallBtn_Click"/>
+                                            <MenuItem Header="🎤 Streamer !sr Song Request Queue" Click="SongRequestsBtn_Click"/>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                </Button>
+                                <Button x:Name="StreamShareMenuBtn" Content="📡 Share &amp; Stream ▾" Style="{StaticResource OutlineButton}" Padding="11,6" Click="StreamShareMenuBtn_Click" ToolTip="Discord, OBS Overlay &amp; Setlist Exports">
+                                    <Button.ContextMenu>
+                                        <ContextMenu Background="#14121E" Foreground="White" BorderBrush="{DynamicResource BorderSubtle}">
+                                            <MenuItem Header="📋 Copy Discord-Formatted Setlist" Click="CopyDiscordSetlistBtn_Click"/>
+                                            <MenuItem Header="📺 Copy OBS Studio Browser Source URL" Click="CopyObsOverlayBtn_Click"/>
+                                            <Separator Background="{DynamicResource BorderSubtle}"/>
+                                            <MenuItem Header="📦 Export Entire Installed Library (.gh3pack)" Click="ExportAllPack_Click"/>
+                                            <MenuItem Header="📦 Export Current Lobby Setlist (.gh3pack)" Click="ExportLobbyPack_Click"/>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                </Button>
                             </WrapPanel>
                         </Grid>
 
@@ -371,6 +389,26 @@
 
                         <TextBlock Text="Tip: Drag and drop any .gh3song, .gh3pack, Clone Hero .sng/.zip/folder, or audio file directly onto this window."
                                    FontSize="11.5" Foreground="{DynamicResource TextSectionHeader}" Margin="2,-4,0,10"/>
+
+                        <!-- Dedicated Multi-Select & Batch Operations Bar -->
+                        <Border x:Name="BatchSelectionBar"
+                                Background="{DynamicResource BgCardHover}" BorderBrush="{DynamicResource AccentFlame}"
+                                BorderThickness="1" CornerRadius="10" Padding="12,8" Margin="0,0,0,10">
+                            <DockPanel>
+                                <WrapPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="BatchDeleteBtn" Content="🗑️ Delete Selected" Style="{StaticResource DangerButton}" Padding="11,5" Margin="0,0,6,0" Click="BatchDeleteBtn_Click" ToolTip="Delete all checked songs from Guitar Hero III library"/>
+                                    <Button x:Name="BatchFastRechartBtn" Content="⚡ Fast Re-Chart" Style="{StaticResource GreenButton}" Padding="10,5" Margin="0,0,6,0" Click="BatchFastRechartBtn_Click" ToolTip="Re-chart all selected songs from instant AI cache"/>
+                                    <Button x:Name="BatchRechartAiBtn" Content="🤖 Re-Chart AI v2" Style="{StaticResource BlueButton}" Padding="10,5" Margin="0,0,6,0" Click="BatchRechartAiBtn_Click" ToolTip="Batch load checked songs into Creator"/>
+                                    <Button x:Name="BatchAddLobbyBtn" Content="+ Add to Lobby" Style="{StaticResource OutlineButton}" Padding="10,5" Margin="0,0,6,0" Click="BatchAddLobbyBtn_Click" ToolTip="Add checked songs to multiplayer lobby setlist"/>
+                                    <Button x:Name="ExportSelectedBtn" Content="📦 Export Selected (0)" Style="{StaticResource FlameButton}" Padding="11,5" Margin="0,0,6,0" Click="ExportSelectedPack_Click" ToolTip="Export checked songs into a single package"/>
+                                    <Button x:Name="BatchDeselectAllBtn" Content="✖ Clear" Style="{StaticResource OutlineButton}" Padding="9,5" Click="BatchDeselectAllBtn_Click" ToolTip="Deselect all songs"/>
+                                </WrapPanel>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <CheckBox x:Name="SelectAllSongsChk" Content="Select All" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center" Margin="0,0,12,0" Click="SelectAllSongsChk_Click"/>
+                                    <TextBlock x:Name="SelectedSongsCountText" Text="0 songs selected" FontSize="12" Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
 
                         <StackPanel x:Name="SongsListPanel"/>
                     </StackPanel>
@@ -532,24 +570,28 @@
                                         <Grid Margin="0,4,0,0">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="10"/>
+                                                <ColumnDefinition Width="8"/>
                                                 <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="10"/>
+                                                <ColumnDefinition Width="8"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="8"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="8"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
 
                                             <!-- Candidate 1 -->
                                             <Border x:Name="CrArtCard1" Grid.Column="0" Background="{DynamicResource BgCard}"
                                                     BorderBrush="{DynamicResource AccentFlame}" BorderThickness="1.5"
-                                                    CornerRadius="8" Padding="8" Cursor="Hand" MouseLeftButtonDown="CrArtCard1_Click">
+                                                    CornerRadius="8" Padding="6" Cursor="Hand" MouseLeftButtonDown="CrArtCard1_Click">
                                                 <StackPanel HorizontalAlignment="Center">
-                                                    <Border Width="90" Height="90" CornerRadius="6" Background="#0C0A12" ClipToBounds="True">
+                                                    <Border Width="82" Height="82" CornerRadius="6" Background="#0C0A12" ClipToBounds="True">
                                                         <Image x:Name="CrArtImg1" Stretch="UniformToFill"/>
                                                     </Border>
-                                                    <TextBlock x:Name="CrArtLabel1" Text="Candidate 1" FontSize="10.5" FontWeight="Bold"
-                                                               Foreground="{DynamicResource TextPrimary}" Margin="0,6,0,0"
+                                                    <TextBlock x:Name="CrArtLabel1" Text="Candidate 1" FontSize="10" FontWeight="Bold"
+                                                               Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,0"
                                                                HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                                    <TextBlock x:Name="CrArtSource1" Text="HD Deezer (1000×1000)" FontSize="9.5"
+                                                    <TextBlock x:Name="CrArtSource1" Text="Deezer HD (1000×1000)" FontSize="8.5"
                                                                Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center"/>
                                                 </StackPanel>
                                             </Border>
@@ -557,15 +599,15 @@
                                             <!-- Candidate 2 -->
                                             <Border x:Name="CrArtCard2" Grid.Column="2" Background="{DynamicResource BgCard}"
                                                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1.5"
-                                                    CornerRadius="8" Padding="8" Cursor="Hand" MouseLeftButtonDown="CrArtCard2_Click">
+                                                    CornerRadius="8" Padding="6" Cursor="Hand" MouseLeftButtonDown="CrArtCard2_Click">
                                                 <StackPanel HorizontalAlignment="Center">
-                                                    <Border Width="90" Height="90" CornerRadius="6" Background="#0C0A12" ClipToBounds="True">
+                                                    <Border Width="82" Height="82" CornerRadius="6" Background="#0C0A12" ClipToBounds="True">
                                                         <Image x:Name="CrArtImg2" Stretch="UniformToFill"/>
                                                     </Border>
-                                                    <TextBlock x:Name="CrArtLabel2" Text="Candidate 2" FontSize="10.5" FontWeight="Bold"
-                                                               Foreground="{DynamicResource TextPrimary}" Margin="0,6,0,0"
+                                                    <TextBlock x:Name="CrArtLabel2" Text="Candidate 2" FontSize="10" FontWeight="Bold"
+                                                               Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,0"
                                                                HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                                    <TextBlock x:Name="CrArtSource2" Text="Apple iTunes (600×600)" FontSize="9.5"
+                                                    <TextBlock x:Name="CrArtSource2" Text="Apple iTunes (600×600)" FontSize="8.5"
                                                                Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center"/>
                                                 </StackPanel>
                                             </Border>
@@ -573,15 +615,47 @@
                                             <!-- Candidate 3 -->
                                             <Border x:Name="CrArtCard3" Grid.Column="4" Background="{DynamicResource BgCard}"
                                                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1.5"
-                                                    CornerRadius="8" Padding="8" Cursor="Hand" MouseLeftButtonDown="CrArtCard3_Click">
+                                                    CornerRadius="8" Padding="6" Cursor="Hand" MouseLeftButtonDown="CrArtCard3_Click">
                                                 <StackPanel HorizontalAlignment="Center">
-                                                    <Border Width="90" Height="90" CornerRadius="6" Background="#0C0A12" ClipToBounds="True">
+                                                    <Border Width="82" Height="82" CornerRadius="6" Background="#0C0A12" ClipToBounds="True">
                                                         <Image x:Name="CrArtImg3" Stretch="UniformToFill"/>
                                                     </Border>
-                                                    <TextBlock x:Name="CrArtLabel3" Text="Candidate 3" FontSize="10.5" FontWeight="Bold"
-                                                               Foreground="{DynamicResource TextPrimary}" Margin="0,6,0,0"
+                                                    <TextBlock x:Name="CrArtLabel3" Text="Candidate 3" FontSize="10" FontWeight="Bold"
+                                                               Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,0"
                                                                HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                                    <TextBlock x:Name="CrArtSource3" Text="Embedded / MusicBrainz" FontSize="9.5"
+                                                    <TextBlock x:Name="CrArtSource3" Text="Deezer Candidate" FontSize="8.5"
+                                                               Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- Candidate 4 -->
+                                            <Border x:Name="CrArtCard4" Grid.Column="6" Background="{DynamicResource BgCard}"
+                                                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1.5"
+                                                    CornerRadius="8" Padding="6" Cursor="Hand" MouseLeftButtonDown="CrArtCard4_Click">
+                                                <StackPanel HorizontalAlignment="Center">
+                                                    <Border Width="82" Height="82" CornerRadius="6" Background="#0C0A12" ClipToBounds="True">
+                                                        <Image x:Name="CrArtImg4" Stretch="UniformToFill"/>
+                                                    </Border>
+                                                    <TextBlock x:Name="CrArtLabel4" Text="Candidate 4" FontSize="10" FontWeight="Bold"
+                                                               Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,0"
+                                                               HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock x:Name="CrArtSource4" Text="iTunes Candidate" FontSize="8.5"
+                                                               Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- Candidate 5 -->
+                                            <Border x:Name="CrArtCard5" Grid.Column="8" Background="{DynamicResource BgCard}"
+                                                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1.5"
+                                                    CornerRadius="8" Padding="6" Cursor="Hand" MouseLeftButtonDown="CrArtCard5_Click">
+                                                <StackPanel HorizontalAlignment="Center">
+                                                    <Border Width="82" Height="82" CornerRadius="6" Background="#0C0A12" ClipToBounds="True">
+                                                        <Image x:Name="CrArtImg5" Stretch="UniformToFill"/>
+                                                    </Border>
+                                                    <TextBlock x:Name="CrArtLabel5" Text="Candidate 5" FontSize="10" FontWeight="Bold"
+                                                               Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,0"
+                                                               HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock x:Name="CrArtSource5" Text="MusicBrainz / Alternate" FontSize="8.5"
                                                                Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center"/>
                                                 </StackPanel>
                                             </Border>
@@ -708,6 +782,7 @@
                                         <Button x:Name="CreateSongSubmitBtn" Content="Create &amp; Compile Song" Style="{StaticResource FlameButton}" Padding="20,10" FontSize="13.5" Click="CreateSongBtn_Click"/>
                                         <Button x:Name="CreatorPreviewHighwayBtn" Content="🎸 Preview Highway" Style="{StaticResource BlueButton}" Margin="8,0,0,0" Click="CreatorPreviewHighwayBtn_Click" ToolTip="Preview your uploaded or newly generated chart on a live 5-fret highway"/>
                                         <Button x:Name="AddToQueueBtn" Content="+ Add to Batch Queue" Style="{StaticResource OutlineButton}" Margin="8,0,0,0" Click="AddToQueueBtn_Click"/>
+                                        <Button x:Name="ClearCreatorFormBtn" Content="🗑️ Clear Form" Style="{StaticResource OutlineButton}" Margin="8,0,0,0" Click="ClearCreatorFormBtn_Click" ToolTip="Reset all fields, audio files, and album cover preview"/>
                                         <Button x:Name="RunQueueBtn" Content="Compile Batch Queue (0)" Style="{StaticResource GreenButton}" Margin="8,0,0,0" Visibility="Collapsed" Click="RunQueueBtn_Click"/>
                                         <Button x:Name="ClearQueueBtn" Content="Clear Queue" Style="{StaticResource OutlineButton}" Margin="6,0,0,0" Visibility="Collapsed" Click="ClearQueueBtn_Click"/>
                                         <TextBlock x:Name="CrProgressLabel" Text="" FontSize="12" Foreground="{DynamicResource CardWarnTitle}" VerticalAlignment="Center" Margin="14,0,0,0"/>
@@ -1663,38 +1738,45 @@
                         <StackPanel x:Name="SettingsSubHowTo" Visibility="Collapsed">
                             <Border Style="{StaticResource GhCard}" BorderBrush="{DynamicResource AccentFlame}">
                                 <StackPanel>
-                                    <TextBlock Text="How to Use GH3-Sync — Quick Feature Guide" FontSize="17" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}" Margin="0,0,0,10"/>
+                                    <TextBlock Text="How to Use GH3-Sync — Complete Feature &amp; Studio Guide" FontSize="17" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}" Margin="0,0,0,10"/>
 
-                                    <TextBlock Text="1. 1-Click Community Charts (Chorus Encore)" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
+                                    <TextBlock Text="1. Song Creator, Clear Form &amp; Multi-Cover Artwork Studio" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
                                     <TextBlock TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource TextSecondary}" LineHeight="20" Margin="0,0,0,10">
-                                        Open ONOGAMI Song Creator and type any song or artist into the Chorus Encore search box. Click "⚡ Install to GH3" to download, unpack, and compile directly into Guitar Hero III, or click "Use Chart" to pair a handcrafted chart with your own audio file. Use the "Classic 5-Fret GH3" toggle if you prefer converting Clone Hero purple open-strum bars into classic green notes.
+                                        • Drop any MP3, WAV, or OGG file into Song Creator. The app automatically detects tempo/BPM, extracts vocal formants, and auto-charts 5-fret notes (Casual, Standard, or Shredder).&#x0a;
+                                        • Click "Fetch Artwork &amp; Metadata" to query Deezer HD (1000×1000) and Apple iTunes in parallel. Browse the visual cover carousel to select your favorite album art candidate, or click "Browse Local Image" to supply your own. Selected artwork is saved directly to your song folder as album.png.&#x0a;
+                                        • Click "🗑️ Clear Form" at any time to instantly reset all metadata fields, audio paths, trim points, and album art previews in one click.
                                     </TextBlock>
 
-                                    <TextBlock Text="2. AI Song Creator, Non-Guitar Songs &amp; Audio Mix Modes" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
+                                    <TextBlock Text="2. Live Concert Crowd Sing-Along &amp; Chants (4x Streak &amp; Star Power)" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
                                     <TextBlock TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource TextSecondary}" LineHeight="20" Margin="0,0,0,10">
-                                        • Playable Instrument Focus: Keep "Auto (Smart Multi-Lead)" for most songs — it detects guitar-heavy rock automatically and switches to multi-lead (Guitar, Keys, Sax/Synth) for non-guitar tracks. You can also target Guitar, Keys/Synth/Sax, Groove Bassline, or Vocal Melody explicitly.&#x0a;
-                                        • Game Audio Mix Mode: "Auto" chooses Isolated Lead Stem (mute-on-miss) for guitar-dominant rock and Studio Master (untouched original audio, zero stem artifacts) for non-guitar, jazz, pop, hip-hop, or live tracks. "Hybrid Blend" keeps studio clarity with soft ducking on misses.&#x0a;
-                                        • Batch Queue &amp; Multi-Drop: Drag-and-drop multiple MP3/WAV/OGG files at once (or click "+ Add to Batch Queue") to queue several songs, then click Edit on any queued card to tweak BPM, Feel, Focus, or Audio Mode individually before compiling!
+                                        • GH3-Sync features a physical stadium choir synthesizer that isolates melodic formants and generates authentic concert audience sing-alongs ("Whoa-oh-oh", stadium antiphony, and cheering) with 20,000-seat arena acoustic reverberation.&#x0a;
+                                        • In-Game Dynamic Modulation: The concert crowd sing-along is compiled directly into the official 4th soundbank stream (Stream 3). When you hit your note streak and reach a 4x multiplier (green rock lightbar), the crowd un-mutes and sings the song along with you. When you tilt for Star Power, the audience screams and chants at maximum concert volume!
                                     </TextBlock>
 
-                                    <TextBlock Text="3. Interactive Highway Previewer, Instant Re-Chart Cache &amp; Chart Doctor" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
+                                    <TextBlock Text="3. Managing My Customs, 3-Dot [⋮] Menu &amp; Batch Operations" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
                                     <TextBlock TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource TextSecondary}" LineHeight="20" Margin="0,0,0,10">
-                                        • Click "🎸 Highway" on any song in My Customs (or "Preview Highway" in Creator) to watch a live 60 FPS 5-fret highway synced to your audio, scrub to the solo, and nudge Audio-Chart Sync Offset (±ms) before launching GH3!&#x0a;
-                                        • Songs created with AI Engine v2 save a tiny analysis cache (~80 KB), so clicking "⚡ Fast Re-Chart" lets you switch Casual/Standard/Shredder or adjust sync offset in ~5 seconds without re-running Demucs.&#x0a;
-                                        • Click "🩺 Doctor" on any custom to inspect and auto-fix missing Easy/Medium/Hard difficulties, missing Star Power phrases, missing Practice sections, open notes, or sync offset.&#x0a;
-                                        • Use "Tap Tempo" next to Detect BPM if a live/rubato track needs manual tempo lock, and use the bottom audio preview bar's "Set Trim In / Out" buttons + "-14 LUFS Loudness Normalization" to trim intros and match official GH3 volume.
+                                        • Decluttered Song Cards: Direct buttons are streamlined to "+ Lobby", "Edit", and "# Tag". All auxiliary actions (Highway 3D Preview, ⚕ Chart Doctor, Stems Explorer, Fast Re-Chart, Open Folder, Export, Delete) are housed in the sleek 3-dot [⋮] dropdown menu. You can also right-click anywhere on a song card to open the menu!&#x0a;
+                                        • Batch Selection Bar: Click the "Select All" checkbox or check individual songs to open the batch operations toolbar. Perform Bulk Delete (with single confirmation), Batch Fast Re-Chart, Batch Re-Chart AI v2, or Add to Lobby across multiple songs simultaneously.&#x0a;
+                                        • Header Menus: Auxiliary features are organized into clean dropdowns: "🎮 Party Modes ▾" (Hall of Fame, Tournaments, Boss Battle, Roulette, Medley) and "🔧 Studio Tools ▾" (Soundcheck, Auto-Heal, Scorecard, Lag Calibration).
                                     </TextBlock>
 
-                                    <TextBlock Text="4. P2P Invite Codes, Setlist Presets, Library Wizard &amp; BetterGH3 Tweaks" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
+                                    <TextBlock Text="4. Fast Re-Chart (5-Sec Cache) vs Re-Chart AI v2" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
                                     <TextBlock TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource TextSecondary}" LineHeight="20" Margin="0,0,0,10">
-                                        • Save reusable Setlist Presets in My Customs or click "🎲 Shuffle Party Setlist" for instant multiplayer nights, then click "Copy Lobby Invite Code" in P2P Sync so friends can connect and sync with one paste.&#x0a;
-                                        • Open Import &amp; Convert → "Full Library Migration Wizard" to scan an entire Clone Hero / YARG Songs folder, skip duplicates, and batch-convert selected tracks.&#x0a;
-                                        • Toggle BetterGH3 plugins (BorderlessWindow, UncappedFPS, FastGH3, TapHopoChord, WhammyFix) safely under Settings → BetterGH3 Tweaks, customize Guitar HUD size/opacity under Appearance &amp; Overlay, and toggle Discord Rich Presence under General &amp; Paths.
+                                        • Songs created with GH3-Sync save a lightweight AI cache (~80 KB). Clicking "⚡ Fast Re-Chart" allows you to switch between Casual/Standard/Shredder feel or adjust Audio-Chart sync offset (±ms) in ~5 seconds without re-separating stems.&#x0a;
+                                        • "Re-Chart AI v2" loads the song back into the Creator studio for full audio re-processing and multi-lead routing.
                                     </TextBlock>
 
-                                    <TextBlock Text="5. Career Saves &amp; First-Time Custom Setup" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
+                                    <TextBlock Text="5. Hardware &amp; GPU Acceleration (NVIDIA CUDA RTX Blackwell 5070)" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
+                                    <TextBlock TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource TextSecondary}" LineHeight="20" Margin="0,0,0,10">
+                                        • The embedded AI engine includes PyTorch CUDA 12.8 with native support for RTX 50-Series Blackwell (sm_120) and RTX 40/30/20 series GPUs. AI stem separation runs in under 30 seconds on GPU, with automatic graceful fallback to CPU if GPU memory is constrained.&#x0a;
+                                        • Toggle GPU acceleration and UI animations under Settings → General &amp; Paths.
+                                    </TextBlock>
+
+                                    <TextBlock Text="6. Audio Fidelity Mix Modes &amp; Practice Stems" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
                                     <TextBlock TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource TextSecondary}" LineHeight="20">
-                                        Adding your first custom song to a vanilla GH3 profile updates DATA\customs.pak.xen, triggering a one-time save reset in-game. After that initial custom profile is created, new songs merge cleanly without resetting your career. Paired Career Save snapshots back up both your save file and matching customs.pak.xen together.
+                                        • Studio Master: Untouched original studio audio in the backing channel with a duration-matched silent pad in the guitar stream. Guarantees zero AI warble or double-audio clipping—ideal for pop, rap, and electronic tracks.&#x0a;
+                                        • Isolated Lead Stem: True Guitar Hero experience where the lead guitar or keyboard mutes when you miss a note.&#x0a;
+                                        • Practice Stems: Click [⋮] → "Export Practice Stems" on any song to generate guitar-less backing tracks, solo guitar isolations, or 75% slowdown practice MP3s.
                                     </TextBlock>
                                 </StackPanel>
                             </Border>
@@ -1746,33 +1828,19 @@
                             </Border>
                         </StackPanel>
 
-                        <!-- SUB-TAB 2C: SECURITY & PRIVACY DASHBOARD -->
+                        <!-- SUB-TAB 2C: CONNECTION & PRIVACY DASHBOARD -->
                         <StackPanel x:Name="SettingsSubSecurity" Visibility="Collapsed">
                             <Border Style="{StaticResource GhCard}" BorderBrush="{DynamicResource CardSuccessBorder}">
                                 <StackPanel>
-                                    <TextBlock Text="Zero-Trust P2P &amp; Local Security Status" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}" Margin="0,0,0,6"/>
-                                    <TextBlock x:Name="HostFingerprintText" Text="Host ECDSA Identity Fingerprint: Loading..." FontSize="11.5" FontFamily="Consolas" Foreground="{DynamicResource CardInfoTitle}" Margin="0,0,0,8"/>
-                                    <WrapPanel>
-                                        <Border Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1" CornerRadius="6" Padding="10,5" Margin="0,0,8,8">
-                                            <TextBlock Text="✓ External API &amp; CSRF/DNS-Rebinding Lockdown" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
-                                        </Border>
-                                        <Border Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1" CornerRadius="6" Padding="10,5" Margin="0,0,8,8">
-                                            <TextBlock Text="✓ Challenge-HMAC + ECDSA Mutual Signing" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
-                                        </Border>
-                                        <Border Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1" CornerRadius="6" Padding="10,5" Margin="0,0,8,8">
-                                            <TextBlock Text="✓ DPAPI Token Vault + Salted AES-256-GCM" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
-                                        </Border>
-                                        <Border Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1" CornerRadius="6" Padding="10,5" Margin="0,0,8,8">
-                                            <TextBlock Text="✓ Authenticode + SHA-256 + Binary Magic Guard" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}"/>
-                                        </Border>
-                                    </WrapPanel>
-                                    <CheckBox x:Name="SettingsRequireDownloadApprovalChk" Content="Require 1-Click Host Approval popup before external friends can download a song" Margin="0,4,0,10" Checked="SettingsRequireDownloadApprovalChk_Changed" Unchecked="SettingsRequireDownloadApprovalChk_Changed"/>
+                                    <TextBlock Text="Network Connection &amp; Transfer Safety" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}" Margin="0,0,0,6"/>
+                                    <TextBlock x:Name="HostFingerprintText" Text="Direct Local P2P Active • Secure Session" FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,10"/>
+                                    <CheckBox x:Name="SettingsRequireDownloadApprovalChk" Content="Require 1-Click Host Approval popup before friends can download custom songs from your lobby" Margin="0,4,0,10" Checked="SettingsRequireDownloadApprovalChk_Changed" Unchecked="SettingsRequireDownloadApprovalChk_Changed"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                                        <Button x:Name="RunSecuritySelfTestBtn" Content="🛡️ Run Live Security Self-Test" Style="{StaticResource GreenButton}" Padding="14,7" Margin="0,0,8,0" Click="RunSecuritySelfTestBtn_Click"/>
-                                        <Button x:Name="RotateCredentialsBtn" Content="🔄 Rotate All Tokens &amp; PIN" Style="{StaticResource DangerButton}" Padding="14,7" Click="RotateCredentialsBtn_Click"/>
-                                        <Button Content="Refresh Audit" Style="{StaticResource OutlineButton}" Margin="8,0,0,0" Padding="11,7" Click="RefreshSecurityAuditBtn_Click"/>
+                                        <Button x:Name="RotateCredentialsBtn" Content="🔄 Reset Connection Token &amp; PIN" Style="{StaticResource OutlineButton}" Padding="12,6" Click="RotateCredentialsBtn_Click"/>
+                                        <Button x:Name="RunSecuritySelfTestBtn" Content="🛡️ Check Connection Health" Style="{StaticResource GreenButton}" Padding="12,6" Margin="8,0,0,0" Click="RunSecuritySelfTestBtn_Click"/>
+                                        <Button Content="Refresh Status" Style="{StaticResource OutlineButton}" Margin="8,0,0,0" Padding="11,6" Click="RefreshSecurityAuditBtn_Click"/>
                                     </StackPanel>
-                                    <TextBlock x:Name="SecurityActionStatusText" Text="" FontSize="12" FontFamily="Consolas" Foreground="{DynamicResource CardWarnTitle}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="SecurityActionStatusText" Text="" FontSize="12" Foreground="{DynamicResource CardWarnTitle}" Margin="0,8,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
 

@@ -53,26 +53,30 @@ public class AiStadiumChantsService
             var dir = Path.GetDirectoryName(audioPath)!;
             var ext = Path.GetExtension(audioPath);
             if (string.IsNullOrEmpty(ext)) ext = ".mp3";
-            var outPath = Path.Combine(dir, $"song_stadium{ext}");
+            var outStadiumPath = Path.Combine(dir, $"song_stadium{ext}");
+            var outCrowdStemPath = Path.Combine(dir, "song_crowd.wav");
 
             // Filtergraph:
             // 1. Split audio: [0:a]asplit=2[dry][choir_in]
-            // 2. Isolate melodic formants (O/Ah vowels at 750Hz, 1250Hz, 2600Hz) with bandpass
-            // 3. Multi-voice detuned choir chorus (3 voices)
-            // 4. Stadium echo/convolution reverb tail (60ms, 120ms, 240ms)
-            // 5. Mix back with dry stem, limited to prevent clipping
+            // 2. High-pass filter at 180Hz (cuts muddy sub-bass rumble so vocals and crowd cut through)
+            // 3. Human vocal formant resonators (boosting "Oh", "Ah", "Woah" vowels at 750Hz, 1250Hz, 2600Hz)
+            // 4. Multi-voice detuned stadium choir chorus (wide stereo soundstage simulating thousands of fans)
+            // 5. Massive arena acoustic reverberation tail (60ms early reflections, 140ms and 260ms arena echoes)
+            // 6. Dynamic crowd vocal presence boost (volume=0.88)
+            // 7. Split crowd signal into [crowd_mix] for stadium backing track and [crowd_stem] for isolated GH3 Stream 3
             var filtergraph =
                 "[0:a]asplit=2[dry][choir_in];" +
-                "[choir_in]equalizer=f=750:width_type=h:width=350:g=7," +
-                "equalizer=f=1250:width_type=h:width=450:g=9," +
-                "equalizer=f=2600:width_type=h:width=600:g=5," +
-                "bandpass=f=1200:w=1200," +
-                "chorus=0.7:0.9:55|70|95:0.4|0.35|0.3:0.25|0.3|0.35:2|1.6|1.9," +
-                "aecho=0.8:0.88:60|120|240:0.4|0.3|0.2," +
-                "volume=0.36[crowd_sing];" +
-                "[dry][crowd_sing]amix=inputs=2:weights=1.0 0.36:dropout_transition=2,alimiter=limit=0.98[out]";
+                "[choir_in]highpass=f=180," +
+                "equalizer=f=750:width_type=h:width=300:g=9," +
+                "equalizer=f=1250:width_type=h:width=400:g=11," +
+                "equalizer=f=2600:width_type=h:width=500:g=8," +
+                "bandpass=f=1400:w=1400," +
+                "chorus=0.75:0.92:50|80|120:0.45|0.4|0.35:0.25|0.3|0.35:2.2|1.8|2.0," +
+                "aecho=0.82:0.88:60|140|260:0.45|0.35|0.22," +
+                "volume=0.88,asplit=2[crowd_mix][crowd_stem];" +
+                "[dry][crowd_mix]amix=inputs=2:weights=1.0 0.72:dropout_transition=2,alimiter=limit=0.98[out]";
 
-            progressCallback?.Invoke(60, "Mixing physical arena crowd singing along with guitar melody into backing stem...");
+            progressCallback?.Invoke(60, "Synthesizing authentic concert stadium sing-along choir & audience chanting...");
 
             var psi = new ProcessStartInfo
             {
@@ -86,6 +90,8 @@ public class AiStadiumChantsService
             psi.ArgumentList.Add(audioPath);
             psi.ArgumentList.Add("-filter_complex");
             psi.ArgumentList.Add(filtergraph);
+
+            // Output 1: song_stadium (mixed backing track with audible concert crowd sing-along)
             psi.ArgumentList.Add("-map");
             psi.ArgumentList.Add("[out]");
             psi.ArgumentList.Add("-c:a");
@@ -97,7 +103,16 @@ public class AiStadiumChantsService
             }
             psi.ArgumentList.Add("-ar");
             psi.ArgumentList.Add("48000");
-            psi.ArgumentList.Add(outPath);
+            psi.ArgumentList.Add(outStadiumPath);
+
+            // Output 2: song_crowd.wav (dedicated concert crowd sing-along stem for GH3 Stream 3 4x/Star Power modulation)
+            psi.ArgumentList.Add("-map");
+            psi.ArgumentList.Add("[crowd_stem]");
+            psi.ArgumentList.Add("-c:a");
+            psi.ArgumentList.Add("pcm_s16le");
+            psi.ArgumentList.Add("-ar");
+            psi.ArgumentList.Add("48000");
+            psi.ArgumentList.Add(outCrowdStemPath);
 
             using var proc = Process.Start(psi);
             if (proc == null)
@@ -109,13 +124,13 @@ public class AiStadiumChantsService
             await proc.WaitForExitAsync();
             var stderr = await stderrTask;
 
-            if (proc.ExitCode != 0 || !File.Exists(outPath) || new FileInfo(outPath).Length < 2048)
+            if (proc.ExitCode != 0 || !File.Exists(outStadiumPath) || new FileInfo(outStadiumPath).Length < 2048)
             {
                 return new StadiumChantsResult(false, $"FFmpeg stadium chants synthesis failed: {stderr}", 0);
             }
 
-            progressCallback?.Invoke(100, "AI Stadium Sing-Along & crowd chants successfully baked into audio!");
-            return new StadiumChantsResult(true, $"Layered {sectionCount} stadium crowd sing-along sections into backing audio!", sectionCount, outPath);
+            progressCallback?.Invoke(100, "Live Concert Crowd Sing-Along & chants successfully baked into song & crowd stream!");
+            return new StadiumChantsResult(true, $"Layered {sectionCount} live concert crowd sing-along sections into audio and dedicated crowd stem!", sectionCount, outStadiumPath);
         }
         catch (Exception ex)
         {

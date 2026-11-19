@@ -702,13 +702,13 @@ public partial class MainWindow : Window
         if (!AppConfig.Current.EnableUiAnimations) return;
         try
         {
-            var tt = new TranslateTransform(0, 10);
+            var tt = new TranslateTransform(0, 22);
             panel.RenderTransform = tt;
             panel.Opacity = 0;
-            var dur = TimeSpan.FromMilliseconds(190);
+            var dur = TimeSpan.FromMilliseconds(240);
             var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut };
             panel.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 1, dur) { EasingFunction = ease });
-            tt.BeginAnimation(TranslateTransform.YProperty, new System.Windows.Media.Animation.DoubleAnimation(10, 0, dur) { EasingFunction = ease });
+            tt.BeginAnimation(TranslateTransform.YProperty, new System.Windows.Media.Animation.DoubleAnimation(22, 0, dur) { EasingFunction = ease });
         }
         catch { }
     }
@@ -1616,7 +1616,7 @@ public partial class MainWindow : Window
         };
 
         var list = filtered.ToList();
-        ExportSelectedBtn.Content = $"Export Selected ({_selectedExportIds.Count})";
+        UpdateBatchSelectionBarUi(list.Count);
 
         if (list.Count == 0)
         {
@@ -1724,16 +1724,31 @@ public partial class MainWindow : Window
             Padding = new Thickness(14, 11, 14, 11),
             Margin = new Thickness(0, 0, 0, 9)
         };
+        var cardTransform = new TranslateTransform(0, 0);
+        card.RenderTransform = cardTransform;
         card.MouseEnter += (_, _) =>
         {
             card.Background = (WpfBrush)FindResource("BgCardHover");
             if (AppConfig.Current.EnableUiAnimations)
+            {
                 card.BorderBrush = (WpfBrush)FindResource("AccentFlame");
+                cardTransform.BeginAnimation(TranslateTransform.XProperty, new System.Windows.Media.Animation.DoubleAnimation(4, TimeSpan.FromMilliseconds(130))
+                {
+                    EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
+                });
+            }
         };
         card.MouseLeave += (_, _) =>
         {
             card.Background = (WpfBrush)FindResource("BgCard");
             card.BorderBrush = baseBorder;
+            if (AppConfig.Current.EnableUiAnimations)
+            {
+                cardTransform.BeginAnimation(TranslateTransform.XProperty, new System.Windows.Media.Animation.DoubleAnimation(0, TimeSpan.FromMilliseconds(160))
+                {
+                    EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
+                });
+            }
         };
 
         var grid = new Grid();
@@ -1750,8 +1765,8 @@ public partial class MainWindow : Window
             Margin = new Thickness(0, 0, 6, 0),
             VerticalAlignment = VerticalAlignment.Center
         };
-        selChk.Checked += (_, _) => { _selectedExportIds.Add(song.SongId); ExportSelectedBtn.Content = $"Export Selected ({_selectedExportIds.Count})"; };
-        selChk.Unchecked += (_, _) => { _selectedExportIds.Remove(song.SongId); ExportSelectedBtn.Content = $"Export Selected ({_selectedExportIds.Count})"; };
+        selChk.Checked += (_, _) => { _selectedExportIds.Add(song.SongId); UpdateBatchSelectionBarUi(); };
+        selChk.Unchecked += (_, _) => { _selectedExportIds.Remove(song.SongId); UpdateBatchSelectionBarUi(); };
 
         var favBtn = new System.Windows.Controls.Button
         {
@@ -1959,23 +1974,29 @@ public partial class MainWindow : Window
         };
         btnRow.Children.Add(lobbyBtn);
 
-        if (hasAudio)
+        // Edit Song Button
+        var editBtn = new System.Windows.Controls.Button
         {
-            var playBtn = new System.Windows.Controls.Button
-            {
-                Content = "▶",
-                Style = (Style)FindResource("OutlineButton"),
-                Padding = new Thickness(9, 5, 9, 5),
-                Margin = new Thickness(0, 0, 5, 0),
-                ToolTip = "Preview Song Audio / Guitar Stem"
-            };
-            playBtn.Click += (_, _) =>
-            {
-                var audio = Gh3Service.FindSongAudioPath(song);
-                if (!string.IsNullOrEmpty(audio)) PlayAudioPreview(audio, song.Title, song, false);
-            };
-            btnRow.Children.Add(playBtn);
-        }
+            Content = "Edit",
+            Style = (Style)FindResource("OutlineButton"),
+            Padding = new Thickness(9, 5, 9, 5),
+            Margin = new Thickness(0, 0, 5, 0),
+            ToolTip = "Edit Song Info, Stage Venue & Audio Mix"
+        };
+        editBtn.Click += (_, _) => OpenEditSongDialog(song);
+        btnRow.Children.Add(editBtn);
+
+        // Tag Song Button
+        var tagBtn = new System.Windows.Controls.Button
+        {
+            Content = "# Tag",
+            Style = (Style)FindResource("OutlineButton"),
+            Padding = new Thickness(8, 5, 8, 5),
+            Margin = new Thickness(0, 0, 5, 0),
+            ToolTip = "Assign custom tags (Warmup, Shred, Party, Chill, Co-Op, Live)"
+        };
+        tagBtn.Click += (_, _) => OpenTagPickerDialog(song);
+        btnRow.Children.Add(tagBtn);
 
         if (song.IsProject || !song.IsCompiled)
         {
@@ -1990,146 +2011,139 @@ public partial class MainWindow : Window
             btnRow.Children.Add(compileBtn);
         }
 
-        if (hasProject)
+        // [⋮] 3-Dot More Actions Menu
+        var moreBtn = new System.Windows.Controls.Button
         {
-            var chartFile = ChartDoctorService.FindChartFileInProject(song.ProjectDirectory);
-            if (!string.IsNullOrEmpty(chartFile))
-            {
-                var hwBtn = new System.Windows.Controls.Button
-                {
-                    Content = "🎸 Highway",
-                    Style = (Style)FindResource("OutlineButton"),
-                    Padding = new Thickness(8, 5, 8, 5),
-                    Margin = new Thickness(0, 0, 5, 0),
-                    ToolTip = "Watch, Play (XInput Guitar / Keyboard), or Quick-Edit this song's chart"
-                };
-                hwBtn.Click += (_, _) => OpenHighwayPreview(song.Title, song.Artist, chartFile, Gh3Service.FindSongAudioPath(song), song.ProjectDirectory, song.SongId);
-                btnRow.Children.Add(hwBtn);
-
-                var docBtn = new System.Windows.Controls.Button
-                {
-                    Content = "🩺 Doctor",
-                    Style = (Style)FindResource("OutlineButton"),
-                    FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Segoe UI Emoji"),
-                    Padding = new Thickness(8, 5, 8, 5),
-                    Margin = new Thickness(0, 0, 5, 0),
-                    ToolTip = "Run Chart Doctor: check & auto-fix missing difficulties, Star Power, Practice sections, open notes & sync offset"
-                };
-                docBtn.Click += (_, _) => OpenChartDoctorDialog(song);
-                btnRow.Children.Add(docBtn);
-            }
-
-            if (hasAudio)
-            {
-                var stemsBtn = new System.Windows.Controls.Button
-                {
-                    Content = "🎧 Stems",
-                    Style = (Style)FindResource("OutlineButton"),
-                    FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Segoe UI Emoji"),
-                    Padding = new Thickness(8, 5, 8, 5),
-                    Margin = new Thickness(0, 0, 5, 0),
-                    ToolTip = "Export Guitarless Backing Track, Solo Guitar Isolation, or 75% Slowdown Practice MP3"
-                };
-                stemsBtn.Click += (_, _) => OpenPracticeStemExportDialog(song);
-                btnRow.Children.Add(stemsBtn);
-            }
-
-            var artBtn = new System.Windows.Controls.Button
-            {
-                Content = "🎨 Art",
-                Style = (Style)FindResource("OutlineButton"),
-                Padding = new Thickness(8, 5, 8, 5),
-                Margin = new Thickness(0, 0, 5, 0),
-                ToolTip = "Auto-fetch high-res 600x600 album art from iTunes"
-            };
-            artBtn.Click += async (_, _) => await FetchSongCoverArtAsync(song, artBtn);
-            btnRow.Children.Add(artBtn);
-
-            if (isOnogami && SongCreatorService.HasAiCache(song.ProjectDirectory))
-            {
-                var fastBtn = new System.Windows.Controls.Button
-                {
-                    Content = "⚡ Fast Re-Chart",
-                    Style = (Style)FindResource("GreenButton"),
-                    Padding = new Thickness(8, 5, 8, 5),
-                    Margin = new Thickness(0, 0, 5, 0),
-                    ToolTip = "5-second Instant Re-Chart from cached AI analysis (tweak Casual/Standard/Shredder or Sync Offset without re-running Demucs!)"
-                };
-                fastBtn.Click += (_, _) => OpenFastRechartDialog(song);
-                btnRow.Children.Add(fastBtn);
-            }
-
-            if (isOnogami && hasAudio)
-            {
-                var rechartBtn = new System.Windows.Controls.Button
-                {
-                    Content = "Re-Chart AI v2",
-                    Style = (Style)FindResource("BlueButton"),
-                    Padding = new Thickness(8, 5, 8, 5),
-                    Margin = new Thickness(0, 0, 5, 0),
-                    ToolTip = "Load this song's audio into ONOGAMI Song Creator to re-chart with the latest AI Engine v2"
-                };
-                rechartBtn.Click += async (_, _) => await RechartSongInCreatorAsync(song);
-                btnRow.Children.Add(rechartBtn);
-            }
-
-            var editBtn = new System.Windows.Controls.Button
-            {
-                Content = "Edit",
-                Style = (Style)FindResource("OutlineButton"),
-                Padding = new Thickness(9, 5, 9, 5),
-                Margin = new Thickness(0, 0, 5, 0),
-                ToolTip = "Edit Song Info & Guitar/Band Volume Mixer"
-            };
-            editBtn.Click += (_, _) => OpenEditSongDialog(song);
-            btnRow.Children.Add(editBtn);
-
-            var folderBtn = new System.Windows.Controls.Button
-            {
-                Content = "Folder",
-                Style = (Style)FindResource("OutlineButton"),
-                Padding = new Thickness(9, 5, 9, 5),
-                Margin = new Thickness(0, 0, 5, 0)
-            };
-            folderBtn.Click += (_, _) => OpenFolderInExplorer(song.ProjectDirectory);
-            btnRow.Children.Add(folderBtn);
-        }
-
-        var tagBtn = new System.Windows.Controls.Button
-        {
-            Content = "# Tag",
+            Content = "⋮",
             Style = (Style)FindResource("OutlineButton"),
-            Padding = new Thickness(8, 5, 8, 5),
-            Margin = new Thickness(0, 0, 5, 0),
-            ToolTip = "Assign custom tags (Warmup, Shred, Party, Chill, Co-Op, Live)"
+            FontSize = 15,
+            FontWeight = FontWeights.Bold,
+            Padding = new Thickness(8, 3, 8, 3),
+            ToolTip = "More Song Actions (Highway 3D, Chart Doctor, Stems, Fast Re-Chart, Folder, Export, Delete)"
         };
-        tagBtn.Click += (_, _) => OpenTagPickerDialog(song);
-        btnRow.Children.Add(tagBtn);
-
-        var exportBtn = new System.Windows.Controls.Button
+        moreBtn.Click += (_, _) =>
         {
-            Content = "Export",
-            Style = (Style)FindResource("OutlineButton"),
-            Padding = new Thickness(9, 5, 9, 5),
-            Margin = new Thickness(0, 0, 5, 0)
+            var menu = BuildSongContextMenu(song);
+            menu.PlacementTarget = moreBtn;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
         };
-        exportBtn.Click += (_, _) => ExportSingleSong(song);
-        btnRow.Children.Add(exportBtn);
+        btnRow.Children.Add(moreBtn);
 
-        var deleteBtn = new System.Windows.Controls.Button
-        {
-            Content = "Delete",
-            Style = (Style)FindResource("DangerButton"),
-            Padding = new Thickness(10, 5, 10, 5)
-        };
-        deleteBtn.Click += (_, _) => ConfirmAndDeleteSong(song);
-        btnRow.Children.Add(deleteBtn);
+        // Right-click anywhere on the card opens context menu
+        card.ContextMenu = BuildSongContextMenu(song);
 
         Grid.SetColumn(btnRow, 2);
         grid.Children.Add(btnRow);
 
         card.Child = grid;
         return card;
+    }
+
+    private System.Windows.Controls.ContextMenu BuildSongContextMenu(CustomSongInfo song)
+    {
+        bool isOnogami = song.CreatedWithOnogamiCreator || song.IsCreatedLocally;
+        bool hasProject = !string.IsNullOrWhiteSpace(song.ProjectDirectory) && Directory.Exists(song.ProjectDirectory);
+        bool hasAudio = !string.IsNullOrEmpty(Gh3Service.FindSongAudioPath(song));
+        string? chartFile = hasProject ? ChartDoctorService.FindChartFileInProject(song.ProjectDirectory) : null;
+
+        var menu = new System.Windows.Controls.ContextMenu
+        {
+            Background = new SolidColorBrush(WpfColor.FromRgb(20, 18, 30)),
+            Foreground = System.Windows.Media.Brushes.White,
+            BorderBrush = (WpfBrush)FindResource("BorderSubtle"),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(4)
+        };
+
+        System.Windows.Controls.MenuItem AddItem(string header, Action onClick, bool isDanger = false)
+        {
+            var item = new System.Windows.Controls.MenuItem
+            {
+                Header = header,
+                Foreground = isDanger ? new SolidColorBrush(WpfColor.FromRgb(248, 113, 113)) : System.Windows.Media.Brushes.White,
+                Padding = new Thickness(10, 6, 14, 6),
+                FontSize = 12.5,
+                Cursor = System.Windows.Input.Cursors.Hand
+            };
+            item.Click += (_, _) => onClick();
+            menu.Items.Add(item);
+            return item;
+        }
+
+        if (hasAudio)
+        {
+            AddItem("▶ Preview Audio Track", () =>
+            {
+                var audio = Gh3Service.FindSongAudioPath(song);
+                if (!string.IsNullOrEmpty(audio)) PlayAudioPreview(audio, song.Title, song, false);
+            });
+        }
+
+        if (hasProject && !string.IsNullOrEmpty(chartFile))
+        {
+            AddItem("🎸 Highway 3D Preview & Practice", () =>
+            {
+                OpenHighwayPreview(song.Title, song.Artist, chartFile, Gh3Service.FindSongAudioPath(song), song.ProjectDirectory, song.SongId);
+            });
+
+            // Use ⚕ medical cross icon so it never displays as an empty square
+            AddItem("⚕ Chart Doctor (Check & Auto-Fix)", () =>
+            {
+                OpenChartDoctorDialog(song);
+            });
+        }
+
+        if (hasAudio)
+        {
+            AddItem("🎧 Export Practice Stems (Slowdown / Mute)", () =>
+            {
+                OpenPracticeStemExportDialog(song);
+            });
+        }
+
+        AddItem("🎨 Album Art Studio (Update Cover)", async () =>
+        {
+            await FetchSongCoverArtAsync(song, null);
+        });
+
+        if (isOnogami && SongCreatorService.HasAiCache(song.ProjectDirectory))
+        {
+            AddItem("⚡ Fast Re-Chart (5-Sec AI Cache)", () =>
+            {
+                OpenFastRechartDialog(song);
+            });
+        }
+
+        if (isOnogami && hasAudio)
+        {
+            AddItem("🤖 Re-Chart AI v2 (Full Studio Re-Analysis)", async () =>
+            {
+                await RechartSongInCreatorAsync(song);
+            });
+        }
+
+        if (hasProject)
+        {
+            AddItem("📁 Open Song Folder in Explorer", () =>
+            {
+                OpenFolderInExplorer(song.ProjectDirectory);
+            });
+        }
+
+        AddItem("💾 Export Song (.zip / .gh3pack)", () =>
+        {
+            ExportSingleSong(song);
+        });
+
+        menu.Items.Add(new Separator { Background = (WpfBrush)FindResource("BorderSubtle"), Margin = new Thickness(4, 2, 4, 2) });
+
+        AddItem("🗑 Delete Song from Library", () =>
+        {
+            ConfirmAndDeleteSong(song);
+        }, isDanger: true);
+
+        return menu;
     }
 
     private static Border MakeBadge(string text, string bgHex, string fgHex) => new()
@@ -2146,6 +2160,165 @@ public partial class MainWindow : Window
             Foreground = new SolidColorBrush((WpfColor)System.Windows.Media.ColorConverter.ConvertFromString(fgHex))
         }
     };
+
+    private void UpdateBatchSelectionBarUi(int totalCount = -1)
+    {
+        if (totalCount < 0) totalCount = _allSongs.Count;
+        int selCount = _selectedExportIds.Count;
+        SelectedSongsCountText.Text = selCount == 0
+            ? $"{totalCount:N0} song(s) available"
+            : $"{selCount:N0} of {totalCount:N0} song(s) selected";
+
+        ExportSelectedBtn.Content = $"📦 Export Selected ({selCount})";
+        BatchDeleteBtn.Content = $"🗑️ Delete ({selCount})";
+        BatchFastRechartBtn.Content = $"⚡ Fast Re-Chart ({selCount})";
+        BatchRechartAiBtn.Content = $"🤖 Re-Chart AI v2 ({selCount})";
+        BatchAddLobbyBtn.Content = $"+ Add to Lobby ({selCount})";
+
+        bool hasSelection = selCount > 0;
+        BatchDeleteBtn.IsEnabled = hasSelection;
+        BatchFastRechartBtn.IsEnabled = hasSelection;
+        BatchRechartAiBtn.IsEnabled = hasSelection;
+        BatchAddLobbyBtn.IsEnabled = hasSelection;
+        ExportSelectedBtn.IsEnabled = hasSelection;
+        BatchDeselectAllBtn.IsEnabled = hasSelection;
+
+        SelectAllSongsChk.IsChecked = totalCount > 0 && selCount >= totalCount;
+    }
+
+    private void SelectAllSongsChk_Click(object sender, RoutedEventArgs e)
+    {
+        bool checkAll = SelectAllSongsChk.IsChecked == true;
+        _selectedExportIds.Clear();
+        if (checkAll)
+        {
+            foreach (var s in _allSongs)
+            {
+                if (!string.IsNullOrWhiteSpace(s.SongId))
+                    _selectedExportIds.Add(s.SongId);
+            }
+        }
+        RefreshSongsList();
+    }
+
+    private void BatchDeselectAllBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _selectedExportIds.Clear();
+        RefreshSongsList();
+    }
+
+    private void BatchDeleteBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var toDelete = _allSongs.Where(s => _selectedExportIds.Contains(s.SongId)).ToList();
+        if (toDelete.Count == 0)
+        {
+            WpfMessageBox.Show("Select at least one song to delete.", "Batch Delete", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var confirm = WpfMessageBox.Show(
+            $"Are you sure you want to permanently delete {toDelete.Count} selected song(s) from Guitar Hero III?\n\nThis will remove their soundbanks and project directories.",
+            "Confirm Bulk Delete",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (confirm != MessageBoxResult.Yes) return;
+
+        StopAudioPreview();
+        int deleted = 0;
+        foreach (var song in toDelete)
+        {
+            try
+            {
+                _gh3.DeleteCustomSong(song, deleteProjectFolder: true, _saves, _logger);
+                _selectedExportIds.Remove(song.SongId);
+                deleted++;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarn($"Failed to delete {song.SongId}: {ex.Message}");
+            }
+        }
+
+        ShowStageToast("🗑️ BATCH DELETE COMPLETE", $"Removed {deleted} song(s) from Guitar Hero III.", "#EF4444");
+        RefreshSongsList();
+    }
+
+    private async void BatchFastRechartBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var targets = _allSongs.Where(s => _selectedExportIds.Contains(s.SongId) && SongCreatorService.HasAiCache(s.ProjectDirectory)).ToList();
+        if (targets.Count == 0)
+        {
+            WpfMessageBox.Show("None of the selected songs have an instant AI analysis cache.\nRun 'Re-Chart AI v2' on a song first to build the instant cache.", "No Fast Cache", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        PageCustoms_StageHud.Report(10, "BATCH FAST RE-CHART", $"Updating {targets.Count} song(s) from instant cache...");
+        int count = 0;
+        foreach (var s in targets)
+        {
+            try
+            {
+                var (ok, _) = await _creator.InstantRechartFromCacheAsync(s.ProjectDirectory, "Standard", 0, true, null);
+                if (ok) count++;
+            }
+            catch { }
+        }
+        PageCustoms_StageHud.Finish($"Updated {count} song(s) from instant cache!");
+        ShowStageToast("⚡ BATCH RE-CHART COMPLETE", $"Re-charted {count} song(s) in seconds.", "#22C55E");
+        RefreshSongsList();
+    }
+
+    private async void BatchRechartAiBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var target = _allSongs.FirstOrDefault(s => _selectedExportIds.Contains(s.SongId) && !string.IsNullOrEmpty(Gh3Service.FindSongAudioPath(s)));
+        if (target != null)
+        {
+            await RechartSongInCreatorAsync(target);
+        }
+        else
+        {
+            WpfMessageBox.Show("Select at least one song with valid audio to re-chart.", "Re-Chart AI", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+    }
+
+    private void BatchAddLobbyBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var targets = _allSongs.Where(s => _selectedExportIds.Contains(s.SongId)).ToList();
+        int added = 0;
+        foreach (var s in targets)
+        {
+            if (AppConfig.Current.LobbySetlistIds.Count >= AppConfig.Current.MaxLobbyAutoSyncSongs) break;
+            if (!s.IsInLobbySetlist)
+            {
+                var (ok, _) = AppConfig.ToggleLobbySetlist(s.SongId);
+                if (ok) added++;
+            }
+        }
+        ShowStageToast("✓ LOBBY UPDATED", $"Added {added} song(s) to multiplayer lobby setlist.", "#3B82F6");
+        RefreshSongsList();
+    }
+
+    private void PartyModesMenuBtn_Click(object sender, RoutedEventArgs e)
+    {
+        PartyModesMenuBtn.ContextMenu.PlacementTarget = PartyModesMenuBtn;
+        PartyModesMenuBtn.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        PartyModesMenuBtn.ContextMenu.IsOpen = true;
+    }
+
+    private void StudioToolsMenuBtn_Click(object sender, RoutedEventArgs e)
+    {
+        StudioToolsMenuBtn.ContextMenu.PlacementTarget = StudioToolsMenuBtn;
+        StudioToolsMenuBtn.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        StudioToolsMenuBtn.ContextMenu.IsOpen = true;
+    }
+
+    private void StreamShareMenuBtn_Click(object sender, RoutedEventArgs e)
+    {
+        StreamShareMenuBtn.ContextMenu.PlacementTarget = StreamShareMenuBtn;
+        StreamShareMenuBtn.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        StreamShareMenuBtn.ContextMenu.IsOpen = true;
+    }
 
     private static readonly string[] Gh3StageVenues =
     {
@@ -2480,7 +2653,6 @@ public partial class MainWindow : Window
 
     private async void VolumeSoundcheckBtn_Click(object sender, RoutedEventArgs e)
     {
-        VolumeSoundcheckBtn.IsEnabled = false;
         PageCustoms_StageHud.Report(20, "LOUDNESS SOUNDCHECK", "Scanning custom songs against target -14 LUFS...");
         try
         {
@@ -2522,10 +2694,6 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             PageCustoms_StageHud.SetError("SOUNDCHECK ERROR", ex.Message);
-        }
-        finally
-        {
-            VolumeSoundcheckBtn.IsEnabled = true;
         }
     }
 
@@ -2595,10 +2763,13 @@ public partial class MainWindow : Window
         RenderSongs();
     }
 
-    private async Task FetchSongCoverArtAsync(CustomSongInfo song, System.Windows.Controls.Button btn)
+    private async Task FetchSongCoverArtAsync(CustomSongInfo song, System.Windows.Controls.Button? btn)
     {
-        btn.IsEnabled = false;
-        btn.Content = "...";
+        if (btn != null)
+        {
+            btn.IsEnabled = false;
+            btn.Content = "...";
+        }
         try
         {
             var res = await _albumMeta.FetchMetadataAndCoverAsync(song.Title, song.Artist, song.ProjectDirectory);
@@ -2611,8 +2782,11 @@ public partial class MainWindow : Window
         }
         finally
         {
-            btn.IsEnabled = true;
-            btn.Content = "🎨 Art";
+            if (btn != null)
+            {
+                btn.IsEnabled = true;
+                btn.Content = "🎨 Art";
+            }
         }
     }
 
@@ -3224,40 +3398,27 @@ public partial class MainWindow : Window
         CrArtCarouselContainer.Visibility = Visibility.Visible;
         HighlightArtCard(1);
 
-        if (_creatorArtworkCandidates.Count >= 1)
+        void BindCard(int idx, Border card, TextBlock lbl, TextBlock src, System.Windows.Controls.Image img)
         {
-            var c1 = _creatorArtworkCandidates[0];
-            CrArtLabel1.Text = c1.Title;
-            CrArtSource1.Text = $"{c1.Source} ({c1.Width}×{c1.Height})";
-            LoadImageIntoControl(CrArtImg1, c1.ImageBytes);
-            CrArtCard1.Visibility = Visibility.Visible;
+            if (_creatorArtworkCandidates.Count > idx)
+            {
+                var c = _creatorArtworkCandidates[idx];
+                lbl.Text = string.IsNullOrWhiteSpace(c.Album) ? c.Title : c.Album;
+                src.Text = $"{c.Source}";
+                LoadImageIntoControl(img, c.ImageBytes);
+                card.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                card.Visibility = Visibility.Collapsed;
+            }
         }
 
-        if (_creatorArtworkCandidates.Count >= 2)
-        {
-            var c2 = _creatorArtworkCandidates[1];
-            CrArtLabel2.Text = c2.Title;
-            CrArtSource2.Text = $"{c2.Source} ({c2.Width}×{c2.Height})";
-            LoadImageIntoControl(CrArtImg2, c2.ImageBytes);
-            CrArtCard2.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            CrArtCard2.Visibility = Visibility.Collapsed;
-        }
-
-        if (_creatorArtworkCandidates.Count >= 3)
-        {
-            var c3 = _creatorArtworkCandidates[2];
-            CrArtLabel3.Text = c3.Title;
-            CrArtSource3.Text = $"{c3.Source} ({c3.Width}×{c3.Height})";
-            LoadImageIntoControl(CrArtImg3, c3.ImageBytes);
-            CrArtCard3.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            CrArtCard3.Visibility = Visibility.Collapsed;
-        }
+        BindCard(0, CrArtCard1, CrArtLabel1, CrArtSource1, CrArtImg1);
+        BindCard(1, CrArtCard2, CrArtLabel2, CrArtSource2, CrArtImg2);
+        BindCard(2, CrArtCard3, CrArtLabel3, CrArtSource3, CrArtImg3);
+        BindCard(3, CrArtCard4, CrArtLabel4, CrArtSource4, CrArtImg4);
+        BindCard(4, CrArtCard5, CrArtLabel5, CrArtSource5, CrArtImg5);
     }
 
     private static void LoadImageIntoControl(System.Windows.Controls.Image imgCtrl, byte[]? bytes)
@@ -3285,27 +3446,58 @@ public partial class MainWindow : Window
         CrArtCard1.BorderBrush = index == 1 ? activeBrush : subtleBrush;
         CrArtCard2.BorderBrush = index == 2 ? activeBrush : subtleBrush;
         CrArtCard3.BorderBrush = index == 3 ? activeBrush : subtleBrush;
+        CrArtCard4.BorderBrush = index == 4 ? activeBrush : subtleBrush;
+        CrArtCard5.BorderBrush = index == 5 ? activeBrush : subtleBrush;
     }
 
     private void CrArtCard1_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         HighlightArtCard(1);
         if (_creatorArtworkCandidates != null && _creatorArtworkCandidates.Count >= 1)
+        {
             _creatorCoverArtBytes = _creatorArtworkCandidates[0].ImageBytes;
+            _creatorCoverArtPath = null;
+        }
     }
 
     private void CrArtCard2_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         HighlightArtCard(2);
         if (_creatorArtworkCandidates != null && _creatorArtworkCandidates.Count >= 2)
+        {
             _creatorCoverArtBytes = _creatorArtworkCandidates[1].ImageBytes;
+            _creatorCoverArtPath = null;
+        }
     }
 
     private void CrArtCard3_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         HighlightArtCard(3);
         if (_creatorArtworkCandidates != null && _creatorArtworkCandidates.Count >= 3)
+        {
             _creatorCoverArtBytes = _creatorArtworkCandidates[2].ImageBytes;
+            _creatorCoverArtPath = null;
+        }
+    }
+
+    private void CrArtCard4_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        HighlightArtCard(4);
+        if (_creatorArtworkCandidates != null && _creatorArtworkCandidates.Count >= 4)
+        {
+            _creatorCoverArtBytes = _creatorArtworkCandidates[3].ImageBytes;
+            _creatorCoverArtPath = null;
+        }
+    }
+
+    private void CrArtCard5_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        HighlightArtCard(5);
+        if (_creatorArtworkCandidates != null && _creatorArtworkCandidates.Count >= 5)
+        {
+            _creatorCoverArtBytes = _creatorArtworkCandidates[4].ImageBytes;
+            _creatorCoverArtPath = null;
+        }
     }
 
     private void CrArtCustomPickBtn_Click(object sender, RoutedEventArgs e)
@@ -3524,7 +3716,8 @@ public partial class MainWindow : Window
             FadeOutSeconds = CrFadeOutChk.IsChecked == true ? 2.0 : 0.0,
             AudioOffsetMs = offsetMs,
             UseCachedAiAnalysis = true,
-            EnableStadiumChants = CrStadiumChantsChk.IsChecked == true
+            EnableStadiumChants = CrStadiumChantsChk.IsChecked == true,
+            CoverArtBytes = _creatorCoverArtBytes
         };
     }
 
@@ -3831,6 +4024,37 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ClearCreatorFormBtn_Click(object sender, RoutedEventArgs e)
+    {
+        CrAudioPathBox.Text = "";
+        CrChartPathBox.Text = "";
+        CrTitleBox.Text = "";
+        CrArtistBox.Text = "";
+        CrAlbumBox.Text = "";
+        CrYearBox.Text = DateTime.Now.Year.ToString();
+        CrGenreBox.Text = "Rock";
+        CrCharterBox.Text = "Mad Scientist";
+        CrBpmBox.Text = "120";
+        _tapTempoLocked = false;
+        CrOffsetBox.Text = "0";
+        _creatorPreviewStartMs = 5000;
+        _creatorTrimStartSec = 0.0;
+        _creatorTrimEndSec = 0.0;
+        _creatorCoverArtBytes = null;
+        _creatorArtworkCandidates?.Clear();
+        CrArtImg1.Source = null;
+        CrArtImg2.Source = null;
+        CrArtImg3.Source = null;
+        CrArtImg4.Source = null;
+        CrArtImg5.Source = null;
+        CrArtCarouselContainer.Visibility = Visibility.Collapsed;
+        CrProgressLabel.Text = "";
+        PageCreator_StageHud.Reset();
+        CrResultBox.Visibility = Visibility.Collapsed;
+        _rechartingSong = null;
+        ShowStageToast("✨ FORM CLEARED", "Song creator inputs & album artwork reset.", "#3B82F6");
+    }
+
     private async void CreateSongBtn_Click(object sender, RoutedEventArgs e)
     {
         if (CrSeparateStemsChk.IsChecked == true && !_demucs.GetStatus().IsInstalled)
@@ -3884,6 +4108,20 @@ public partial class MainWindow : Window
                     lines.Add($"• AI Chart v2: {result.TranscribedNoteCount:N0} Lead notes • {result.RepeatedRiffsMatched} repeating riffs locked • {result.ForcedMarkersApplied} forced HOPO/strum markers{(result.BassNoteCount > 0 ? $" • Co-Op Bass ({result.BassNoteCount:N0} notes)" : "")}");
                 lines.Add($"• Folder: {result.ProjectDirectory}");
                 CrResultText.Text = string.Join("\n", lines);
+
+                // Persist artwork to project folder if chosen in Studio
+                if (_creatorCoverArtBytes != null && _creatorCoverArtBytes.Length > 1024 && Directory.Exists(result.ProjectDirectory))
+                {
+                    try
+                    {
+                        var albJpg = Path.Combine(result.ProjectDirectory, "album.jpg");
+                        var albPng = Path.Combine(result.ProjectDirectory, "album.png");
+                        File.WriteAllBytes(albJpg, _creatorCoverArtBytes);
+                        File.WriteAllBytes(albPng, _creatorCoverArtBytes);
+                    }
+                    catch { }
+                }
+
                 RefreshSongsList();
                 _rechartingSong = null;
 
@@ -6654,7 +6892,7 @@ public partial class MainWindow : Window
     private void RefreshSecurityAuditPanel()
     {
         if (HostFingerprintText != null)
-            HostFingerprintText.Text = $"Host ECDSA P-256 Fingerprint: {_security.HostPublicKeyFingerprint}  •  DPAPI Token Vault: Active";
+            HostFingerprintText.Text = "Local P2P Network: Online & Protected  •  Zero external cloud exposure";
         if (SecurityBlockedPanel == null || SecurityAuditBox == null) return;
         SecurityBlockedPanel.Children.Clear();
 
@@ -7530,10 +7768,6 @@ public partial class MainWindow : Window
             if (NavSaves != null) NavSaves.Content = LocalizationService.Get("nav_career", "💾 Career Saves");
             if (NavSettings != null) NavSettings.Content = LocalizationService.Get("nav_settings", "⚙ Settings");
 
-            if (VolumeSoundcheckBtn != null) VolumeSoundcheckBtn.Content = LocalizationService.Get("btn_soundcheck", "🔊 Soundcheck");
-            if (AutoHealLibraryBtn != null) AutoHealLibraryBtn.Content = LocalizationService.Get("btn_autoheal", "🩺 Auto-Heal");
-            if (ExportPosterBtn != null) ExportPosterBtn.Content = LocalizationService.Get("btn_poster", "🖼️ Tour Poster");
-            if (MedleyBuilderBtn != null) MedleyBuilderBtn.Content = LocalizationService.Get("btn_medley", "🎸 Medley");
             if (CleanTempFilesBtn != null) CleanTempFilesBtn.Content = LocalizationService.Get("btn_clean_temp", "🧹 Clean Cache");
         }
         catch { }

@@ -60,6 +60,8 @@ public class SongCreationRequest
     public int AudioOffsetMs { get; set; } = 0;                 // Optional ±ms chart sync nudge
     public bool UseCachedAiAnalysis { get; set; } = true;       // Instant 5-second re-chart cache when available
     public bool EnableStadiumChants { get; set; } = true;       // AI Stadium crowd sing-along & chants
+    public byte[]? CoverArtBytes { get; set; }                  // Chosen album cover artwork bytes
+    public string? CoverArtPath { get; set; }                   // Optional local cover artwork image file path
 }
 
 public class CreatedSongResult
@@ -202,10 +204,23 @@ public class SongCreatorService
             var audioFullPath = Path.Combine(targetDir, $"song{audioExt.ToLowerInvariant()}");
             File.WriteAllBytes(audioFullPath, audioBytes);
 
+            // 1a. Persist Chosen Album Artwork (or extract embedded art from audio if not supplied)
             try
             {
-                var albumArtOut = Path.Combine(targetDir, "album.jpg");
-                if (!File.Exists(albumArtOut))
+                var albumArtJpg = Path.Combine(targetDir, "album.jpg");
+                var albumArtPng = Path.Combine(targetDir, "album.png");
+
+                if (meta.CoverArtBytes != null && meta.CoverArtBytes.Length > 1024)
+                {
+                    File.WriteAllBytes(albumArtJpg, meta.CoverArtBytes);
+                    File.WriteAllBytes(albumArtPng, meta.CoverArtBytes);
+                }
+                else if (!string.IsNullOrWhiteSpace(meta.CoverArtPath) && File.Exists(meta.CoverArtPath))
+                {
+                    File.Copy(meta.CoverArtPath, albumArtJpg, true);
+                    File.Copy(meta.CoverArtPath, albumArtPng, true);
+                }
+                else if (!File.Exists(albumArtJpg))
                 {
                     var ff = HoneycombCompilerService.EnsureFfmpeg(HoneycombCompilerService.FindHoneycombDirectory());
                     if (!string.IsNullOrEmpty(ff) && File.Exists(ff))
@@ -224,11 +239,17 @@ public class SongCreatorService
                         psi.ArgumentList.Add("1");
                         psi.ArgumentList.Add("-q:v");
                         psi.ArgumentList.Add("3");
-                        psi.ArgumentList.Add(albumArtOut);
+                        psi.ArgumentList.Add(albumArtJpg);
                         using var p = System.Diagnostics.Process.Start(psi);
                         p?.WaitForExit(5000);
-                        if (File.Exists(albumArtOut) && new FileInfo(albumArtOut).Length < 512)
-                            try { File.Delete(albumArtOut); } catch { }
+                        if (File.Exists(albumArtJpg) && new FileInfo(albumArtJpg).Length >= 512)
+                        {
+                            try { File.Copy(albumArtJpg, albumArtPng, true); } catch { }
+                        }
+                        else if (File.Exists(albumArtJpg))
+                        {
+                            try { File.Delete(albumArtJpg); } catch { }
+                        }
                     }
                 }
             }
