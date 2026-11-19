@@ -1,7 +1,7 @@
 <Window x:Class="GH3_Sync.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="GH3-Sync v1.1.0"
+        Title="GH3-Sync"
         Icon="pack://application:,,,/Assets/app_icon.ico"
         Width="1360" Height="880"
         MinWidth="1060" MinHeight="700"
@@ -68,7 +68,7 @@
                             <TextBlock Text="GH3" FontSize="21" FontWeight="Black" Foreground="{DynamicResource TextPrimary}"/>
                             <TextBlock Text="-SYNC" FontSize="21" FontWeight="Black" Foreground="{DynamicResource FlameGradient}"/>
                             <Border Background="{DynamicResource VersionBadgeBg}" BorderBrush="{DynamicResource VersionBadgeBorder}" BorderThickness="1" CornerRadius="5" Padding="7,1" Margin="10,0,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="v1.1.0" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
+                                <TextBlock x:Name="HeaderVersionBadge" Text="v1.2.5" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
                             </Border>
                         </StackPanel>
                         <TextBlock Text="Guitar Hero III Companion  •  Encore &amp; Zero-Trust Edition  •  by Mad Scientist" FontSize="11.5" Foreground="{DynamicResource TextMuted}"/>
@@ -357,7 +357,10 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock x:Name="CustomsTempSessionText" Text="Temporary Lobby Session active." FontSize="12.5" Foreground="{DynamicResource CardInfoFg}" VerticalAlignment="Center"/>
-                                <Button Grid.Column="1" Content="End Session &amp; Clean Up" Style="{StaticResource DangerButton}" Padding="12,6" Click="EndTempSessionBtn_Click"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Content="⭐ Keep All Synced Songs" Style="{StaticResource FlameButton}" Margin="0,0,8,0" Padding="12,6" Click="KeepAllTempSongsBtn_Click" ToolTip="Permanently save all songs synced during this session so they are never removed"/>
+                                    <Button Content="End Session &amp; Clean Up" Style="{StaticResource DangerButton}" Padding="12,6" Click="EndTempSessionBtn_Click"/>
+                                </StackPanel>
                             </Grid>
                         </Border>
 
@@ -859,10 +862,13 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
                                     <TextBlock x:Name="TempSessionTitle" Text="Temporary Lobby Session Active" FontSize="14.5" FontWeight="Bold" Foreground="{DynamicResource CardInfoTitle}"/>
-                                    <TextBlock x:Name="TempSessionSubtitle" Text="Temporary songs will auto-clean when GH3 exits. Click 'Keep' on any song in My Customs to save it permanently."
+                                    <TextBlock x:Name="TempSessionSubtitle" Text="Temporary songs will auto-clean when GH3 exits. Click 'Keep All Synced Songs' to save them permanently."
                                                FontSize="12" Foreground="{DynamicResource CardInfoFg}" Margin="0,3,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
-                                <Button Grid.Column="1" Content="End Session &amp; Clean Up" Style="{StaticResource DangerButton}" VerticalAlignment="Center" Click="EndTempSessionBtn_Click"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Content="⭐ Keep All Synced Songs" Style="{StaticResource FlameButton}" Margin="0,0,8,0" Padding="14,7" Click="KeepAllTempSongsBtn_Click" ToolTip="Permanently save all songs synced during this session so they are never removed"/>
+                                    <Button Content="End Session &amp; Clean Up" Style="{StaticResource DangerButton}" Padding="12,7" Click="EndTempSessionBtn_Click"/>
+                                </StackPanel>
                             </Grid>
                         </Border>
 
@@ -1434,7 +1440,7 @@
                         <StackPanel x:Name="SettingsSubSecurity" Visibility="Collapsed">
                             <Border Style="{StaticResource GhCard}" BorderBrush="{DynamicResource CardSuccessBorder}">
                                 <StackPanel>
-                                    <TextBlock Text="Zero-Trust P2P &amp; Local Security Status (v1.1.0)" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}" Margin="0,0,0,6"/>
+                                    <TextBlock Text="Zero-Trust P2P &amp; Local Security Status" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource CardSuccessTitle}" Margin="0,0,0,6"/>
                                     <TextBlock x:Name="HostFingerprintText" Text="Host ECDSA Identity Fingerprint: Loading..." FontSize="11.5" FontFamily="Consolas" Foreground="{DynamicResource CardInfoTitle}" Margin="0,0,0,8"/>
                                     <WrapPanel>
                                         <Border Background="{DynamicResource CardSuccessBg}" BorderBrush="{DynamicResource CardSuccessBorder}" BorderThickness="1" CornerRadius="6" Padding="10,5" Margin="0,0,8,8">

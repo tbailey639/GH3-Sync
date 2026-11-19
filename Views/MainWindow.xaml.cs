@@ -227,6 +227,9 @@ public partial class MainWindow : Window
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        Title = $"GH3-Sync v{UpdateService.CurrentAppVersion}";
+        if (HeaderVersionBadge != null) HeaderVersionBadge.Text = $"v{UpdateService.CurrentAppVersion}";
+
         // Purge any stale 169.254.* addresses from friends list & input boxes
         foreach (var fr in AppConfig.Current.Friends)
         {
@@ -4594,7 +4597,8 @@ public partial class MainWindow : Window
         var friend = _trustedDropdownEntries[idx];
 
         var addr = (friend.LastAddress ?? "").Trim();
-        if (addr.Contains("169.254.") || string.IsNullOrWhiteSpace(addr))
+        // If address is missing, link-local, or private VPN (100.x.x.x), or if Signaling Relay is active:
+        if (string.IsNullOrWhiteSpace(addr) || addr.Contains("169.254.") || addr.Contains("://100.") || FriendService.SignalingRelay != null)
         {
             if (FriendService.SignalingRelay != null)
             {
@@ -4631,7 +4635,7 @@ public partial class MainWindow : Window
             TempSessionBanner.Visibility = Visibility.Visible;
             CustomsTempSessionBanner.Visibility = Visibility.Visible;
             TempSessionTitle.Text = $"Temporary Lobby Session Active ({tempCount} temp song(s))";
-            TempSessionSubtitle.Text = $"Synced from {st.PeerAddress}. Temporary songs auto-clean when GH3 exits — click 'Keep Song' in My Customs to save any track permanently.";
+            TempSessionSubtitle.Text = $"Synced from {st.PeerAddress}. Temporary songs auto-clean when GH3 exits. Click '⭐ Keep All Synced Songs' to make them permanent.";
             CustomsTempSessionText.Text = $"Temporary Lobby Session active ({tempCount} temporary song(s) will auto-clean when GH3 exits).";
         }
         else
@@ -4639,6 +4643,16 @@ public partial class MainWindow : Window
             TempSessionBanner.Visibility = Visibility.Collapsed;
             CustomsTempSessionBanner.Visibility = Visibility.Collapsed;
         }
+    }
+
+    private void KeepAllTempSongsBtn_Click(object sender, RoutedEventArgs e)
+    {
+        int kept = _tempSession.KeepAllSongsPermanently();
+        RefreshSongsList();
+        RefreshTempSessionBanner();
+        if (_lastPeerManifest != null) RenderPeerLibrary();
+        ShowStageToast("⭐ SONGS KEPT PERMANENTLY!", $"Promoted {kept} synced song(s) to your permanent library! They will never be auto-removed.", "#22C55E");
+        AudioWaveformAndSfxService.PlayStarPowerChime();
     }
 
     private void EndTempSessionBtn_Click(object sender, RoutedEventArgs e)
@@ -5034,6 +5048,26 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            // Auto-heal fallback: if direct connection timed out/failed, try resolving friend's live tunnel address via Signaling Relay
+            var matchingFriend = AppConfig.Current.Friends.FirstOrDefault(f => 
+                (!string.IsNullOrWhiteSpace(f.LastAddress) && f.LastAddress.TrimEnd('/').Equals(baseUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrWhiteSpace(f.TrustToken) && f.TrustToken.Equals(secret, StringComparison.OrdinalIgnoreCase)));
+
+            if (matchingFriend != null && FriendService.SignalingRelay != null)
+            {
+                PeerCompareStatus.Text = $"Connection to {baseUrl} timed out. Resolving {matchingFriend.Username}'s live tunnel...";
+                var (found, _, liveAddr, _) = await FriendService.SignalingRelay.ResolvePeerAsync(matchingFriend.FriendCode);
+                if (found && !string.IsNullOrWhiteSpace(liveAddr) && !liveAddr.TrimEnd('/').Equals(baseUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+                {
+                    PeerAddressBox.Text = liveAddr;
+                    matchingFriend.LastAddress = liveAddr;
+                    AppConfig.Save();
+                    ShowStageToast("🔄 AUTO-HEALED ADDRESS", $"Switched to {matchingFriend.Username}'s live tunnel: {liveAddr}", "#22C55E");
+                    ComparePeerBtn_Click(sender, e);
+                    return;
+                }
+            }
+
             PeerCompareStatus.Text = $"Connection failed: {ex.Message}";
         }
     }
@@ -5143,9 +5177,32 @@ public partial class MainWindow : Window
             Grid.SetColumn(info, 0);
             grid.Children.Add(info);
 
+            var actionStack = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            bool isTempSessionSong = _tempSession.CurrentState.Songs.Any(x => x.SongId.Equals(s.SongId, StringComparison.OrdinalIgnoreCase) && !x.Kept);
+            if (isTempSessionSong)
+            {
+                var keepBtn = new System.Windows.Controls.Button
+                {
+                    Content = "⭐ Keep Song",
+                    Style = (Style)FindResource("FlameButton"),
+                    Margin = new Thickness(0, 0, 6, 0),
+                    ToolTip = "Permanently keep this song in your library so it never gets auto-removed"
+                };
+                keepBtn.Click += (_, _) =>
+                {
+                    _tempSession.KeepSongPermanently(s.SongId);
+                    ShowStageToast("⭐ SONG KEPT PERMANENTLY", $"'{s.Title}' was saved permanently to your library!", "#22C55E");
+                    AudioWaveformAndSfxService.PlayStarPowerChime();
+                    RefreshSongsList();
+                    RefreshTempSessionBanner();
+                    RenderPeerLibrary();
+                };
+                actionStack.Children.Add(keepBtn);
+            }
+
             var dlBtn = new System.Windows.Controls.Button
             {
-                Content = alreadyOwned ? "Re-Download" : (TempSessionModeChk.IsChecked == true ? "Temp Sync" : "Sync Song"),
+                Content = alreadyOwned ? (isTempSessionSong ? "Temp Owned" : "Re-Download") : (TempSessionModeChk.IsChecked == true ? "Temp Sync" : "Sync Song"),
                 Style = (Style)FindResource(alreadyOwned ? "OutlineButton" : "GreenButton")
             };
             dlBtn.Click += async (_, _) =>
@@ -5168,8 +5225,9 @@ public partial class MainWindow : Window
                     WpfMessageBox.Show($"Sync failed: {err}", "P2P Sync", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             };
-            Grid.SetColumn(dlBtn, 1);
-            grid.Children.Add(dlBtn);
+            actionStack.Children.Add(dlBtn);
+            Grid.SetColumn(actionStack, 1);
+            grid.Children.Add(actionStack);
 
             card.Child = grid;
             PeerSongsPanel.Children.Add(card);

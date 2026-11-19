@@ -69,6 +69,16 @@ public class SignalingRelayService
         _backgroundTask = null;
     }
 
+    private static string ExtractField(string text, string key)
+    {
+        try
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(text, $@"""?{key}""?\s*:\s*""?([^,""\}}]+)""?");
+            return m.Success ? m.Groups[1].Value.Trim() : "";
+        }
+        catch { return ""; }
+    }
+
     public async Task<bool> PublishHeartbeatAsync(string friendCode, string username, string address)
     {
         if (string.IsNullOrWhiteSpace(address) || address.Contains("169.254.") || address.Contains("127.0.0.1"))
@@ -79,17 +89,22 @@ public class SignalingRelayService
 
         try
         {
-            var url = $"https://ntfy.sh/gh3sync-sig-{topicKey}";
-            var payload = new
+            var innerJson = JsonSerializer.Serialize(new
             {
                 code = NormalizeCode(friendCode),
                 username = username ?? "Player",
                 address = address.TrimEnd('/'),
                 timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            });
+
+            var ntfyPayload = new
+            {
+                topic = $"gh3sync-sig-{topicKey}",
+                message = innerJson
             };
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4.0));
-            var resp = await _http.PostAsJsonAsync(url, payload, cts.Token);
+            var resp = await _http.PostAsJsonAsync("https://ntfy.sh", ntfyPayload, cts.Token);
             return resp.IsSuccessStatusCode;
         }
         catch
@@ -127,15 +142,28 @@ public class SignalingRelayService
                     var msgText = msgProp.GetString() ?? "";
                     if (msgText.StartsWith("{") && msgText.EndsWith("}"))
                     {
-                        using var msgDoc = JsonDocument.Parse(msgText);
-                        var mr = msgDoc.RootElement;
-                        var peerAddr = mr.TryGetProperty("address", out var a) ? a.GetString() ?? "" : "";
-                        var peerName = mr.TryGetProperty("username", out var u) ? u.GetString() ?? "Player" : "Player";
-                        var peerCode = mr.TryGetProperty("code", out var c) ? c.GetString() ?? normCode : normCode;
+                        string peerAddr = "";
+                        string peerName = "Player";
+                        string peerCode = normCode;
+
+                        try
+                        {
+                            using var msgDoc = JsonDocument.Parse(msgText);
+                            var mr = msgDoc.RootElement;
+                            peerAddr = mr.TryGetProperty("address", out var a) ? a.GetString() ?? "" : "";
+                            peerName = mr.TryGetProperty("username", out var u) ? u.GetString() ?? "Player" : "Player";
+                            peerCode = mr.TryGetProperty("code", out var c) ? c.GetString() ?? normCode : normCode;
+                        }
+                        catch
+                        {
+                            peerAddr = ExtractField(msgText, "address");
+                            peerName = ExtractField(msgText, "username");
+                            peerCode = ExtractField(msgText, "code");
+                        }
 
                         if (!string.IsNullOrWhiteSpace(peerAddr) && !peerAddr.Contains("169.254."))
                         {
-                            return (true, peerName, peerAddr, peerCode);
+                            return (true, string.IsNullOrWhiteSpace(peerName) ? "Player" : peerName, peerAddr, string.IsNullOrWhiteSpace(peerCode) ? normCode : peerCode);
                         }
                     }
                 }
@@ -153,8 +181,7 @@ public class SignalingRelayService
 
         try
         {
-            var url = $"https://ntfy.sh/gh3sync-req-{targetTopic}";
-            var payload = new
+            var innerJson = JsonSerializer.Serialize(new
             {
                 type = "FRIEND_REQUEST",
                 senderCode = NormalizeCode(senderCode),
@@ -162,10 +189,16 @@ public class SignalingRelayService
                 senderAddress = (senderAddress ?? "").TrimEnd('/'),
                 senderToken = senderToken ?? "",
                 timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            });
+
+            var ntfyPayload = new
+            {
+                topic = $"gh3sync-req-{targetTopic}",
+                message = innerJson
             };
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5.0));
-            var resp = await _http.PostAsJsonAsync(url, payload, cts.Token);
+            var resp = await _http.PostAsJsonAsync("https://ntfy.sh", ntfyPayload, cts.Token);
             return resp.IsSuccessStatusCode;
         }
         catch
@@ -181,8 +214,7 @@ public class SignalingRelayService
 
         try
         {
-            var url = $"https://ntfy.sh/gh3sync-ack-{senderTopic}";
-            var payload = new
+            var innerJson = JsonSerializer.Serialize(new
             {
                 type = "FRIEND_ACCEPT",
                 targetCode = NormalizeCode(myCode),
@@ -190,10 +222,16 @@ public class SignalingRelayService
                 targetAddress = (myAddress ?? "").TrimEnd('/'),
                 targetToken = myToken ?? "",
                 timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            });
+
+            var ntfyPayload = new
+            {
+                topic = $"gh3sync-ack-{senderTopic}",
+                message = innerJson
             };
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5.0));
-            var resp = await _http.PostAsJsonAsync(url, payload, cts.Token);
+            var resp = await _http.PostAsJsonAsync("https://ntfy.sh", ntfyPayload, cts.Token);
             return resp.IsSuccessStatusCode;
         }
         catch
@@ -284,21 +322,35 @@ public class SignalingRelayService
                     var msgText = msgProp.GetString() ?? "";
                     if (msgText.StartsWith("{") && msgText.EndsWith("}"))
                     {
-                        using var msgDoc = JsonDocument.Parse(msgText);
-                        var mr = msgDoc.RootElement;
-                        var type = mr.TryGetProperty("type", out var tp) ? tp.GetString() ?? "" : "";
-                        if (type == "FRIEND_REQUEST")
-                        {
-                            var sCode = mr.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
-                            var sName = mr.TryGetProperty("senderUsername", out var sn) ? sn.GetString() ?? "Friend" : "Friend";
-                            var sAddr = mr.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
-                            var sTok = mr.TryGetProperty("senderToken", out var st) ? st.GetString() ?? "" : "";
+                        string type = "";
+                        string sCode = "";
+                        string sName = "Friend";
+                        string sAddr = "";
+                        string sTok = "";
 
-                            if (!string.IsNullOrWhiteSpace(sCode) && !sCode.Equals(AppConfig.Current.FriendCode, StringComparison.OrdinalIgnoreCase))
-                            {
-                                _friends.ReceiveIncomingRequest(sCode, sName, sAddr, sTok);
-                                _logger?.LogInfo($"[SIGNALING] Received friend request from {sName} ({sCode}) at {sAddr}");
-                            }
+                        try
+                        {
+                            using var msgDoc = JsonDocument.Parse(msgText);
+                            var mr = msgDoc.RootElement;
+                            type = mr.TryGetProperty("type", out var tp) ? tp.GetString() ?? "" : "";
+                            sCode = mr.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
+                            sName = mr.TryGetProperty("senderUsername", out var sn) ? sn.GetString() ?? "Friend" : "Friend";
+                            sAddr = mr.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
+                            sTok = mr.TryGetProperty("senderToken", out var st) ? st.GetString() ?? "" : "";
+                        }
+                        catch
+                        {
+                            type = ExtractField(msgText, "type");
+                            sCode = ExtractField(msgText, "senderCode");
+                            sName = ExtractField(msgText, "senderUsername");
+                            sAddr = ExtractField(msgText, "senderAddress");
+                            sTok = ExtractField(msgText, "senderToken");
+                        }
+
+                        if (type == "FRIEND_REQUEST" && !string.IsNullOrWhiteSpace(sCode) && !sCode.Equals(AppConfig.Current.FriendCode, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _friends.ReceiveIncomingRequest(sCode, sName, sAddr, sTok);
+                            _logger?.LogInfo($"[SIGNALING] Received friend request from {sName} ({sCode}) at {sAddr}");
                         }
                     }
                 }
@@ -337,21 +389,35 @@ public class SignalingRelayService
                     var msgText = msgProp.GetString() ?? "";
                     if (msgText.StartsWith("{") && msgText.EndsWith("}"))
                     {
-                        using var msgDoc = JsonDocument.Parse(msgText);
-                        var mr = msgDoc.RootElement;
-                        var type = mr.TryGetProperty("type", out var tp) ? tp.GetString() ?? "" : "";
-                        if (type == "FRIEND_ACCEPT")
-                        {
-                            var tCode = mr.TryGetProperty("targetCode", out var tc) ? tc.GetString() ?? "" : "";
-                            var tName = mr.TryGetProperty("targetUsername", out var tn) ? tn.GetString() ?? "Friend" : "Friend";
-                            var tAddr = mr.TryGetProperty("targetAddress", out var ta) ? ta.GetString() ?? "" : "";
-                            var tTok = mr.TryGetProperty("targetToken", out var tt) ? tt.GetString() ?? "" : "";
+                        string type = "";
+                        string tCode = "";
+                        string tName = "Friend";
+                        string tAddr = "";
+                        string tTok = "";
 
-                            if (!string.IsNullOrWhiteSpace(tCode))
-                            {
-                                _friends.HandleRemoteAcceptance(tCode, tName, tAddr, tTok);
-                                _logger?.LogInfo($"[SIGNALING] Remote friend {tName} ({tCode}) accepted friend request!");
-                            }
+                        try
+                        {
+                            using var msgDoc = JsonDocument.Parse(msgText);
+                            var mr = msgDoc.RootElement;
+                            type = mr.TryGetProperty("type", out var tp) ? tp.GetString() ?? "" : "";
+                            tCode = mr.TryGetProperty("targetCode", out var tc) ? tc.GetString() ?? "" : "";
+                            tName = mr.TryGetProperty("targetUsername", out var tn) ? tn.GetString() ?? "Friend" : "Friend";
+                            tAddr = mr.TryGetProperty("targetAddress", out var ta) ? ta.GetString() ?? "" : "";
+                            tTok = mr.TryGetProperty("targetToken", out var tt) ? tt.GetString() ?? "" : "";
+                        }
+                        catch
+                        {
+                            type = ExtractField(msgText, "type");
+                            tCode = ExtractField(msgText, "targetCode");
+                            tName = ExtractField(msgText, "targetUsername");
+                            tAddr = ExtractField(msgText, "targetAddress");
+                            tTok = ExtractField(msgText, "targetToken");
+                        }
+
+                        if (type == "FRIEND_ACCEPT" && !string.IsNullOrWhiteSpace(tCode))
+                        {
+                            _friends.HandleRemoteAcceptance(tCode, tName, tAddr, tTok);
+                            _logger?.LogInfo($"[SIGNALING] Remote friend {tName} ({tCode}) accepted friend request!");
                         }
                     }
                 }

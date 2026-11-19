@@ -36,13 +36,21 @@ public static class AudioWaveformAndSfxService
     private static void PlayWavAsync(byte[] wavBytes, bool forceEvenIfSfxMuted = false)
     {
         if (!forceEvenIfSfxMuted && !AppConfig.Current.EnableSoundEffects) return;
+        try
+        {
+            // CRITICAL: When Guitar Hero III (GH3.exe) is running, background waveOut calls can cause
+            // DirectX/DirectSound device contention and freeze the game engine. SFX is silenced while GH3 runs.
+            if (System.Diagnostics.Process.GetProcessesByName("GH3").Length > 0) return;
+        }
+        catch { }
+
         _ = Task.Run(() =>
         {
             try
             {
                 using var ms = new MemoryStream(wavBytes, writable: false);
                 using var sp = new SoundPlayer(ms);
-                sp.PlaySync();
+                sp.Play();
             }
             catch { }
         });

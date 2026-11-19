@@ -4,6 +4,23 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). All 
 
 ---
 
+## [v1.2.5] - 2026-11-18 — "Keep All Synced Songs" Feature, Real-Time Signaling Relay Fix & Audio Contention Elimination
+
+### "⭐ Keep Synced Songs" Permanent Library Promotion
+* **1-Click "⭐ Keep All Synced Songs":** Added a dedicated 1-click button on both the **P2P Sync & Lobby** Temporary Session Banner and the **My Customs** page. Players who like the songs they temporarily synced from friends can now permanently add all of them into their permanent library with zero manual file moving.
+* **Per-Song "⭐ Keep Song" in Peer Library & Customs:** Added per-track Keep buttons in both the Lobby comparison list and song cards, allowing selective permanent saving of any track anytime.
+* **Pre-Session Cleanup Self-Healing:** Promoting songs to permanent automatically clears the temporary backup without reverting custom setlist paks, keeping all charts and audio intact.
+
+### Real-Time Signaling Relay Protocol Enhancement
+* **Reliable ntfy.sh Payload Delivery:** Standardized signaling packet transmission to use structured JSON payloads with regex decoding fallbacks. Friend requests and acceptances now appear on-screen in real time within milliseconds without closing or reopening the application.
+* **Automatic Tailscale / Tunnel Auto-Healing:** When comparing libraries with friends whose IP was previously saved as a local Tailscale CGNAT address (`100.x.x.x`), GH3-Sync automatically queries the Signaling Relay to retrieve their live, globally reachable HTTPS Quick Tunnel address, ensuring seamless connection across different networks.
+
+### Exclusive Audio Contention & Game Freeze Prevention
+* **DirectX 9 / Exclusive Audio Lock Protection:** Silenced background system SoundPlayer effects while `GH3.exe` is running and converted SFX calls to non-blocking asynchronous audio. Prevents Windows audio thread deadlocks when Guitar Hero III operates in exclusive audio mode.
+* **Dynamic Header Version Binding:** Replaced hardcoded version text in the header and window title with live dynamic assembly version binding.
+
+---
+
 ## [v1.2.4] - 2026-11-18 — Global P2P Signaling Relay, Short Friend Codes & Zero-Crash Focus Engine
 
 ### Zero-Config Internet Rendezvous & Global P2P Signaling Relay

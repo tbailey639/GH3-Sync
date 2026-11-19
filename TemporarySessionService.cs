@@ -167,6 +167,33 @@ public class TemporarySessionService
         }
     }
 
+    public int KeepAllSongsPermanently()
+    {
+        lock (_lock)
+        {
+            if (!CurrentState.Active && CurrentState.Songs.Count == 0) return 0;
+            int count = 0;
+            foreach (var s in CurrentState.Songs)
+            {
+                if (!s.Kept)
+                {
+                    s.Kept = true;
+                    count++;
+                }
+            }
+            CurrentState.Active = false;
+            if (!string.IsNullOrWhiteSpace(CurrentState.PreSessionCustomsPakBackup) && File.Exists(CurrentState.PreSessionCustomsPakBackup))
+            {
+                try { File.Delete(CurrentState.PreSessionCustomsPakBackup); } catch { }
+                CurrentState.PreSessionCustomsPakBackup = "";
+            }
+            CurrentState.Songs.Clear();
+            SaveState();
+            _logger.LogInfo($"[TEMP SESSION] Promoted all {count} synced song(s) to permanent library. Temporary session cleared.");
+            return count;
+        }
+    }
+
     public (int RemovedCount, int KeptCount, string Message) EndSessionAndCleanup()
     {
         lock (_lock)
