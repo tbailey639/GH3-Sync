@@ -2010,6 +2010,7 @@ public partial class MainWindow : Window
                 {
                     Content = "🩺 Doctor",
                     Style = (Style)FindResource("OutlineButton"),
+                    FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Segoe UI Emoji"),
                     Padding = new Thickness(8, 5, 8, 5),
                     Margin = new Thickness(0, 0, 5, 0),
                     ToolTip = "Run Chart Doctor: check & auto-fix missing difficulties, Star Power, Practice sections, open notes & sync offset"
@@ -2022,8 +2023,9 @@ public partial class MainWindow : Window
             {
                 var stemsBtn = new System.Windows.Controls.Button
                 {
-                    Content = "🎛 Stems",
+                    Content = "🎧 Stems",
                     Style = (Style)FindResource("OutlineButton"),
+                    FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Segoe UI Emoji"),
                     Padding = new Thickness(8, 5, 8, 5),
                     Margin = new Thickness(0, 0, 5, 0),
                     ToolTip = "Export Guitarless Backing Track, Solo Guitar Isolation, or 75% Slowdown Practice MP3"
@@ -2626,7 +2628,7 @@ public partial class MainWindow : Window
             Foreground = System.Windows.Media.Brushes.White
         };
         var sp = new StackPanel { Margin = new Thickness(20) };
-        sp.Children.Add(new TextBlock { Text = $"🎛 Practice Audio Exporter — {song.Title}", FontSize = 15.5, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 6) });
+        sp.Children.Add(new TextBlock { Text = $"🎧 Practice Audio Exporter — {song.Title}", FontSize = 15.5, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 6) });
         sp.Children.Add(new TextBlock
         {
             Text = "Export practice MP3s to jam on a real electric guitar or learn fast solos by ear:",
@@ -2931,6 +2933,8 @@ public partial class MainWindow : Window
             "🎲 Party Setlist Ready!", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
+    private CustomSongInfo? _rechartingSong;
+
     private async Task RechartSongInCreatorAsync(CustomSongInfo song)
     {
         var audio = Gh3Service.FindSongAudioPath(song, preferGuitarStem: false);
@@ -2940,6 +2944,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        _rechartingSong = song;
         _editingQueueIndex = -1;
         AddToQueueBtn.Content = "+ Add to Batch Queue";
         NavCreator.IsChecked = true;
@@ -3518,7 +3523,8 @@ public partial class MainWindow : Window
             TrimEndSeconds = _creatorTrimEndSec,
             FadeOutSeconds = CrFadeOutChk.IsChecked == true ? 2.0 : 0.0,
             AudioOffsetMs = offsetMs,
-            UseCachedAiAnalysis = true
+            UseCachedAiAnalysis = true,
+            EnableStadiumChants = CrStadiumChantsChk.IsChecked == true
         };
     }
 
@@ -3527,9 +3533,18 @@ public partial class MainWindow : Window
         var existing = _gh3.FindDuplicateInstalledSong(title, artist);
         if (existing == null) return true;
 
+        // If we are currently re-charting this exact song via Re-Chart AI v2:
+        if (_rechartingSong != null && (_rechartingSong.SongId.Equals(existing.SongId, StringComparison.OrdinalIgnoreCase) ||
+            _rechartingSong.Title.Equals(title.Trim(), StringComparison.OrdinalIgnoreCase)))
+        {
+            StopAudioPreview();
+            _gh3.DeleteCustomSong(existing, deleteProjectFolder: false, _saves, _logger);
+            return true;
+        }
+
         var choice = WpfMessageBox.Show(
             $"A song matching '{existing.Title}' by '{existing.Artist}' ({existing.SongId}) is already installed in Guitar Hero III.\n\n" +
-            "• Click YES to replace the existing version cleanly (recommended — removes the old one first).\n" +
+            "• Click YES to replace the existing version cleanly (recommended — updates in-place).\n" +
             "• Click NO to keep both versions.\n" +
             "• Click CANCEL to abort.",
             "Duplicate Song Detected",
@@ -3540,7 +3555,7 @@ public partial class MainWindow : Window
         if (choice == MessageBoxResult.Yes)
         {
             StopAudioPreview();
-            var del = _gh3.DeleteCustomSong(existing, deleteProjectFolder: true, _saves, _logger);
+            var del = _gh3.DeleteCustomSong(existing, deleteProjectFolder: false, _saves, _logger);
             _logger.LogInfo($"[DUPLICATE] Replaced existing '{existing.SongId}': {del.Message}");
             RefreshSongsList();
         }
@@ -3556,6 +3571,7 @@ public partial class MainWindow : Window
         CrChartPathBox.Text = "";
         BpmStatusLabel.Text = "";
         _editingQueueIndex = -1;
+        _rechartingSong = null;
         AddToQueueBtn.Content = "+ Add to Batch Queue";
     }
 
@@ -3869,20 +3885,12 @@ public partial class MainWindow : Window
                 lines.Add($"• Folder: {result.ProjectDirectory}");
                 CrResultText.Text = string.Join("\n", lines);
                 RefreshSongsList();
+                _rechartingSong = null;
 
                 // Wave 5: Cryptographic Charter Signature
                 if (CrSignCharterChk?.IsChecked == true && File.Exists(_lastCreatedChartPath))
                 {
                     _charterSigner.SignChart(_lastCreatedChartPath, meta.Charter, _friends.Profile.FriendCode);
-                }
-
-                // Wave 5: AI Stadium Sing-Along & Crowd Chants
-                if (CrStadiumChantsChk?.IsChecked == true && !string.IsNullOrEmpty(_lastCreatedAudioPath) && File.Exists(_lastCreatedAudioPath))
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        await _stadiumChants.GenerateStadiumChantsAsync(_lastCreatedAudioPath, _lastCreatedChartPath ?? "");
-                    });
                 }
 
                 // Wave 3: Boss Battle Duel

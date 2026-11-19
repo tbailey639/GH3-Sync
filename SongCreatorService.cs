@@ -59,6 +59,7 @@ public class SongCreationRequest
     public double FadeOutSeconds { get; set; } = 0.0;           // Optional smooth fade-out at end
     public int AudioOffsetMs { get; set; } = 0;                 // Optional ±ms chart sync nudge
     public bool UseCachedAiAnalysis { get; set; } = true;       // Instant 5-second re-chart cache when available
+    public bool EnableStadiumChants { get; set; } = true;       // AI Stadium crowd sing-along & chants
 }
 
 public class CreatedSongResult
@@ -92,16 +93,20 @@ public class SongCreatorService
     private readonly HoneycombCompilerService? _compiler;
     private readonly AudioAnalysisService? _audioAnalysis;
     private readonly DemucsService? _demucs;
+    private readonly Gh3Service _gh3;
+    private readonly AiStadiumChantsService _stadiumChants = new();
 
     public SongCreatorService(
         HoneycombCompilerService? compiler = null,
         AudioAnalysisService? audioAnalysis = null,
         DemucsService? demucs = null,
-        string? songsDir = null)
+        string? songsDir = null,
+        Gh3Service? gh3 = null)
     {
         _compiler = compiler;
         _audioAnalysis = audioAnalysis;
         _demucs = demucs;
+        _gh3 = gh3 ?? new Gh3Service();
         _defaultSongsDir = ResolveSongsDirectory(songsDir);
     }
 
@@ -509,6 +514,17 @@ public class SongCreatorService
             iniSb.AppendLine($"preview_start_time = {meta.PreviewStartMs}");
             iniSb.AppendLine("icon = onogami_creator");
             File.WriteAllText(iniPath, iniSb.ToString());
+
+            // 5b. Optional AI Stadium Crowd Sing-Along & Chants (Chorus & melodic vocal formant choir)
+            if (meta.EnableStadiumChants && !string.IsNullOrEmpty(backingAudioPath) && File.Exists(backingAudioPath))
+            {
+                onProgress?.Invoke(77, "Layering AI stadium crowd sing-along choir into backing audio...");
+                var chants = await _stadiumChants.GenerateStadiumChantsAsync(backingAudioPath, chartFullPath, exactBpm, (p, m) => onProgress?.Invoke(p, m));
+                if (chants.Success && !string.IsNullOrEmpty(chants.ProcessedAudioPath) && File.Exists(chants.ProcessedAudioPath))
+                {
+                    backingAudioPath = chants.ProcessedAudioPath;
+                }
+            }
 
             // 6. Generate .ghproj
             var ghprojName = $"{meta.Title}.ghproj";
@@ -925,7 +941,54 @@ public class SongCreatorService
                 var ghproj = Directory.GetFiles(projectDir, "*.ghproj").FirstOrDefault();
                 if (!string.IsNullOrEmpty(ghproj))
                 {
-                    onProgress?.Invoke("Recompiling updated chart into Guitar Hero III...");
+                    // Clean up existing compiled song registration from customs.pak.xen and game folders
+                    // so Honeycomb re-compiles the song in-place without generating duplicate cards!
+                    var idsToRemove = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    if (File.Exists(iniPath))
+                    {
+                        foreach (var l in File.ReadAllLines(iniPath))
+                        {
+                            var eq = l.IndexOf('=');
+                            if (eq <= 0) continue;
+                            var k = l.Substring(0, eq).Trim();
+                            if (k.Equals("compiled_song_id", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var oldId = l.Substring(eq + 1).Trim();
+                                if (!string.IsNullOrWhiteSpace(oldId)) idsToRemove.Add(oldId);
+                                break;
+                            }
+                        }
+                    }
+
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(File.ReadAllText(ghproj), new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
+                        if (doc.RootElement.TryGetProperty("songName", out var sn) && !string.IsNullOrWhiteSpace(sn.GetString()))
+                            idsToRemove.Add(sn.GetString()!);
+                    }
+                    catch { }
+
+                    var gamePath = _gh3.GamePath;
+                    if (!string.IsNullOrWhiteSpace(gamePath) && Directory.Exists(gamePath))
+                    {
+                        foreach (var id in idsToRemove)
+                        {
+                            try
+                            {
+                                CustomsPakService.RemoveSongFromCustomsPak(gamePath, id);
+                                var oldPak = Path.Combine(gamePath, "DATA", "SONGS", $"{id}_song.pak.xen");
+                                if (File.Exists(oldPak)) File.Delete(oldPak);
+                                var oldFsb = Path.Combine(gamePath, "DATA", "MUSIC", $"{id}.fsb.xen");
+                                if (File.Exists(oldFsb)) File.Delete(oldFsb);
+                                var oldDat = Path.Combine(gamePath, "DATA", "MUSIC", $"{id}.dat.xen");
+                                if (File.Exists(oldDat)) File.Delete(oldDat);
+                            }
+                            catch { }
+                        }
+                    }
+
+                    onProgress?.Invoke("Recompiling updated chart in-place into Guitar Hero III...");
                     var comp = await _compiler.CompileSongProjectAsync(ghproj);
                     if (!comp.Success) return (false, $"Chart rebuilt ({stats.ExpertNoteCount} notes), but recompile failed: {comp.Message}");
                 }

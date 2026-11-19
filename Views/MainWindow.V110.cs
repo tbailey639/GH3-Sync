@@ -465,7 +465,7 @@ public partial class MainWindow
         {
             ("FirstCustom", "🎸", "Opening Act", "Install your first custom song in BetterGH3"),
             ("SetlistCollector", "💿", "World Tour Collector", "Have 10+ custom songs installed simultaneously"),
-            ("OnogamiArchitect", "🎛️", "ONOGAMI Architect", "Create a custom song with ONOGAMI Song Creator"),
+            ("OnogamiArchitect", "⚡", "ONOGAMI Architect", "Create a custom song with ONOGAMI Song Creator"),
             ("FirstFullCombo", "👑", "Flawless Victory (FC)", "Hit a 100% Full Combo in Playable Highway Previewer"),
             ("SoloShredder", "✂️", "Solo Surgeon", "Build a standalone Playable Solo Cut"),
             ("MedleyArchitect", "🔥", "Encore Maestro", "Stitch a multi-song Live Concert Medley"),

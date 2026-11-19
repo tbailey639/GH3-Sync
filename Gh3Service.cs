@@ -1572,6 +1572,72 @@ public class Gh3Service
                 TryDeleteFile(oldBak, "old customs.pak backup");
         }
 
+        // 3. Clean orphaned/superseded duplicate song_XXXXXXXX binaries in DATA\SONGS & DATA\MUSIC
+        if (IsDetected && Directory.Exists(SongsPath))
+        {
+            try
+            {
+                var pakMeta = CustomsPakService.ReadSongMetadataMap(GamePath);
+                var activeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var activeTitles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var root in dirsToScan)
+                {
+                    foreach (var sub in Directory.GetDirectories(root))
+                    {
+                        var ini = Path.Combine(sub, "song.ini");
+                        if (File.Exists(ini))
+                        {
+                            string? sid = null;
+                            string? t = null;
+                            string? a = null;
+                            foreach (var line in File.ReadAllLines(ini))
+                            {
+                                var eq = line.IndexOf('=');
+                                if (eq <= 0) continue;
+                                var k = line[..eq].Trim();
+                                var v = line[(eq + 1)..].Trim();
+                                if (k.Equals("compiled_song_id", StringComparison.OrdinalIgnoreCase)) sid = v;
+                                else if (k.Equals("name", StringComparison.OrdinalIgnoreCase) || k.Equals("title", StringComparison.OrdinalIgnoreCase)) t = v;
+                                else if (k.Equals("artist", StringComparison.OrdinalIgnoreCase)) a = v;
+                            }
+                            if (!string.IsNullOrWhiteSpace(sid))
+                            {
+                                activeIds.Add(sid);
+                                if (!string.IsNullOrWhiteSpace(t))
+                                {
+                                    var fp = ComputeFingerprint(t, a ?? "");
+                                    activeTitles[fp] = sid;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                var songPaks = Directory.GetFiles(SongsPath, "song_*_song.pak.xen");
+                foreach (var sp in songPaks)
+                {
+                    var fname = Path.GetFileName(sp);
+                    var sid = fname[..^"_song.pak.xen".Length];
+                    if (!activeIds.Contains(sid) && pakMeta.TryGetValue(sid, out var pm))
+                    {
+                        var fp = ComputeFingerprint(pm.Title, pm.Artist);
+                        if (activeTitles.TryGetValue(fp, out var currentActiveSid) && !currentActiveSid.Equals(sid, StringComparison.OrdinalIgnoreCase))
+                        {
+                            TryDeleteFile(sp, $"superseded duplicate of '{pm.Title}'");
+                            var fsb = Path.Combine(MusicPath, $"{sid}.fsb.xen");
+                            if (File.Exists(fsb)) TryDeleteFile(fsb, $"superseded FSB of '{pm.Title}'");
+                            var dat = Path.Combine(MusicPath, $"{sid}.dat.xen");
+                            if (File.Exists(dat)) TryDeleteFile(dat, $"superseded DAT of '{pm.Title}'");
+                            CustomsPakService.RemoveSongFromCustomsPak(GamePath, sid, logger);
+                            summary.Add($"Stripped superseded duplicate '{sid}' ({pm.Title}) from customs.pak.xen");
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
         logger?.LogInfo($"[CLEANUP] Removed {removed} redundant/temp item(s), freed {bytesFreed / (1024.0 * 1024.0):F1} MB.");
         return (removed, bytesFreed, summary);
     }

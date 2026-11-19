@@ -107,10 +107,51 @@ public static class GpuAccelerationService
         logger?.LogInfo($"[GPU ACCELERATION] Standard display adapter active. WPF Tier {WpfRenderTier}.");
     }
 
-    public static string GetDemucsDeviceArgs()
+    private static bool? _isPyTorchCudaReady;
+
+    public static bool VerifyPyTorchCudaSupport(string? pythonExe = null)
+    {
+        if (_isPyTorchCudaReady.HasValue) return _isPyTorchCudaReady.Value;
+
+        if (string.IsNullOrEmpty(pythonExe) || !File.Exists(pythonExe))
+        {
+            var defaultPy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GH3-Sync", "tools", "ai", "python", "python.exe");
+            if (File.Exists(defaultPy)) pythonExe = defaultPy;
+            else
+            {
+                _isPyTorchCudaReady = false;
+                return false;
+            }
+        }
+
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = pythonExe,
+                Arguments = "-c \"import torch; print('CUDA_OK' if torch.cuda.is_available() else 'CUDA_NO')\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                CreateNoWindow = true
+            };
+            using var p = Process.Start(psi);
+            if (p == null) { _isPyTorchCudaReady = false; return false; }
+            var outText = p.StandardOutput.ReadToEnd().Trim();
+            p.WaitForExit(3000);
+            _isPyTorchCudaReady = outText.Contains("CUDA_OK");
+            return _isPyTorchCudaReady.Value;
+        }
+        catch
+        {
+            _isPyTorchCudaReady = false;
+            return false;
+        }
+    }
+
+    public static string GetDemucsDeviceArgs(string? pythonExe = null)
     {
         bool gpuEnabled = AppConfig.Current.StemSeparationGpuEnabled;
-        if (gpuEnabled && IsCudaAvailable)
+        if (gpuEnabled && IsNvidia && VerifyPyTorchCudaSupport(pythonExe))
         {
             return "-d cuda";
         }

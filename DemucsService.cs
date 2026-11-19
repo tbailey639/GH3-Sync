@@ -369,7 +369,7 @@ public class DemucsService
             var ffmpegExe = HoneycombCompilerService.EnsureFfmpeg(hDir);
             var ffmpegDir = !string.IsNullOrEmpty(ffmpegExe) ? Path.GetDirectoryName(ffmpegExe) : null;
 
-            string devArg = GpuAccelerationService.GetDemucsDeviceArgs();
+            string devArg = GpuAccelerationService.GetDemucsDeviceArgs(exe);
             bool isGpu = devArg.Contains("cuda", StringComparison.OrdinalIgnoreCase);
             Report(10, $"Running Demucs 6-Stem AI {(isGpu ? "⚡ [GPU Accelerated]" : "[CPU Mode]")} (isolating Guitar, Bass, Drums, Vocals, Piano)...", onProgress);
             _logger?.LogInfo($"[DEMUCS 6-STEM] Separating with {devArg}: {Path.GetFileName(audioFilePath)}");

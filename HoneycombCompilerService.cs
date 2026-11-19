@@ -914,27 +914,44 @@ public class HoneycombCompilerService
         var textPreview = Path.Combine(projectDir, $"{songChecksum}_preview.mp3");
         var tempHybridLead = Path.Combine(projectDir, $"{songChecksum}_hybrid_lead.wav");
         var tempHybridBack = Path.Combine(projectDir, $"{songChecksum}_hybrid_back.wav");
+        var tempSilenceMp3 = Path.Combine(projectDir, $"{songChecksum}_silence.mp3");
 
-        var tempFiles = new List<string> { textGuitar, textRhythm, textSong, textPreview, tempHybridLead, tempHybridBack };
+        var tempFiles = new List<string> { textGuitar, textRhythm, textSong, textPreview, tempHybridLead, tempHybridBack, tempSilenceMp3 };
 
         try
         {
+            var ffmpegExe = EnsureFfmpeg(honeycombDir);
+            string masterInput = !string.IsNullOrEmpty(stems.PrimaryAudio) ? stems.PrimaryAudio : stems.LeadStems.FirstOrDefault() ?? "";
+
+            // Ensure silent padding audio matches the EXACT duration of the song so FMOD never loops early at 2:09!
+            bool hasMatchingSilence = false;
+            if (!string.IsNullOrEmpty(ffmpegExe) && File.Exists(ffmpegExe) && File.Exists(masterInput))
+            {
+                hasMatchingSilence = CreateMatchingSilenceMp3(ffmpegExe, masterInput, tempSilenceMp3);
+            }
+
             if (audioMode.Equals("StudioMaster", StringComparison.OrdinalIgnoreCase) || !stems.HasMultiStems)
             {
                 // Studio Master Audio (Beat It / Gently Weeps style):
                 // Untouched original master in backing, silent pad in guitar/rhythm -> ZERO Demucs warble, ZERO double-audio clipping!
-                string masterInput = !string.IsNullOrEmpty(stems.PrimaryAudio) ? stems.PrimaryAudio : stems.LeadStems.First();
-                log($"Audio Mode: Studio Master (Cleanest Fidelity) -> Backing={Path.GetFileName(masterInput)}, Guitar=silent pad");
+                log($"Audio Mode: Studio Master (Cleanest Fidelity) -> Backing={Path.GetFileName(masterInput)}, Guitar=silent pad (duration-matched)");
 
-                await (Task)mConvert.Invoke(fsbObj, new object[] { "", textGuitar })!;
-                await (Task)mConvert.Invoke(fsbObj, new object[] { "", textRhythm })!;
+                if (hasMatchingSilence && File.Exists(tempSilenceMp3))
+                {
+                    File.Copy(tempSilenceMp3, textGuitar, true);
+                    File.Copy(tempSilenceMp3, textRhythm, true);
+                }
+                else
+                {
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { "", textGuitar })!;
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { "", textRhythm })!;
+                }
                 await (Task)mConvert.Invoke(fsbObj, new object[] { masterInput, textSong })!;
             }
             else if (audioMode.Equals("HybridBlend", StringComparison.OrdinalIgnoreCase) && stems.LeadStems.Count > 0 && stems.BackingStems.Count > 0)
             {
                 // Hybrid Studio Blend: 65% lead stem in playable channel + (35% lead + 100% backing) in backing channel
                 log($"Audio Mode: Hybrid Studio Blend (Lead={stems.LeadStems.Count} stem(s), Backing={stems.BackingStems.Count} stem(s))");
-                var ffmpegExe = EnsureFfmpeg(honeycombDir);
                 bool hybridBuilt = false;
 
                 if (!string.IsNullOrEmpty(ffmpegExe) && File.Exists(ffmpegExe))
@@ -947,16 +964,30 @@ public class HoneycombCompilerService
                     log("Converting hybrid playable lead channel to CBR MP3...");
                     await (Task)mConvert.Invoke(fsbObj, new object[] { tempHybridLead, textGuitar })!;
                     log("Preparing rhythm/bass track...");
-                    await (Task)mConvert.Invoke(fsbObj, new object[] { stems.RhythmStem, textRhythm })!;
+                    if (string.IsNullOrEmpty(stems.RhythmStem) && hasMatchingSilence && File.Exists(tempSilenceMp3))
+                    {
+                        File.Copy(tempSilenceMp3, textRhythm, true);
+                    }
+                    else
+                    {
+                        await (Task)mConvert.Invoke(fsbObj, new object[] { stems.RhythmStem, textRhythm })!;
+                    }
                     log("Converting hybrid studio backing channel to CBR MP3...");
                     await (Task)mConvert.Invoke(fsbObj, new object[] { tempHybridBack, textSong })!;
                 }
                 else
                 {
                     // Clean fallback to Studio Master if FFmpeg filtergraph fails
-                    string masterInput = !string.IsNullOrEmpty(stems.PrimaryAudio) ? stems.PrimaryAudio : stems.LeadStems.First();
-                    await (Task)mConvert.Invoke(fsbObj, new object[] { "", textGuitar })!;
-                    await (Task)mConvert.Invoke(fsbObj, new object[] { "", textRhythm })!;
+                    if (hasMatchingSilence && File.Exists(tempSilenceMp3))
+                    {
+                        File.Copy(tempSilenceMp3, textGuitar, true);
+                        File.Copy(tempSilenceMp3, textRhythm, true);
+                    }
+                    else
+                    {
+                        await (Task)mConvert.Invoke(fsbObj, new object[] { "", textGuitar })!;
+                        await (Task)mConvert.Invoke(fsbObj, new object[] { "", textRhythm })!;
+                    }
                     await (Task)mConvert.Invoke(fsbObj, new object[] { masterInput, textSong })!;
                 }
             }
@@ -977,7 +1008,14 @@ public class HoneycombCompilerService
                 }
 
                 log("Preparing rhythm/bass track...");
-                await (Task)mConvert.Invoke(fsbObj, new object[] { stems.RhythmStem, textRhythm })!;
+                if (string.IsNullOrEmpty(stems.RhythmStem) && hasMatchingSilence && File.Exists(tempSilenceMp3))
+                {
+                    File.Copy(tempSilenceMp3, textRhythm, true);
+                }
+                else
+                {
+                    await (Task)mConvert.Invoke(fsbObj, new object[] { stems.RhythmStem, textRhythm })!;
+                }
 
                 var backingInputs = stems.BackingStems.Count > 0
                     ? stems.BackingStems.ToArray()
@@ -1398,6 +1436,47 @@ public class HoneycombCompilerService
             backInputs.AddRange(backingStems.Select(p => (p, 1.00)));
 
             return RunMix(leadInputs, outLeadWav) && RunMix(backInputs, outBackWav);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Generates a silent CBR MP3 that matches the EXACT sample-accurate duration and 48kHz sample rate
+    /// of the primary song audio. Guarantees FMOD soundbanks never suffer early EOF looping/seek glitches at 2:09!
+    /// </summary>
+    private static bool CreateMatchingSilenceMp3(string ffmpegExe, string referenceAudioPath, string outputSilenceMp3Path)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(ffmpegExe) || !File.Exists(ffmpegExe) || !File.Exists(referenceAudioPath))
+                return false;
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = ffmpegExe,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            psi.ArgumentList.Add("-y");
+            psi.ArgumentList.Add("-i");
+            psi.ArgumentList.Add(referenceAudioPath);
+            psi.ArgumentList.Add("-af");
+            psi.ArgumentList.Add("volume=0");
+            psi.ArgumentList.Add("-c:a");
+            psi.ArgumentList.Add("libmp3lame");
+            psi.ArgumentList.Add("-b:a");
+            psi.ArgumentList.Add("128k");
+            psi.ArgumentList.Add("-ar");
+            psi.ArgumentList.Add("48000");
+            psi.ArgumentList.Add(outputSilenceMp3Path);
+
+            using var proc = Process.Start(psi);
+            if (proc == null) return false;
+            proc.WaitForExit(30000);
+            return File.Exists(outputSilenceMp3Path) && new FileInfo(outputSilenceMp3Path).Length > 1024;
         }
         catch
         {
