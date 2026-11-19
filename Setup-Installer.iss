@@ -47,6 +47,7 @@ Name: "{app}\tools\compiler\Replacements"; Permissions: users-modify
 
 [Files]
 Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\wwwroot\*"; DestDir: "{app}\wwwroot"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "Assets\app_icon.ico"; DestDir: "{app}\Assets"; Flags: ignoreversion
 Source: "Assets\gh3_sync_logo.png"; DestDir: "{app}\Assets"; Flags: ignoreversion
 Source: "dist\README.md"; DestDir: "{app}"; Flags: ignoreversion
