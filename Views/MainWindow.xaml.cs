@@ -4887,10 +4887,10 @@ public partial class MainWindow : Window
         {
             var res = await _friends.SendFriendRequestAsync(rawCode, asTrusted: asTrusted, customAddress: string.IsNullOrWhiteSpace(directAddr) ? null : directAddr);
 
-            if (res.Success && res.ReceivedByPeer)
+            if (res.Success)
             {
-                PageFriends_StageHud.Finish($"Handshake successful! Request delivered to {rawCode}.");
-                ShowStageToast("✓ REQUEST DELIVERED!", res.Message, "#22C55E");
+                PageFriends_StageHud.Finish(res.Message);
+                ShowStageToast("✓ REQUEST SENT!", res.Message, "#22C55E");
                 AudioWaveformAndSfxService.PlayStarPowerChime();
                 AddFriendCodeBox.Text = "";
                 if (DirectAddressBox != null) DirectAddressBox.Text = "";

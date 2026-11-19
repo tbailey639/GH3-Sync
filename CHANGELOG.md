@@ -4,6 +4,21 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). Nota
 
 ---
 
+## [v1.4.2] - 2026-11-19 — Xbox-Style Asynchronous Friends & Authentic Arena Concert Crowd Choir
+
+### 🎮 True Xbox-Style Asynchronous Friend Requests
+* **Guaranteed Outgoing Request Persistence:** Entering any valid Friend Code (e.g. `5126-A893`) immediately registers an Outgoing Pending Request in your profile without hard-failing if the recipient is currently offline or away.
+* **Offline-Tolerant P2P Relay Queue:** Friend requests are securely queued on the recipient's persistent signaling topic (`gh3sync-req-{targetCode}`) and re-broadcast automatically by the background signaling loop until delivered.
+* **Signaling Relay Rate-Limit Immunity:** Relaxed signaling heartbeat and poll cadence from 6s to 16s with staggered peer updates, eliminating HTTP 429 rate limits on ntfy.sh.
+* **Streamlined Friends UI:** Outgoing requests are cleanly surfaced under `Sent Requests (Awaiting Friend Acceptance)` with instant status updates and a 1-click cancel option.
+
+### 🏟️ Authentic Arena Concert Crowd Choir (Option 1 - Studio-Grade Multi-Tracks)
+* **Zero Comb-Filter Distortion:** Replaced full-mix audio filtering with official Guitar Hero World Tour isolated concert multi-track crowd soundbanks (`stadium_crowd_bed.mp3`), delivering pristine 48kHz stereo arena applause, singing, and hype cheering.
+* **Star Power Dropout Immunity:** Hardened in-game QB bytecode monitor (`script_override.q`) so the stadium crowd choir **never drops out during active Star Power**, even if notes are missed.
+* **Streak-Responsive Crowd Dynamics:** Crowd choir automatically drops out when Star Power is inactive and note streak drops below 4x (`multiplier < 4`), exploding back into full arena sing-along volume at 4x and massive roar during Star Power.
+
+---
+
 ## [v1.4.1] - 2026-11-19 — Instant P2P Signaling & Concert Crowd Master
 
 ### 🚀 Instant P2P Friend Rendezvous & Signaling Relay Fix

@@ -449,202 +449,112 @@ public class FriendService
 
         var peerDisplay = !string.IsNullOrWhiteSpace(lookup.Username) ? lookup.Username : $"Player_{cleanCode[^4..]}";
 
-        // Helper to record outgoing request and return success via Relay
-        async Task<SendFriendRequestResult?> TrySendViaSignalingRelayAsync()
+        // ==================== TRUE XBOX-STYLE ASYNCHRONOUS FRIEND REQUEST ====================
+        // 1. Immediately create and persist the Outgoing Pending Request so it is NEVER lost or rejected locally.
+        // On Xbox/Steam/modern platforms, sending a request is guaranteed to record in Outgoing Pending.
+        var outReq = new FriendRequestItem
         {
-            if (SignalingRelay != null)
-            {
-                var sigSent = await SignalingRelay.SendFriendRequestPacketAsync(cleanCode, AppConfig.Current.FriendCode, AppConfig.Current.Username, myAddress, proposedToken, asTrusted);
-                if (sigSent)
-                {
-                    lock (_lock)
-                    {
-                        var req = new FriendRequestItem
-                        {
-                            FriendCode = cleanCode,
-                            Username = peerDisplay,
-                            Direction = "Outgoing",
-                            Status = "Pending",
-                            CreatedAt = DateTime.UtcNow,
-                            Address = targetAddress ?? "",
-                            ProposedTrustToken = proposedToken,
-                            IsTrustedRequest = asTrusted,
-                            RequestType = "Friend"
-                        };
-                        AppConfig.Current.FriendRequests.RemoveAll(x => x.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
-                        AppConfig.Current.FriendRequests.Add(req);
-                        AppConfig.Save();
-                    }
-
-                    return new SendFriendRequestResult
-                    {
-                        Success = true,
-                        ReceivedByPeer = true,
-                        FriendCode = cleanCode,
-                        Username = peerDisplay,
-                        Message = $"Friend request delivered to {peerDisplay} ({cleanCode}) via Global P2P Signaling Relay!"
-                    };
-                }
-            }
-            return null;
-        }
-
-        if (string.IsNullOrWhiteSpace(targetAddress) || targetAddress.Contains("169.254."))
-        {
-            var relayResult = await TrySendViaSignalingRelayAsync();
-            if (relayResult != null) return relayResult;
-
-            // Do NOT add to requested list when peer is unreachable!
-            return new SendFriendRequestResult
-            {
-                Success = false,
-                ReceivedByPeer = false,
-                FriendCode = cleanCode,
-                Message = $"Could not reach {cleanCode} across local Wi-Fi or Signaling Relay.\n\nEnsure your friend has GH3-Sync open!"
-            };
-        }
-
-        var payload = new
-        {
-            senderCode = AppConfig.Current.FriendCode,
-            senderUsername = AppConfig.Current.Username,
-            senderAddress = myAddress,
-            proposedTrustToken = proposedToken,
-            isTrusted = asTrusted,
-            timestamp = DateTime.UtcNow
+            FriendCode = cleanCode,
+            Username = peerDisplay,
+            Address = targetAddress ?? "",
+            Direction = "Outgoing",
+            Status = "Pending",
+            ProposedTrustToken = proposedToken,
+            IsTrustedRequest = asTrusted,
+            RequestType = "Friend",
+            CreatedAt = DateTime.UtcNow
         };
 
-        string directError = "";
-        try
+        lock (_lock)
         {
-            var reqUrl = $"{targetAddress.TrimEnd('/')}/api/friends/request";
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5.0));
-            HttpResponseMessage resp;
-            try
-            {
-                resp = await client.PostAsJsonAsync(reqUrl, payload, cts.Token);
-            }
-            catch (Exception) when (!cts.IsCancellationRequested)
-            {
-                using var retryCts = new CancellationTokenSource(TimeSpan.FromSeconds(3.0));
-                resp = await client.PostAsJsonAsync(reqUrl, payload, retryCts.Token);
-            }
-
-            if (resp.IsSuccessStatusCode)
-            {
-                var body = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cts.Token);
-                bool received = body.TryGetProperty("received", out var r) && r.GetBoolean();
-                var peerUsername = body.TryGetProperty("username", out var u) ? u.GetString() ?? peerDisplay : peerDisplay;
-
-                if (received || resp.IsSuccessStatusCode)
-                {
-                    // VERIFIED DELIVERY CONFIRMATION: Add to Outgoing Requested List
-                    lock (_lock)
-                    {
-                        var outReq = new FriendRequestItem
-                        {
-                            FriendCode = cleanCode,
-                            Username = peerUsername,
-                            Address = targetAddress,
-                            Direction = "Outgoing",
-                            Status = "Pending",
-                            ProposedTrustToken = proposedToken,
-                            IsTrustedRequest = asTrusted,
-                            RequestType = "Friend",
-                            CreatedAt = DateTime.UtcNow
-                        };
-
-                        AppConfig.Current.FriendRequests.RemoveAll(x => x.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
-                        AppConfig.Current.FriendRequests.Add(outReq);
-                        AppConfig.Save();
-                    }
-
-                    return new SendFriendRequestResult
-                    {
-                        Success = true,
-                        ReceivedByPeer = true,
-                        FriendCode = cleanCode,
-                        Username = peerUsername,
-                        Message = $"Friend request successfully delivered and confirmed received by {peerUsername}!"
-                    };
-                }
-            }
-            else
-            {
-                directError = $"HTTP {(int)resp.StatusCode}";
-            }
-        }
-        catch (Exception ex)
-        {
-            directError = ex.Message;
+            AppConfig.Current.FriendRequests.RemoveAll(x => x.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
+            AppConfig.Current.FriendRequests.Add(outReq);
+            AppConfig.Save();
         }
 
-        // Direct HTTP failed (e.g. 502/530 Bad Gateway, timeout, tunnel rotated) -> Automatic Global Signaling Relay fallback!
-        var relayFallback = await TrySendViaSignalingRelayAsync();
-        if (relayFallback != null) return relayFallback;
+        // 2. Dispatch the request packet via Global P2P Signaling Relay topic (gh3sync-req-{targetTopic})
+        if (SignalingRelay != null)
+        {
+            _ = SignalingRelay.SendFriendRequestPacketAsync(cleanCode, AppConfig.Current.FriendCode, AppConfig.Current.Username, myAddress, proposedToken, asTrusted);
+        }
 
-        // If direct peer connection failed and signaling failed, attempt Admin Hub queue fallback if external hub configured
-        if (!string.IsNullOrWhiteSpace(AppConfig.Current.AdminHubUrl) && !AppConfig.Current.AdminHubUrl.Contains("localhost:7575"))
+        // 3. Attempt direct HTTP delivery if a valid address exists (background/parallel)
+        bool directDelivered = false;
+        if (!string.IsNullOrWhiteSpace(targetAddress) && !targetAddress.Contains("169.254."))
         {
             try
             {
-                var hubUrl = $"{AppConfig.Current.AdminHubUrl.TrimEnd('/')}/api/admin/friend-request";
-                var hubPayload = new
+                var reqUrl = $"{targetAddress.TrimEnd('/')}/api/friends/request";
+                var payload = new
                 {
-                    targetCode = cleanCode,
                     senderCode = AppConfig.Current.FriendCode,
                     senderUsername = AppConfig.Current.Username,
                     senderAddress = myAddress,
                     proposedTrustToken = proposedToken,
                     isTrusted = asTrusted,
-                    createdAt = DateTime.UtcNow
+                    timestamp = DateTime.UtcNow
                 };
-                using var hubCts = new CancellationTokenSource(TimeSpan.FromSeconds(2.0));
-                var hubResp = await client.PostAsJsonAsync(hubUrl, hubPayload, hubCts.Token);
-                if (hubResp.IsSuccessStatusCode)
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3.5));
+                var resp = await client.PostAsJsonAsync(reqUrl, payload, cts.Token);
+                if (resp.IsSuccessStatusCode)
                 {
-                    var hubBody = await hubResp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: hubCts.Token);
-                    if (hubBody.TryGetProperty("queued", out var q) && q.GetBoolean())
+                    directDelivered = true;
+                    try
                     {
-                        lock (_lock)
+                        var body = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cts.Token);
+                        if (body.TryGetProperty("username", out var u) && !string.IsNullOrWhiteSpace(u.GetString()))
                         {
-                            var outReq = new FriendRequestItem
+                            lock (_lock)
                             {
-                                FriendCode = cleanCode,
-                                Username = peerDisplay,
-                                Address = targetAddress,
-                                Direction = "Outgoing",
-                                Status = "Pending",
-                                ProposedTrustToken = proposedToken,
-                                IsTrustedRequest = asTrusted,
-                                RequestType = "Friend",
-                                CreatedAt = DateTime.UtcNow
-                            };
-                            AppConfig.Current.FriendRequests.RemoveAll(x => x.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
-                            AppConfig.Current.FriendRequests.Add(outReq);
-                            AppConfig.Save();
+                                outReq.Username = u.GetString()!;
+                                AppConfig.Save();
+                            }
                         }
-                        return new SendFriendRequestResult
-                        {
-                            Success = true,
-                            ReceivedByPeer = true,
-                            FriendCode = cleanCode,
-                            Username = peerDisplay,
-                            Message = $"Friend request queued on Admin Hub for {peerDisplay}!"
-                        };
                     }
+                    catch { }
                 }
             }
             catch { }
         }
 
-        // Network failure / timeout -> DO NOT ADD TO REQUESTED LIST!
+        // 4. Also queue on Admin Hub if configured
+        if (!string.IsNullOrWhiteSpace(AppConfig.Current.AdminHubUrl) && !AppConfig.Current.AdminHubUrl.Contains("localhost:7575"))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var hubUrl = $"{AppConfig.Current.AdminHubUrl.TrimEnd('/')}/api/admin/friend-request";
+                    var hubPayload = new
+                    {
+                        targetCode = cleanCode,
+                        senderCode = AppConfig.Current.FriendCode,
+                        senderUsername = AppConfig.Current.Username,
+                        senderAddress = myAddress,
+                        proposedTrustToken = proposedToken,
+                        isTrusted = asTrusted,
+                        createdAt = DateTime.UtcNow
+                    };
+                    using var hubCts = new CancellationTokenSource(TimeSpan.FromSeconds(2.0));
+                    await client.PostAsJsonAsync(hubUrl, hubPayload, hubCts.Token);
+                }
+                catch { }
+            });
+        }
+
+        // 5. Always succeed: Request is saved in Outgoing Pending and awaiting peer approval!
+        string resultMsg = directDelivered
+            ? $"Friend request delivered to {outReq.Username} ({cleanCode})!"
+            : $"Friend request sent to {cleanCode}! Waiting for approval.";
+
         return new SendFriendRequestResult
         {
-            Success = false,
-            ReceivedByPeer = false,
+            Success = true,
+            ReceivedByPeer = directDelivered,
             FriendCode = cleanCode,
-            Message = $"Delivery failed: Could not connect to {cleanCode} at {targetAddress} ({directError}). Request was NOT added."
+            Username = outReq.Username,
+            Message = resultMsg
         };
     }
 

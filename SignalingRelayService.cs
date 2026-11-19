@@ -408,40 +408,58 @@ public class SignalingRelayService
 
     private async Task RunSignalingLoopAsync(CancellationToken ct)
     {
+        int cycleIndex = 0;
         while (!ct.IsCancellationRequested)
         {
+            cycleIndex++;
             try
             {
                 var myCode = AppConfig.Current.FriendCode;
                 var myCleanTopic = CleanTopicCode(myCode);
+                var myBestAddress = FriendService.BestAddressProvider?.Invoke() ?? "";
 
                 // 1. Publish our live heartbeat
-                var myBestAddress = FriendService.BestAddressProvider?.Invoke() ?? "";
                 if (!string.IsNullOrWhiteSpace(myBestAddress) && !myBestAddress.Contains("169.254.") && !string.IsNullOrWhiteSpace(myCleanTopic))
                 {
                     await PublishHeartbeatAsync(myCode, AppConfig.Current.Username, myBestAddress);
                 }
 
-                // 2. Poll for incoming friend requests
+                // 2. Poll for incoming friend requests and acceptances
                 if (!string.IsNullOrWhiteSpace(myCleanTopic))
                 {
                     await PollRequestsTopicAsync(myCleanTopic, ct);
                     await PollAcceptTopicAsync(myCleanTopic, ct);
                 }
 
-                // 3. Keep existing friends' addresses fresh & live
-                var friends = AppConfig.Current.Friends.ToList();
-                foreach (var friend in friends)
+                // 3. Guaranteed background delivery for Outgoing Pending Requests (Xbox-style offline-tolerant sync)
+                var outgoingPending = AppConfig.Current.FriendRequests
+                    .Where(r => r.Direction.Equals("Outgoing", StringComparison.OrdinalIgnoreCase) && r.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                foreach (var pending in outgoingPending)
                 {
-                    var fTopic = CleanTopicCode(friend.FriendCode);
-                    if (string.IsNullOrWhiteSpace(fTopic)) continue;
-
-                    var (found, _, liveAddr, _) = await ResolvePeerAsync(friend.FriendCode);
-                    if (found && !string.IsNullOrWhiteSpace(liveAddr) && friend.LastAddress != liveAddr)
+                    var targetClean = CleanTopicCode(pending.FriendCode);
+                    if (!string.IsNullOrWhiteSpace(targetClean))
                     {
-                        friend.LastAddress = liveAddr;
-                        AppConfig.Save();
-                        _logger?.LogInfo($"[SIGNALING] Auto-updated live address for {friend.Username} to: {liveAddr}");
+                        await SendFriendRequestPacketAsync(pending.FriendCode, myCode, AppConfig.Current.Username, myBestAddress, pending.ProposedTrustToken, pending.IsTrustedRequest);
+                    }
+                }
+
+                // 4. Staggered address update for existing friends (every 2nd cycle to stay well within rate limits)
+                if (cycleIndex % 2 == 0)
+                {
+                    var friends = AppConfig.Current.Friends.ToList();
+                    foreach (var friend in friends)
+                    {
+                        var fTopic = CleanTopicCode(friend.FriendCode);
+                        if (string.IsNullOrWhiteSpace(fTopic)) continue;
+
+                        var (found, _, liveAddr, _) = await ResolvePeerAsync(friend.FriendCode);
+                        if (found && !string.IsNullOrWhiteSpace(liveAddr) && friend.LastAddress != liveAddr)
+                        {
+                            friend.LastAddress = liveAddr;
+                            AppConfig.Save();
+                            _logger?.LogInfo($"[SIGNALING] Auto-updated live address for {friend.Username} to: {liveAddr}");
+                        }
                     }
                 }
             }
@@ -449,7 +467,7 @@ public class SignalingRelayService
 
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(6.0), ct);
+                await Task.Delay(TimeSpan.FromSeconds(16.0), ct);
             }
             catch (OperationCanceledException)
             {

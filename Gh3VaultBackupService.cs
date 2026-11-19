@@ -78,8 +78,8 @@ public class Gh3VaultBackupService
 
                 // 4. Write Vault Manifest
                 var manifest = new VaultManifest(
-                    VaultVersion: "1.4.1",
-                    AppVersion: "1.4.1-ConcertMaster",
+                    VaultVersion: "1.4.2",
+                    AppVersion: "1.4.2-XboxEdition",
                     CreatedBy: AppConfig.Current.Username ?? Environment.UserName,
                     CreatedAtUtc: DateTime.UtcNow,
                     SongCount: songCount,
