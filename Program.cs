@@ -2186,7 +2186,6 @@ else
                 {
                     await Task.Run(() => CustomsPakService.RepairCustomsPakIfCorrupted(gh3Service.GamePath, syncLogger));
                 }
-                await Task.Delay(300);
 
                 splash.UpdateProgress(85, "Preparing workspace...");
                 GH3_Sync.Views.MainWindow mainWin;
@@ -2252,29 +2251,15 @@ else
                     });
                 }
 
-                await Task.Delay(250);
                 splash.UpdateProgress(100, "Ready to Rock!");
 
                 wpfApp.MainWindow = mainWin;
                 mainWin.Closed += (_, _) => wpfApp.Shutdown();
 
-                // Show MainWindow first so DirectX/WPF composition frame is fully rendered behind splash
-                // eliminating any white-screen flicker or startup lag
+                // Seamless handoff: close splash and display MainWindow immediately with zero delay and zero white-screen flash
+                try { splash.Close(); } catch { }
                 mainWin.Show();
                 mainWin.Activate();
-
-                mainWin.ContentRendered += async (_, _) =>
-                {
-                    mainWin.Opacity = 1.0;
-                    try
-                    {
-                        await splash.FadeOutAndCloseAsync();
-                    }
-                    catch
-                    {
-                        try { splash.Close(); } catch { }
-                    }
-                };
             };
 
             wpfApp.Run();
