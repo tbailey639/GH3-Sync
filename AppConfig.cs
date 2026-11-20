@@ -13,6 +13,12 @@ public class UserProfile
     public string FriendCode { get; set; } = "";
     public string ShowcaseSongTitle { get; set; } = "";
     public string ShowcaseSongId { get; set; } = "";
+    public string ActivityStatus { get; set; } = "Online";
+    public int TotalCustomSongs { get; set; } = 0;
+    public long TotalNotesHit { get; set; } = 0;
+    public int TotalFullCombos { get; set; } = 0;
+    public int TotalMatchesPlayed { get; set; } = 0;
+    public List<string> UnlockedAchievements { get; set; } = new();
 }
 
 public class FriendEntry

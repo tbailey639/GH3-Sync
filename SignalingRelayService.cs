@@ -86,11 +86,18 @@ public class SignalingRelayService
     public event Action<string, int, List<string>>? OnPeerRouletteRoll;
     public event Action<string, string, string>? OnPeerActivityUpdated;
     public event Action<string, string>? OnPeerHypeSfx;
+    public event Action<string, string, string>? OnPeerPlayInvite; // (senderCode, senderUsername, senderAddress)
 
     public SignalingRelayService(FriendService friends, SyncLogger? logger = null)
     {
         _friends = friends;
         _logger = logger;
+    }
+
+    public static string CleanUsernameTopic(string? username)
+    {
+        var raw = (username ?? "").Trim().ToLowerInvariant();
+        return System.Text.RegularExpressions.Regex.Replace(raw, "[^a-z0-9]", "");
     }
 
     public static string CleanTopicCode(string friendCode)
@@ -174,12 +181,132 @@ public class SignalingRelayService
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6.0));
             var resp = await _http.PostAsJsonAsync("https://ntfy.sh", ntfyPayload, cts.Token);
+
+            // Also publish claim to username index topic for fast search and uniqueness protection
+            var userTopic = CleanUsernameTopic(username);
+            if (!string.IsNullOrWhiteSpace(userTopic))
+            {
+                try
+                {
+                    var userPayload = new
+                    {
+                        topic = $"gh3sync-usr-{userTopic}",
+                        message = innerJson
+                    };
+                    await _http.PostAsJsonAsync("https://ntfy.sh", userPayload, cts.Token);
+                }
+                catch { }
+            }
+
             return resp.IsSuccessStatusCode;
         }
         catch
         {
             return false;
         }
+    }
+
+    public async Task<(bool IsTaken, string ClaimedByCode, string ClaimedByName)> CheckUsernameTakenAsync(string desiredUsername, string myFriendCode)
+    {
+        var userTopic = CleanUsernameTopic(desiredUsername);
+        if (string.IsNullOrWhiteSpace(userTopic)) return (false, "", "");
+
+        var myNorm = NormalizeCode(myFriendCode);
+        try
+        {
+            var url = $"https://ntfy.sh/gh3sync-usr-{userTopic}/json?poll=1&since=24h";
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4.5));
+            var resp = await _http.GetAsync(url, cts.Token);
+            if (!resp.IsSuccessStatusCode) return (false, "", "");
+
+            var rawJson = await resp.Content.ReadAsStringAsync(cts.Token);
+            if (string.IsNullOrWhiteSpace(rawJson)) return (false, "", "");
+
+            var lines = rawJson.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            for (int i = lines.Length - 1; i >= 0; i--)
+            {
+                var line = lines[i].Trim();
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                using var doc = JsonDocument.Parse(line);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("message", out var msgProp) && msgProp.ValueKind == JsonValueKind.String)
+                {
+                    var msgText = msgProp.GetString() ?? "";
+                    if (msgText.StartsWith("{") && msgText.EndsWith("}"))
+                    {
+                        using var innerDoc = JsonDocument.Parse(msgText);
+                        var r = innerDoc.RootElement;
+                        var c = r.TryGetProperty("code", out var cp) ? cp.GetString() ?? "" : "";
+                        var u = r.TryGetProperty("username", out var up) ? up.GetString() ?? "" : "";
+                        if (!string.IsNullOrWhiteSpace(c) && !c.Equals(myNorm, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return (true, c, string.IsNullOrWhiteSpace(u) ? desiredUsername : u);
+                        }
+                    }
+                }
+            }
+        }
+        catch { }
+        return (false, "", "");
+    }
+
+    public async Task<FriendLookupResult> LookupPeerByUsernameAsync(string username)
+    {
+        var userTopic = CleanUsernameTopic(username);
+        if (string.IsNullOrWhiteSpace(userTopic))
+            return new FriendLookupResult { Found = false, Error = "Stage Name cannot be empty." };
+
+        try
+        {
+            var url = $"https://ntfy.sh/gh3sync-usr-{userTopic}/json?poll=1&since=24h";
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5.0));
+            var resp = await _http.GetAsync(url, cts.Token);
+            if (!resp.IsSuccessStatusCode)
+                return new FriendLookupResult { Found = false, Error = $"No online player found with Stage Name '{username}'." };
+
+            var rawJson = await resp.Content.ReadAsStringAsync(cts.Token);
+            if (string.IsNullOrWhiteSpace(rawJson))
+                return new FriendLookupResult { Found = false, Error = $"No online player found with Stage Name '{username}'." };
+
+            var lines = rawJson.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            for (int i = lines.Length - 1; i >= 0; i--)
+            {
+                var line = lines[i].Trim();
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                using var doc = JsonDocument.Parse(line);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("message", out var msgProp) && msgProp.ValueKind == JsonValueKind.String)
+                {
+                    var msgText = msgProp.GetString() ?? "";
+                    if (msgText.StartsWith("{") && msgText.EndsWith("}"))
+                    {
+                        using var innerDoc = JsonDocument.Parse(msgText);
+                        var r = innerDoc.RootElement;
+                        var c = r.TryGetProperty("code", out var cp) ? cp.GetString() ?? "" : "";
+                        var u = r.TryGetProperty("username", out var up) ? up.GetString() ?? username : username;
+                        var a = r.TryGetProperty("address", out var ap) ? ap.GetString() ?? "" : "";
+                        long ts = r.TryGetProperty("timestamp", out var tp) ? tp.GetInt64() : 0;
+                        bool isOnline = ts > 0 && (DateTimeOffset.UtcNow.ToUnixTimeSeconds() - ts) < 80;
+
+                        return new FriendLookupResult
+                        {
+                            Found = true,
+                            FriendCode = c,
+                            Username = u,
+                            Address = a,
+                            IsOnline = isOnline,
+                            Source = "SignalingIndex"
+                        };
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            return new FriendLookupResult { Found = false, Error = $"Lookup failed: {ex.Message}" };
+        }
+
+        return new FriendLookupResult { Found = false, Error = $"Player '{username}' was not found on the network." };
     }
 
     public async Task<(bool Found, string Username, string Address, string NormalizedCode)> ResolvePeerAsync(string rawCode)
@@ -432,6 +559,7 @@ public class SignalingRelayService
 
     public void TriggerPeerReadyChanged(string code, bool isReady) => OnPeerReadyChanged?.Invoke(code, isReady);
     public void TriggerPeerRouletteRoll(string code, int seed, List<string> songIds) => OnPeerRouletteRoll?.Invoke(code, seed, songIds);
+    public void TriggerPlayInvite(string code, string username, string address) => OnPeerPlayInvite?.Invoke(code, username, address);
 
     public async Task<bool> SendFriendAcceptPacketAsync(string senderCode, string myCode, string myUsername, string myAddress, string myToken)
     {
@@ -488,6 +616,38 @@ public class SignalingRelayService
             };
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4.0));
+            var resp = await _http.PostAsJsonAsync("https://ntfy.sh", ntfyPayload, cts.Token);
+            return resp.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> SendLobbyPlayInvitePacketAsync(string targetCode, string senderCode, string senderUsername, string senderAddress)
+    {
+        var cleanTarget = CleanTopicCode(targetCode);
+        if (string.IsNullOrWhiteSpace(cleanTarget)) return false;
+
+        try
+        {
+            var innerJson = JsonSerializer.Serialize(new
+            {
+                type = "LOBBY_PLAY_INVITE",
+                senderCode = NormalizeCode(senderCode),
+                senderUsername = senderUsername ?? "Player",
+                senderAddress = (senderAddress ?? "").TrimEnd('/'),
+                timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            });
+
+            var ntfyPayload = new
+            {
+                topic = $"gh3sync-req-{cleanTarget}",
+                message = innerJson
+            };
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5.0));
             var resp = await _http.PostAsJsonAsync("https://ntfy.sh", ntfyPayload, cts.Token);
             return resp.IsSuccessStatusCode;
         }
@@ -691,6 +851,11 @@ public class SignalingRelayService
 
                             OnPeerHypeSfx?.Invoke(sCode, sfxType);
                             _logger?.LogInfo($"[SIGNALING] Received lobby hype sound effect '{sfxType}' from {sCode}");
+                        }
+                        else if (type == "LOBBY_PLAY_INVITE" && !string.IsNullOrWhiteSpace(sCode) && !sCode.Equals(AppConfig.Current.FriendCode, StringComparison.OrdinalIgnoreCase))
+                        {
+                            OnPeerPlayInvite?.Invoke(sCode, sName, sAddr);
+                            _logger?.LogInfo($"[SIGNALING] Received 'ROCK OUT' play invite from {sName} ({sCode}) at {sAddr}");
                         }
                     }
                 }

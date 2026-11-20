@@ -4,6 +4,46 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). Nota
 
 ---
 
+## [v1.5.1] - 2026-11-20 — Rockstar Profiles, Play Together Invites, Notifications Center & Notebook UI
+
+### 👤 Rockstar Profiles & Showcase Modal
+* **Full Rockstar Profile Dialog:** Added a dedicated profile view for all players (self, friends, and discovered players). Displays custom avatar, Stage Name, permanent Friend Code with 1-click copy, live status indicator, and relationship badge (Self, Trusted Friend, Regular Friend, or Discovered Player).
+* **Signature Showcase Track & Audio Preview:** Highlight and listen to a player's signature custom track with an integrated audio preview button directly from their profile.
+* **Career Statistics & Hall of Fame Showcase:** Shows lifetime Full Combos, 5-Star performances, total notes hit, and matches played, alongside an interactive visual trophy showcase grid tracking 14 unlocked achievements.
+* **Contextual Profile Actions:** Quick buttons for "🎸 Ask to Play Together!", "⚡ Sync Songs", "⭐ Request Trust Upgrade", "Add Friend" (regular or trusted), and "Career Saves".
+
+### 🎸 "Ask to Play Together!" Real-Time Session Invites
+* **Real-Time Multiplayer Pings:** Send real-time session invites to online trusted friends with one click.
+* **Instant Peer Notification:** Receiver gets a high-priority prompt: `"[USERNAME] wants to ROCK OUT with you!"` with a 1-click `⚡ Join Lobby & Sync` button that instantly navigates to the lobby and connects.
+* **Dual-Transport Reliability:** Invites broadcast over direct local/tunnel HTTP (`/api/lobby/play-invite`) with immediate fallback to global serverless signaling relay (`ntfy.sh`), ensuring delivery through any router or NAT.
+
+### 🔍 Friend Search, Global Username Indexing & Uniqueness Enforcement
+* **Search by Stage Name or Friend Code:** Look up players by their display name or Friend Code directly from the "Search & Add Friends" bar.
+* **Global Serverless Username Indexing:** Heartbeat broadcasts claims to `gh3sync-usr-{username}` on the signaling relay, enforcing username uniqueness across the network so duplicate stage names cannot be registered.
+* **Send Requests from Profile:** Send regular or trusted friend requests directly from a player's profile view.
+
+### 🔔 Notifications Center
+* **Unified Notifications Dropdown:** Added a `🔔 Notifications (N)` button on the Friends page with a dynamic badge counter.
+* **Comprehensive Activity Feed:** Aggregates pending friend requests (regular & trusted), multiplayer play invites, and recently unlocked trophies in one convenient dropdown panel.
+
+### 👥 Friends List Sorting & Relative Offline Timestamps
+* **Clean Section Title:** Renamed "Active Friends" section header to "Friends".
+* **Smart Presence Sorting:** Friends are sorted with online players first, followed by offline players ordered by relative last seen timestamps (`🔴 Offline - 5m ago`, `🔴 Offline - 2h ago`, `🔴 Offline - Nov 20`).
+* **Card Quick Actions:** Each friend card now includes `👤 View Profile` and `🎸 Play Together` buttons for fast interaction.
+
+### 📖 Guitar Hero III Setlist Notebook UI for "My Customs"
+* **Authentic GH3 Setlist Rows:** Redesigned the "My Customs" song list to match the authentic Guitar Hero III setlist notebook interface. Songs display in bold Impact font with uppercase artist and year, 5-star ratings, high score displays, and ruled notebook lines.
+* **GH3 Controller Navigation Footer:** Bottom controller pills bar (`UP/DOWN`, `SELECT: PREVIEW / SYNC`, `BACK`, `BONUS`) matching the original game aesthetic.
+
+### 🛡️ Crash-Proof Library Restore & Kept Song Integrity
+* **Crash-Resilient State Machine:** If the application terminates abnormally during an active lobby session, `ReconcileLibraryIntegrity()` automatically detects the unclean exit on the next boot, cleanly restoring original customs while preserving all permanently kept songs (`KeptFriendSongIds`).
+* **Exit & Disconnect Audits:** Automated library reconciliation runs on `ProcessExit`, `ExitApplication()`, and lobby disconnect to guarantee only original songs + kept songs remain.
+
+### ⚡ Complete Startup White-Screen Elimination
+* **Zero-Flicker Window Creation:** Window class background erasure (`WM_ERASEBKGND` / 0x0014) is suppressed, DWM dark mode attributes (20 and 19) are applied before show, and initial window opacity remains 0 until the WPF DirectX composition frame completes rendering, banishing the white flash on boot.
+
+---
+
 ## [v1.5.0] - 2026-11-20 — P2P Setlist Notebook, Permanent Song Keeping & Soundboard Hype Edition
 
 ### 🎸 Guitar Hero III Authentic Setlist Notebook UI

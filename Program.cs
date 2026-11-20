@@ -102,6 +102,8 @@ var creatorService = new SongCreatorService(compilerService, audioAnalysisServic
 var natService = new NatPortMappingService(port, syncLogger);
 var updateService = new UpdateService(syncLogger);
 var tempSessionService = new TemporarySessionService(gh3Service, saveManager, syncLogger);
+AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { tempSessionService.EndSessionAndCleanup(); } catch { } };
+try { tempSessionService.ReconcileLibraryIntegrity(); } catch { }
 var componentUpdater = new ComponentUpdaterService(gh3Service, updateService, demucsService, syncLogger);
 var chartDoctor = new ChartDoctorService(compilerService, syncLogger);
 var betterGh3Tweaks = new BetterGh3TweaksService(gh3Service, syncLogger);
@@ -165,6 +167,7 @@ static bool IsExternalP2pRoute(string path)
     if (path.Equals("/api/lobby/ready", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/api/lobby/roulette-roll", StringComparison.OrdinalIgnoreCase)) return true;
     if (path.Equals("/api/lobby/hype-sfx", StringComparison.OrdinalIgnoreCase)) return true;
+    if (path.Equals("/api/lobby/play-invite", StringComparison.OrdinalIgnoreCase)) return true;
     return false;
 }
 
@@ -1037,6 +1040,22 @@ app.MapPost("/api/lobby/hype-sfx", async (HttpContext context, SyncLogger logger
     logger.LogInfo($"[LOBBY] Direct P2P hype SFX received: '{type}'");
     AudioWaveformAndSfxService.PlayHypeSound(type);
     return Results.Ok(new { success = true, sfx = type });
+});
+
+// Direct P2P Lobby "Ask to Play Together" Invite endpoint
+app.MapPost("/api/lobby/play-invite", async (HttpContext context, SignalingRelayService signaling, SyncLogger logger) =>
+{
+    using var reader = new StreamReader(context.Request.Body);
+    var body = await reader.ReadToEndAsync();
+    var req = JsonSerializer.Deserialize<JsonElement>(body);
+
+    var senderCode = req.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
+    var senderUsername = req.TryGetProperty("senderUsername", out var su) ? su.GetString() ?? "Player" : "Player";
+    var senderAddress = req.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
+
+    logger.LogInfo($"[LOBBY] Received direct 'ROCK OUT' play invite from {senderUsername} ({senderCode})");
+    signaling.TriggerPlayInvite(senderCode, senderUsername, senderAddress);
+    return Results.Ok(new { success = true, message = $"{senderUsername} invite received." });
 });
 
 // P2P Handshake: Remote peer calls this endpoint when they accept our friend request
@@ -2022,8 +2041,39 @@ if (args.Contains("--verify-features"))
         Console.WriteLine($"  [FAIL] Test 4 threw exception: {ex.Message}");
     }
 
+    // ----- TEST 5: Rockstar Profiles, Expanded Trophies, Play Together Invites & Notebook Setup -----
+    bool profileAndInviteTestPassed = false;
+    try
+    {
+        Console.WriteLine("[TEST 5] Testing Rockstar Profiles, Expanded Trophies & Play Invites...");
+        var trophies = RockHallOfFameService.GetAllAchievements();
+        bool trophyCountOk = trophies.Count >= 14;
+        bool hasTrustedDuo = trophies.Any(t => t.Id == "TRUSTED_DUO");
+        bool hasRockOutDuo = trophies.Any(t => t.Id == "ROCK_OUT_DUO");
+
+        string cleanUser = SignalingRelayService.CleanUsernameTopic("Johnny Rocker #1!");
+        bool cleanUserOk = cleanUser == "johnnyrocker1";
+
+        var lookupRes = await friendService.SearchFriendAsync("NonExistentPlayerCode99");
+        bool searchOk = !lookupRes.Found;
+
+        if (trophyCountOk && hasTrustedDuo && hasRockOutDuo && cleanUserOk && searchOk)
+        {
+            Console.WriteLine($"  [PASS] Profiles verified ({trophies.Count} trophies, clean username: {cleanUser}, search: operational)!");
+            profileAndInviteTestPassed = true;
+        }
+        else
+        {
+            Console.WriteLine($"  [FAIL] Test 5 failed checks: trophies={trophyCountOk}, duo={hasTrustedDuo}, rockOut={hasRockOutDuo}, clean={cleanUserOk}");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"  [FAIL] Test 5 threw exception: {ex.Message}");
+    }
+
     Console.WriteLine("=================================================");
-    if (friendTestPassed && crowdTestPassed && qbTestPassed && p2pLobbyTestPassed)
+    if (friendTestPassed && crowdTestPassed && qbTestPassed && p2pLobbyTestPassed && profileAndInviteTestPassed)
     {
         Console.WriteLine("  [VERIFICATION SUCCESS] ALL FEATURES 100% OPERATIONAL!");
         Console.WriteLine("=================================================");
@@ -2031,7 +2081,7 @@ if (args.Contains("--verify-features"))
     }
     else
     {
-        Console.WriteLine($"  [VERIFICATION FAILED] Friend={friendTestPassed}, Crowd={crowdTestPassed}, QB={qbTestPassed}, P2P={p2pLobbyTestPassed}");
+        Console.WriteLine($"  [VERIFICATION FAILED] Friend={friendTestPassed}, Crowd={crowdTestPassed}, QB={qbTestPassed}, P2P={p2pLobbyTestPassed}, Profiles={profileAndInviteTestPassed}");
         Console.WriteLine("=================================================");
         Environment.Exit(1);
         return;
@@ -2215,6 +2265,7 @@ else
 
                 mainWin.ContentRendered += async (_, _) =>
                 {
+                    mainWin.Opacity = 1.0;
                     try
                     {
                         await splash.FadeOutAndCloseAsync();

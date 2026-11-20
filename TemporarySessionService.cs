@@ -291,14 +291,23 @@ public class TemporarySessionService
         {
             if (!_gh3.IsDetected) return (0, 0, "GH3 not detected.");
 
-            // Check if an abandoned temp session backup exists from a previous crash/close
-            if (!CurrentState.Active && File.Exists(PreSessionPakPath))
+            int cleaned = 0;
+            // 1. If an active session was interrupted by an app crash or forced shutdown
+            if (CurrentState.Active)
+            {
+                _logger.LogInfo("[TEMP SESSION] Active temporary lobby session detected on startup (unclean exit/crash recovery). Restoring clean pre-session library state...");
+                var (removed, kept, _) = EndSessionAndCleanup();
+                cleaned += removed;
+            }
+            // 2. Check if an abandoned temp session backup exists from a previous crash/close
+            else if (File.Exists(PreSessionPakPath))
             {
                 _logger.LogInfo("[TEMP SESSION] Lingering pre-session backup detected from prior session. Running automated library reconciliation...");
                 try
                 {
                     File.Copy(PreSessionPakPath, _gh3.CustomsPakPath, overwrite: true);
                     File.Delete(PreSessionPakPath);
+                    cleaned++;
                 }
                 catch { }
             }
@@ -318,7 +327,8 @@ public class TemporarySessionService
                 }
             }
 
-            return (0, remerged, "Library integrity verified.");
+            var msg = $"Library integrity verified: {cleaned} temporary item(s) cleaned, {remerged} kept friend song(s) preserved.";
+            return (cleaned, remerged, msg);
         }
     }
 

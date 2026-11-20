@@ -11,6 +11,7 @@
         Foreground="{DynamicResource TextPrimary}"
         FontFamily="Segoe UI"
         AllowDrop="True"
+        Opacity="0"
         Drop="Window_Drop"
         DragOver="Window_DragOver"
         PreviewKeyDown="Window_PreviewKeyDown">
@@ -69,7 +70,7 @@
                             <TextBlock Text="GH3" FontSize="21" FontWeight="Black" Foreground="{DynamicResource TextPrimary}"/>
                             <TextBlock Text="-SYNC" FontSize="21" FontWeight="Black" Foreground="{DynamicResource FlameGradient}"/>
                             <Border Background="{DynamicResource VersionBadgeBg}" BorderBrush="{DynamicResource VersionBadgeBorder}" BorderThickness="1" CornerRadius="5" Padding="7,1" Margin="10,0,0,0" VerticalAlignment="Center">
-                                <TextBlock x:Name="HeaderVersionBadge" Text="v1.5.0" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
+                                <TextBlock x:Name="HeaderVersionBadge" Text="v1.5.1" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
                             </Border>
                         </StackPanel>
                         <TextBlock Text="Guitar Hero III Companion  •  Studio Edition  •  by Mad Scientist" FontSize="11.5" Foreground="{DynamicResource TextMuted}"/>
@@ -410,7 +411,93 @@
                             </DockPanel>
                         </Border>
 
-                        <StackPanel x:Name="SongsListPanel"/>
+                        <!-- Guitar Hero III Authentic Setlist Notebook Stage Container (Matching GH3 Game UI) -->
+                        <Border x:Name="CustomsGh3NotebookOuter" Margin="0,4,0,16"
+                                Background="#24140E" BorderBrush="#3D2114" BorderThickness="4" CornerRadius="12" Padding="14">
+                            <Grid>
+                                <!-- Wooden Table backing -->
+                                <Border Background="#1A0D08" CornerRadius="8" Opacity="0.95"/>
+
+                                <!-- Notebook Parchment Sheet (Yellow/Cream lined paper matching GH3 game UI) -->
+                                <Border x:Name="CustomsGh3NotebookPaper" Background="#FBF7EC" CornerRadius="4" BorderBrush="#D6CBB4" BorderThickness="1.5" Margin="8">
+                                    <Grid ClipToBounds="True">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <!-- Red vertical margin line down the left side -->
+                                        <Border Width="2.5" Background="#E05252" HorizontalAlignment="Left" Margin="68,0,0,0" Grid.RowSpan="3" Opacity="0.85"/>
+
+                                        <!-- Header: Tier / Venue in authentic bold red rock stenciled font -->
+                                        <Grid Grid.Row="0" Margin="24,18,24,12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Margin="54,0,0,0">
+                                                <TextBlock x:Name="CustomsTierHeader" Text="1. OPENING ACT • CUSTOM SETLIST" FontSize="26" FontWeight="Black" FontFamily="Impact, Arial Black" Foreground="#B91C1C"/>
+                                                <TextBlock x:Name="CustomsVenueSub" Text="BETTERGH3 CUSTOM SONGS • CAREER SCORES &amp; RATINGS" FontSize="11.5" FontWeight="Bold" Foreground="#78350F" Margin="2,0,0,0"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Border Background="#FEF3C7" BorderBrush="#F59E0B" BorderThickness="1.5" CornerRadius="5" Padding="8,3" Margin="0,0,8,0">
+                                                    <TextBlock x:Name="CustomsBadge" Text="★ MY CUSTOMS" FontSize="11" FontWeight="Bold" Foreground="#92400E"/>
+                                                </Border>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <!-- Paperclip badge graphic pinned to margin -->
+                                        <Canvas Grid.Row="0" Width="40" Height="50" HorizontalAlignment="Left" Margin="48,12,0,0" IsHitTestVisible="False">
+                                            <Rectangle Width="8" Height="40" Canvas.Left="16" Canvas.Top="0" RadiusX="4" RadiusY="4" Stroke="#9CA3AF" StrokeThickness="2.5" Fill="Transparent"/>
+                                            <Border Canvas.Left="0" Canvas.Top="8" Width="36" Height="26" Background="#DC2626" BorderBrush="#7F1D1D" BorderThickness="1" CornerRadius="2">
+                                                <TextBlock Text="★ GH3" FontSize="9" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                        </Canvas>
+
+                                        <!-- Ruled Paper Song List Container -->
+                                        <StackPanel Grid.Row="1" x:Name="SongsListPanel" Margin="0,0,0,8"/>
+
+                                        <!-- Bottom Controller Navigation Pills Bar (UP/DOWN, SELECT, BONUS, DOWNLOADS) -->
+                                        <Border Grid.Row="2" Background="#ECE4D0" BorderBrush="#D8CEB7" BorderThickness="0,1.5,0,0" Padding="16,10">
+                                            <WrapPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <!-- UP/DOWN Pill -->
+                                                <Border Background="#E2E8F0" BorderBrush="#94A3B8" BorderThickness="1.5" CornerRadius="12" Padding="10,3" Margin="4,2">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Border Width="16" Height="10" Background="#475569" CornerRadius="2" Margin="0,0,6,0"/>
+                                                        <TextBlock Text="UP / DOWN: BROWSE" FontSize="10.5" FontWeight="Bold" Foreground="#1E293B"/>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <!-- GREEN SELECT Pill -->
+                                                <Border Background="#DCFCE7" BorderBrush="#22C55E" BorderThickness="1.5" CornerRadius="12" Padding="10,3" Margin="4,2">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Border Width="10" Height="10" Background="#16A34A" CornerRadius="5" Margin="0,0,6,0"/>
+                                                        <TextBlock Text="SELECT: PREVIEW / PLAY" FontSize="10.5" FontWeight="Bold" Foreground="#166534"/>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <!-- BLUE BONUS Pill -->
+                                                <Border Background="#DBEAFE" BorderBrush="#3B82F6" BorderThickness="1.5" CornerRadius="12" Padding="10,3" Margin="4,2">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Border Width="10" Height="10" Background="#2563EB" CornerRadius="5" Margin="0,0,6,0"/>
+                                                        <TextBlock Text="BONUS: ADD TO LOBBY" FontSize="10.5" FontWeight="Bold" Foreground="#1E40AF"/>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <!-- ORANGE DOWNLOADS Pill -->
+                                                <Border Background="#FFEDD5" BorderBrush="#F97316" BorderThickness="1.5" CornerRadius="12" Padding="10,3" Margin="4,2">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Border Width="10" Height="10" Background="#EA580C" CornerRadius="5" Margin="0,0,6,0"/>
+                                                        <TextBlock Text="DOWNLOADS: IMPORT CUSTOMS" FontSize="10.5" FontWeight="Bold" Foreground="#9A3412"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </WrapPanel>
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Border>
                     </StackPanel>
 
                     <!-- ==================== PAGE 2: SONG CREATOR ==================== -->
@@ -906,9 +993,33 @@
                     <!-- ==================== PAGE 4: FRIENDS & TRUST ==================== -->
                     <StackPanel x:Name="PageFriends" Visibility="Collapsed">
                         <views:StageHudProgressControl x:Name="PageFriends_StageHud" Visibility="Collapsed" Margin="0,0,0,12"/>
-                        <TextBlock Text="Friends" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
-                        <TextBlock Text="Add friends with their Friend Code to view online status and 1-click sync custom songs."
-                                   FontSize="12.5" Foreground="{DynamicResource TextMuted}" Margin="0,2,0,16"/>
+                        <Grid Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="Friends" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+                                <TextBlock Text="Search friends by Stage Name or Friend Code, view profiles, and 1-click sync custom songs."
+                                           FontSize="12.5" Foreground="{DynamicResource TextMuted}" Margin="0,2,0,0"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button x:Name="ViewMyProfileBtn" Content="👤 My Profile" Style="{StaticResource OutlineButton}" Padding="12,6" Margin="0,0,8,0" Click="ViewMyProfileBtn_Click" ToolTip="View your full Rockstar Profile, Achievements, and Showcase Track"/>
+                                <Button x:Name="NotificationsBtn" Content="🔔 Notifications (0)" Style="{StaticResource OutlineButton}" Padding="12,6" Click="NotificationsBtn_Click" ToolTip="Friend requests, play-together invites, and unlocked achievements"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Notifications Center Panel (Toggled via NotificationsBtn) -->
+                        <Border x:Name="NotificationsPanel" Visibility="Collapsed" Style="{StaticResource GhCard}"
+                                Background="#141120" BorderBrush="{DynamicResource AccentGold}" BorderThickness="1.5" Margin="0,0,0,14" Padding="14">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,10">
+                                    <TextBlock Text="🔔 Notifications Center" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource AccentGold}"/>
+                                    <Button Content="✕ Close" Style="{StaticResource OutlineButton}" Padding="8,3" HorizontalAlignment="Right" Click="DismissNotifications_Click"/>
+                                </DockPanel>
+                                <StackPanel x:Name="NotificationsContentPanel"/>
+                            </StackPanel>
+                        </Border>
 
                         <!-- User Profile & Friend Code Card -->
                         <Border Style="{StaticResource GhCard}">
@@ -947,35 +1058,42 @@
                             </Grid>
                         </Border>
 
-                        <!-- Add Friend Card -->
+                        <!-- Add / Search Friend Card -->
                         <Border Style="{StaticResource GhCard}">
                             <StackPanel>
                                 <DockPanel Margin="0,0,0,8">
                                     <Button DockPanel.Dock="Right" Content="🔄 Refresh Status" Style="{StaticResource OutlineButton}" Click="RefreshFriendsBtn_Click"/>
-                                    <TextBlock Text="Add a Friend" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+                                    <TextBlock Text="Search &amp; Add Friends" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
                                 </DockPanel>
-                                <TextBlock Text="Enter your friend's Friend Code to send a request:"
+                                <TextBlock Text="Enter your friend's Stage Name (e.g. KuffyKush) or Friend Code (e.g. GH3-5126-A893):"
                                            FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,10" TextWrapping="Wrap"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="10"/>
+                                        <ColumnDefinition Width="8"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="8"/>
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="8"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBox x:Name="AddFriendCodeBox" Grid.Column="0" FontFamily="Consolas" FontSize="14" FontWeight="SemiBold"
-                                             ToolTip="Friend Code (e.g. GH3-5126-A893)" TextChanged="AddFriendCodeBox_TextChanged"/>
-                                    <Button x:Name="SendFriendRequestBtn" Grid.Column="2" Content="➕ Add Friend" Style="{StaticResource OutlineButton}"
+                                             ToolTip="Enter Stage Name or Friend Code" TextChanged="AddFriendCodeBox_TextChanged" KeyDown="AddFriendCodeBox_KeyDown"/>
+                                    <Button x:Name="SearchFriendBtn" Grid.Column="2" Content="🔍 Search" Style="{StaticResource BlueButton}"
+                                            Padding="14,7" Click="SearchFriendBtn_Click" ToolTip="Search for player across network"/>
+                                    <Button x:Name="SendFriendRequestBtn" Grid.Column="4" Content="➕ Add Friend" Style="{StaticResource OutlineButton}"
                                             Padding="14,7" Click="SendFriendRequestBtn_Click" ToolTip="Add as Regular Friend (View Setlist &amp; Presence)"/>
-                                    <Button x:Name="SendTrustedFriendRequestBtn" Grid.Column="4" Content="⭐ Add Trusted Friend" Style="{StaticResource FlameButton}"
+                                    <Button x:Name="SendTrustedFriendRequestBtn" Grid.Column="6" Content="⭐ Add Trusted Friend" Style="{StaticResource FlameButton}"
                                             Padding="16,7" Click="SendTrustedFriendRequestBtn_Click" ToolTip="Add as Trusted Friend (Full Song Download &amp; 1-Click Sync)"/>
                                 </Grid>
 
-                                <!-- Live Auto-Detection Status Pill -->
+                                <!-- Live Auto-Detection / Search Status Pill -->
                                 <Border x:Name="AutoDetectStatusPill" Visibility="Collapsed" Margin="0,10,0,0" Padding="12,8" CornerRadius="6"
                                         Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1">
                                     <DockPanel>
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button x:Name="SearchProfileViewBtn" Content="👤 View Profile" Style="{StaticResource FlameButton}" Padding="10,4" Margin="0,0,6,0" Click="SearchProfileViewBtn_Click"/>
+                                        </StackPanel>
                                         <TextBlock x:Name="AutoDetectStatusIcon" Text="🔍" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                         <TextBlock x:Name="AutoDetectStatusText" Text="Detecting player profile..." FontSize="12" Foreground="{DynamicResource TextPrimary}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                     </DockPanel>
@@ -1882,7 +2000,7 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel>
-                                        <TextBlock x:Name="CreditsVersionTitle" Text="GH3-Sync v1.5.0 — Created by Mad Scientist" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+                                        <TextBlock x:Name="CreditsVersionTitle" Text="GH3-Sync v1.5.1 — Created by Mad Scientist" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
                                         <StackPanel Orientation="Horizontal" Margin="0,4,0,4">
                                             <TextBlock Text="GitHub: " FontSize="12.5" Foreground="{DynamicResource TextMuted}"/>
                                             <TextBlock FontSize="12.5">
@@ -1893,7 +2011,7 @@
                                                 <Hyperlink NavigateUri="https://github.com/tbailey639/GH3-Sync" RequestNavigate="Hyperlink_RequestNavigate" Foreground="{DynamicResource CardInfoTitle}">GH3-Sync Repository</Hyperlink>
                                             </TextBlock>
                                         </StackPanel>
-                                        <TextBlock x:Name="AboutUpdateStatus" Text="Version 1.5.0 (P2P Setlist Notebook, Permanent Keep &amp; Soundboard Edition)" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
+                                        <TextBlock x:Name="AboutUpdateStatus" Text="Version 1.5.1 (Rockstar Profiles, Play Together, Notifications &amp; Notebook UI Edition)" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="Check for Updates" Style="{StaticResource FlameButton}" VerticalAlignment="Center" Click="CheckUpdatesBtn_Click"/>
                                 </Grid>

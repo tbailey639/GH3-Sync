@@ -62,7 +62,15 @@ public class FriendService
     public UserProfile Profile => new()
     {
         Username = AppConfig.Current.Username,
-        FriendCode = AppConfig.Current.FriendCode
+        FriendCode = AppConfig.Current.FriendCode,
+        ShowcaseSongTitle = AppConfig.Current.ShowcaseSongTitle ?? "",
+        ShowcaseSongId = AppConfig.Current.ShowcaseSongId ?? "",
+        ActivityStatus = SignalingRelayService.ActivityStatusProvider?.Invoke() ?? "Online",
+        TotalCustomSongs = AppConfig.Current.CreatedSongDirectories?.Count ?? 0,
+        TotalNotesHit = AppConfig.Current.LifetimeStats?.TotalNotesHit ?? 0,
+        TotalFullCombos = AppConfig.Current.LifetimeStats?.TotalFullCombos ?? 0,
+        TotalMatchesPlayed = AppConfig.Current.LifetimeStats?.TotalMatchesPlayed ?? 0,
+        UnlockedAchievements = RockHallOfFameService.GetAllAchievements().Where(a => a.IsUnlocked).Select(a => a.Id).ToList()
     };
 
     public string Username => AppConfig.Current.Username;
@@ -116,6 +124,108 @@ public class FriendService
                 AppConfig.UpdateUsername(newUsername.Trim());
             }
         }
+    }
+
+    public async Task<(bool Success, string Error)> SaveProfileAsync(string newUsername)
+    {
+        if (string.IsNullOrWhiteSpace(newUsername)) return (false, "Stage Name cannot be empty.");
+        var trimmed = newUsername.Trim();
+        if (trimmed.Equals(AppConfig.Current.Username, StringComparison.OrdinalIgnoreCase))
+            return (true, "");
+
+        if (SignalingRelay != null)
+        {
+            var (isTaken, otherCode, _) = await SignalingRelay.CheckUsernameTakenAsync(trimmed, AppConfig.Current.FriendCode);
+            if (isTaken)
+            {
+                return (false, $"The Stage Name '{trimmed}' is already claimed by another rockstar ({otherCode}) on the network. Please choose a unique Stage Name!");
+            }
+        }
+
+        lock (_lock)
+        {
+            AppConfig.UpdateUsername(trimmed);
+        }
+        return (true, "");
+    }
+
+    /// <summary>
+    /// Searches for a player across the network using either their Friend Code (GH3-XXXX-XXXX)
+    /// OR their Stage Name / Username (e.g. "KuffyKush", "JohnnyRocker").
+    /// </summary>
+    public async Task<FriendLookupResult> SearchFriendAsync(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+            return new FriendLookupResult { Found = false, Error = "Search query is empty." };
+
+        var q = query.Trim();
+
+        // 1. Check if the query matches an existing friend in our circle (by username or code)
+        var match = AppConfig.Current.Friends.FirstOrDefault(f =>
+            f.Username.Equals(q, StringComparison.OrdinalIgnoreCase) ||
+            f.FriendCode.Equals(SignalingRelayService.NormalizeCode(q), StringComparison.OrdinalIgnoreCase) ||
+            SignalingRelayService.CleanTopicCode(f.FriendCode).Equals(SignalingRelayService.CleanTopicCode(q), StringComparison.OrdinalIgnoreCase));
+
+        if (match != null)
+        {
+            return new FriendLookupResult
+            {
+                Found = true,
+                FriendCode = match.FriendCode,
+                Username = match.Username,
+                Address = match.LastAddress,
+                IsOnline = match.IsOnlineNow,
+                Source = "FriendsList"
+            };
+        }
+
+        // 2. Check if the query is a self-lookup
+        if (q.Equals(AppConfig.Current.Username, StringComparison.OrdinalIgnoreCase) ||
+            SignalingRelayService.CleanTopicCode(q).Equals(SignalingRelayService.CleanTopicCode(AppConfig.Current.FriendCode), StringComparison.OrdinalIgnoreCase))
+        {
+            return new FriendLookupResult
+            {
+                Found = true,
+                FriendCode = AppConfig.Current.FriendCode,
+                Username = AppConfig.Current.Username,
+                Address = BestAddressProvider?.Invoke() ?? "http://127.0.0.1:7373",
+                IsOnline = true,
+                Source = "Self"
+            };
+        }
+
+        // 3. Try lookup by Friend Code first
+        var codeLookup = await LookupFriendByCodeAsync(q);
+        if (codeLookup.Found) return codeLookup;
+
+        // 4. Try lookup by Username across LAN peer discovery
+        var lanMatch = PeerDiscoveryService.Instance?.GetAllDiscoveredPeers().FirstOrDefault(p =>
+            p.Username.Equals(q, StringComparison.OrdinalIgnoreCase));
+        if (lanMatch != null)
+        {
+            return new FriendLookupResult
+            {
+                Found = true,
+                FriendCode = lanMatch.FriendCode,
+                Username = lanMatch.Username,
+                Address = lanMatch.Address,
+                IsOnline = (DateTime.UtcNow - lanMatch.LastSeen).TotalSeconds < 90,
+                Source = "LAN"
+            };
+        }
+
+        // 5. Try lookup by Username via Global Signaling Relay Index
+        if (SignalingRelay != null)
+        {
+            var userLookup = await SignalingRelay.LookupPeerByUsernameAsync(q);
+            if (userLookup.Found) return userLookup;
+        }
+
+        return new FriendLookupResult
+        {
+            Found = false,
+            Error = $"No player found with Stage Name or Friend Code '{q}'. Make sure your friend has GH3-Sync open!"
+        };
     }
 
     /// <summary>

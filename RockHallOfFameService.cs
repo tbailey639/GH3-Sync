@@ -27,7 +27,13 @@ public static class RockHallOfFameService
         ("BOSS_SLAYER", "Boss Slayer", "Generate a Boss Battle Duel chart with authentic battle gems", "⚡", "Gold"),
         ("GLOBAL_ROCKER", "Global Rocker", "Connect and sync custom setlists with 3 or more P2P friends", "🌐", "Platinum"),
         ("MEDLEY_MARATHON", "Marathon Legend", "Assemble an Endless Rock Concert Medley of 3+ tracks", "🎸", "Platinum"),
-        ("STAGE_VIRTUOSO", "Stage Virtuoso", "Calibrate controller latency down to under 5ms jitter at 1000Hz", "⏱️", "Gold")
+        ("STAGE_VIRTUOSO", "Stage Virtuoso", "Calibrate controller latency down to under 5ms jitter at 1000Hz", "⏱️", "Gold"),
+        ("TRUSTED_DUO", "Brothers in Shred", "Form a mutual Trusted Friend bond for permanent custom song sharing", "🤝", "Gold"),
+        ("SETLIST_SHREDDER", "Setlist Virtuoso", "Mirror and rock out to a full 10-song custom lobby setlist", "📑", "Platinum"),
+        ("HYPE_MASTER", "Crowd Pleaser", "Blast an Airhorn or Hype SFX during a live multiplayer lobby session", "📢", "Gold"),
+        ("FIVE_STAR_STREAK", "5-Star Phenomenon", "Achieve 5 Stars on 10 or more custom tracks in career saves", "⭐", "Diamond"),
+        ("ROCK_OUT_DUO", "Rock Out Partner", "Send or accept an Ask to Play Together multiplayer invite", "🎸", "Platinum"),
+        ("AI_STEM_WIZARD", "Stem Wizard", "Separate guitar, bass, vocals, and crowd stems with Demucs AI", "🧪", "Gold")
     };
 
     public static List<RockAchievement> GetAllAchievements()
@@ -40,6 +46,9 @@ public static class RockHallOfFameService
 
         if (AppConfig.Current.Friends?.Count >= 3)
             unlocked.Add("GLOBAL_ROCKER");
+
+        if (AppConfig.Current.Friends?.Any(f => f.IsTrusted) == true || (AppConfig.Current.KeptFriendSongIds?.Count ?? 0) > 0)
+            unlocked.Add("TRUSTED_DUO");
 
         return Definitions.Select(d => new RockAchievement(
             d.Id,
