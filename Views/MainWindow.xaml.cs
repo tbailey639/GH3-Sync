@@ -214,6 +214,11 @@ public partial class MainWindow : Window
             {
                 RefreshFriendsList();
             });
+            FriendService.SignalingRelay.OnPeerHypeSfx += (peerCode, sfx) => Dispatcher.BeginInvoke(() =>
+            {
+                PlayHypeSound(sfx);
+                ShowStageToast("📢 LOBBY HYPE", $"{peerCode} fired {sfx.ToUpperInvariant()}!", "#F59E0B");
+            });
         }
 
         _playerTimer.Tick += PlayerTimer_Tick;
@@ -301,6 +306,9 @@ public partial class MainWindow : Window
         {
             PeerAddressBox.Text = "";
         }
+
+        // Automated library audit & reconciliation: ensure only original + permanently kept songs exist in customs
+        try { _tempSession.ReconcileLibraryIntegrity(); } catch { }
 
         RefreshAllUiState();
 
@@ -805,7 +813,9 @@ public partial class MainWindow : Window
 
         try
         {
-            // Auto-Heal & Pre-Flight Health Check before launching Guitar Hero III
+            // Auto-Heal, Library Reconcile & Pre-Flight Health Check before launching Guitar Hero III
+            try { _tempSession.ReconcileLibraryIntegrity(); } catch { }
+
             if (!string.IsNullOrWhiteSpace(_gh3.GamePath))
             {
                 try { CustomsPakService.RepairCustomsPakIfCorrupted(_gh3.GamePath, _logger); } catch { }
@@ -5247,9 +5257,10 @@ public partial class MainWindow : Window
             titleSp.Children.Add(new TextBlock { Text = $"{f.Username}  ({f.FriendCode})", FontSize = 14, FontWeight = FontWeights.Bold, Foreground = (WpfBrush)FindResource("TextPrimary"), VerticalAlignment = VerticalAlignment.Center });
 
             // Activity status badge
-            var actBg = f.ActivityStatus == "Playing GH3" ? "#3B1E6D" : (f.ActivityStatus == "In Lobby" ? "#065F46" : "#1E293B");
-            var actFg = f.ActivityStatus == "Playing GH3" ? "#E9D5FF" : (f.ActivityStatus == "In Lobby" ? "#34D399" : "#94A3B8");
-            var actText = f.ActivityStatus == "Playing GH3" ? "🎸 Playing GH3" : (f.ActivityStatus == "In Lobby" ? "🟢 In Lobby" : "⚪ Online");
+            bool isOnline = f.IsOnlineNow && f.ActivityStatus != "Offline";
+            var actBg = !isOnline ? "#27272A" : (f.ActivityStatus == "Playing GH3" ? "#3B1E6D" : (f.ActivityStatus == "In Lobby" ? "#065F46" : "#064E3B"));
+            var actFg = !isOnline ? "#71717A" : (f.ActivityStatus == "Playing GH3" ? "#E9D5FF" : (f.ActivityStatus == "In Lobby" ? "#34D399" : "#6EE7B7"));
+            var actText = !isOnline ? "🔴 Offline" : (f.ActivityStatus == "Playing GH3" ? "🎸 Playing GH3" : (f.ActivityStatus == "In Lobby" ? "🟢 In Lobby" : "🟢 Online"));
             var actBadge = new Border
             {
                 Background = (WpfBrush)new BrushConverter().ConvertFromString(actBg)!,
@@ -5504,10 +5515,11 @@ public partial class MainWindow : Window
             });
 
             // Live status badge
+            bool isOnline = friend.IsOnlineNow && friend.ActivityStatus != "Offline";
             bool hasValidAddress = !string.IsNullOrWhiteSpace(friend.LastAddress) && !friend.LastAddress.Contains("169.254.");
             var statusBorder = new Border
             {
-                Background = new SolidColorBrush(hasValidAddress ? WpfColor.FromRgb(6, 78, 59) : WpfColor.FromRgb(40, 40, 50)),
+                Background = new SolidColorBrush(isOnline ? (hasValidAddress ? WpfColor.FromRgb(6, 78, 59) : WpfColor.FromRgb(15, 76, 129)) : WpfColor.FromRgb(40, 40, 50)),
                 CornerRadius = new CornerRadius(5),
                 Padding = new Thickness(7, 2, 7, 2),
                 Margin = new Thickness(10, 0, 0, 0),
@@ -5515,10 +5527,10 @@ public partial class MainWindow : Window
             };
             statusBorder.Child = new TextBlock
             {
-                Text = hasValidAddress ? "🟢 In Lobby" : "⚫ Offline / Searching",
+                Text = !isOnline ? "🔴 Offline" : (friend.ActivityStatus == "Playing GH3" ? "🎸 Playing GH3" : (hasValidAddress ? "🟢 In Lobby" : "🟢 Online")),
                 FontSize = 11,
                 FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(hasValidAddress ? WpfColor.FromRgb(110, 231, 183) : WpfColor.FromRgb(160, 160, 180))
+                Foreground = new SolidColorBrush(isOnline ? WpfColor.FromRgb(110, 231, 183) : WpfColor.FromRgb(156, 163, 175))
             };
             header.Children.Add(statusBorder);
             info.Children.Add(header);
@@ -6136,10 +6148,20 @@ public partial class MainWindow : Window
             LobbyMatchTitle.Foreground = (WpfBrush)FindResource("CardWarnTitle");
             LobbyMatchSub.Text = $"Auto-Sync only transfers {_lastPeerManifest.MachineName}'s active Lobby Setlist (capped at {lobbySongs.Count} songs — skipping {_lastPeerManifest.Songs.Count - lobbySongs.Count} other tracks).";
             AutoSyncLobbyBtn.Visibility = Visibility.Visible;
-            AutoSyncLobbyBtn.Content = TempSessionModeChk.IsChecked == true
-                ? $"Temp-Sync {missingLobby.Count} Lobby Song(s)"
-                : $"Auto-Sync {missingLobby.Count} Lobby Song(s)";
+            AutoSyncLobbyBtn.Content = $"Auto-Sync {missingLobby.Count} Lobby Song(s)";
         }
+
+        Gh3NotebookOuter.Visibility = Visibility.Visible;
+        Gh3TierHeader.Text = $"4. {_lastPeerManifest.MachineName.ToUpperInvariant()}'S SETLIST";
+
+        var activeFriend = AppConfig.Current.Friends.FirstOrDefault(f =>
+            (_lastPeerManifest != null && f.Username.Equals(_lastPeerManifest.MachineName, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrEmpty(_lastPeerBaseUrl) && !string.IsNullOrEmpty(f.LastAddress) && f.LastAddress.TrimEnd('/').Equals(_lastPeerBaseUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)));
+        bool isTrusted = activeFriend?.IsTrusted == true;
+        Gh3FriendBadge.Text = isTrusted ? "★ TRUSTED FRIEND" : "👥 REGULAR FRIEND";
+        Gh3FriendBadgeBorder.Background = isTrusted ? (WpfBrush)new BrushConverter().ConvertFromString("#FEF3C7")! : (WpfBrush)new BrushConverter().ConvertFromString("#F3F4F6")!;
+        Gh3FriendBadgeBorder.BorderBrush = isTrusted ? (WpfBrush)new BrushConverter().ConvertFromString("#F59E0B")! : (WpfBrush)new BrushConverter().ConvertFromString("#D1D5DB")!;
+        Gh3FriendBadge.Foreground = isTrusted ? (WpfBrush)new BrushConverter().ConvertFromString("#92400E")! : (WpfBrush)new BrushConverter().ConvertFromString("#4B5563")!;
 
         var displayList = ShowFullPeerLibChk.IsChecked == true ? _lastPeerManifest.Songs : lobbySongs;
         if (FilterMissingOnlyChk?.IsChecked == true)
@@ -6150,24 +6172,53 @@ public partial class MainWindow : Window
             ? $"Showing all {displayList.Count} songs from {_lastPeerManifest.MachineName}:"
             : $"Showing {_lastPeerManifest.MachineName}'s Active Lobby Setlist ({displayList.Count} songs):";
 
+        int songRowIdx = 0;
         foreach (var s in displayList)
         {
+            songRowIdx++;
             bool alreadyOwned = localIds.Contains(s.SongId);
-            var card = new Border { Style = (Style)FindResource("GhCard"), Padding = new Thickness(12), Margin = new Thickness(0, 0, 0, 8) };
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            bool isKept = AppConfig.IsKeptFriendSong(s.SongId) || _tempSession.CurrentState.Songs.Any(x => x.SongId.Equals(s.SongId, StringComparison.OrdinalIgnoreCase) && x.Kept);
+            bool isTempSessionSong = _tempSession.CurrentState.Songs.Any(x => x.SongId.Equals(s.SongId, StringComparison.OrdinalIgnoreCase) && !x.Kept);
 
-            var info = new StackPanel();
-            info.Children.Add(new TextBlock { Text = $"{s.Title} — {s.Artist}", FontSize = 14, FontWeight = FontWeights.Bold, Foreground = (WpfBrush)FindResource("TextPrimary") });
-            info.Children.Add(new TextBlock
+            // Guitar Hero III Authentic Setlist Ruled Line Notebook Row
+            var rowBorder = new Border
             {
-                Text = alreadyOwned ? $"Already Installed ({s.SongId})" : $"Missing Locally • {s.TotalSizeBytes / (1024.0 * 1024.0):F1} MB",
-                FontSize = 11.5,
-                Foreground = (WpfBrush)FindResource(alreadyOwned ? "TextMuted" : "CardSuccessTitle")
-            });
+                Padding = new Thickness(76, 8, 16, 8),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                BorderBrush = (WpfBrush)new BrushConverter().ConvertFromString("#C6D8E8")!,
+                Background = System.Windows.Media.Brushes.Transparent
+            };
 
-            // Friend High-Score Leaderboard Comparison!
+            var rowGrid = new Grid();
+            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            // Left: Song Title & Artist / Year in marker ink style
+            var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            bool isLeadSong = songRowIdx == 1 || isTempSessionSong;
+            var titleColor = isLeadSong ? "#B45309" : "#1E293B";
+
+            var titleBlock = new TextBlock
+            {
+                Text = s.Title,
+                FontFamily = new System.Windows.Media.FontFamily("Impact, Arial Black"),
+                FontSize = 19,
+                Foreground = (WpfBrush)new BrushConverter().ConvertFromString(titleColor)!
+            };
+            textStack.Children.Add(titleBlock);
+
+            var artistBlock = new TextBlock
+            {
+                Text = $"{s.Artist.ToUpperInvariant()}{(!string.IsNullOrWhiteSpace(s.Year) ? $", {s.Year}" : "")}",
+                FontFamily = new System.Windows.Media.FontFamily("Impact, Arial Black"),
+                FontSize = 11.5,
+                Foreground = (WpfBrush)new BrushConverter().ConvertFromString("#4B5563")!,
+                Margin = new Thickness(0, 1, 0, 0)
+            };
+            textStack.Children.Add(artistBlock);
+
+            // Score comparison or local status subtext
             var myScore = AppConfig.GetHighScore(s.SongId);
             SongScoreRecord? peerScore = null;
             if (_lastPeerManifest.HighScores != null)
@@ -6175,60 +6226,160 @@ public partial class MainWindow : Window
                 var pKey = _lastPeerManifest.HighScores.Keys.FirstOrDefault(k => k.Equals(s.SongId, StringComparison.OrdinalIgnoreCase));
                 if (pKey != null) peerScore = _lastPeerManifest.HighScores[pKey];
             }
+
             if (myScore != null || peerScore != null)
             {
                 int mine = myScore?.BestScore ?? 0;
                 int theirs = peerScore?.BestScore ?? 0;
                 string crown = mine > theirs ? "👑 You Lead" : (theirs > mine ? $"🏆 {_lastPeerManifest.MachineName} Leads" : "🤝 Tied");
-                info.Children.Add(new TextBlock
+                textStack.Children.Add(new TextBlock
                 {
-                    Text = $"{crown}  •  You: {mine:N0}{(myScore?.IsFullCombo == true ? " (FC)" : "")}  vs  Peer: {theirs:N0}{(peerScore?.IsFullCombo == true ? " (FC)" : "")}",
-                    FontSize = 11,
+                    Text = $"{crown}  •  You: {mine:N0}  vs  Peer: {theirs:N0}",
+                    FontSize = 10.5,
                     FontWeight = FontWeights.SemiBold,
-                    Foreground = (WpfBrush)FindResource(mine >= theirs ? "CardSuccessTitle" : "CardWarnTitle"),
+                    Foreground = (WpfBrush)new BrushConverter().ConvertFromString(mine >= theirs ? "#15803D" : "#B45309")!,
                     Margin = new Thickness(0, 2, 0, 0)
                 });
             }
-            Grid.SetColumn(info, 0);
-            grid.Children.Add(info);
+            else if (alreadyOwned)
+            {
+                textStack.Children.Add(new TextBlock
+                {
+                    Text = isKept ? "⭐ Kept in Local Library" : (isTempSessionSong ? "⚡ Active in Temporary Lobby" : "Installed"),
+                    FontSize = 10.5,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = (WpfBrush)new BrushConverter().ConvertFromString(isKept ? "#15803D" : "#6B7280")!,
+                    Margin = new Thickness(0, 2, 0, 0)
+                });
+            }
 
-            var actionStack = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            bool isTempSessionSong = _tempSession.CurrentState.Songs.Any(x => x.SongId.Equals(s.SongId, StringComparison.OrdinalIgnoreCase) && !x.Kept);
-            if (isTempSessionSong)
+            Grid.SetColumn(textStack, 0);
+            rowGrid.Children.Add(textStack);
+
+            // Center-Right: 5 Stars & High Score (Matching GH3 Setlist Reference Photo)
+            var scoreStack = new StackPanel
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+                Margin = new Thickness(14, 0, 18, 0)
+            };
+
+            int bestScoreVal = Math.Max(myScore?.BestScore ?? 0, peerScore?.BestScore ?? 0);
+            string starsText = bestScoreVal > 0 ? "★★★★★" : "☆☆☆☆☆";
+            var starColor = bestScoreVal > 0 ? "#D97706" : "#94A3B8";
+
+            scoreStack.Children.Add(new TextBlock
+            {
+                Text = starsText,
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
+                Foreground = (WpfBrush)new BrushConverter().ConvertFromString(starColor)!,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Right
+            });
+
+            scoreStack.Children.Add(new TextBlock
+            {
+                Text = bestScoreVal > 0 ? $"{bestScoreVal:N0}" : $"{s.TotalSizeBytes / (1024.0 * 1024.0):F1} MB",
+                FontFamily = new System.Windows.Media.FontFamily("Impact, Arial Black"),
+                FontSize = 14,
+                Foreground = (WpfBrush)new BrushConverter().ConvertFromString("#1E293B")!,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+                Margin = new Thickness(0, 1, 0, 0)
+            });
+
+            Grid.SetColumn(scoreStack, 1);
+            rowGrid.Children.Add(scoreStack);
+
+            // Right: Action buttons (⚡ Sync & ⭐ Permanently Keep Song)
+            var actionStack = new StackPanel
+            {
+                Orientation = System.Windows.Controls.Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            // Dedicated Per-Song KEEP Button
+            if (isKept)
+            {
+                var keptBadge = new Border
+                {
+                    Background = (WpfBrush)new BrushConverter().ConvertFromString("#DCFCE7")!,
+                    BorderBrush = (WpfBrush)new BrushConverter().ConvertFromString("#22C55E")!,
+                    BorderThickness = new Thickness(1.5),
+                    CornerRadius = new CornerRadius(5),
+                    Padding = new Thickness(8, 4, 8, 4),
+                    Margin = new Thickness(0, 0, 6, 0),
+                    ToolTip = "This song has been permanently kept and will not be removed when the session ends."
+                };
+                keptBadge.Child = new TextBlock
+                {
+                    Text = "✔ Kept Forever",
+                    FontSize = 11,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = (WpfBrush)new BrushConverter().ConvertFromString("#15803D")!
+                };
+                actionStack.Children.Add(keptBadge);
+            }
+            else
             {
                 var keepBtn = new System.Windows.Controls.Button
                 {
-                    Content = "⭐ Keep Song",
-                    Style = (Style)FindResource("FlameButton"),
+                    Content = isTrusted ? "⭐ Keep Forever" : "🔒 Keep Song",
+                    Style = (Style)FindResource(isTrusted ? "FlameButton" : "OutlineButton"),
+                    Padding = new Thickness(9, 4, 9, 4),
                     Margin = new Thickness(0, 0, 6, 0),
-                    ToolTip = "Permanently keep this song in your library so it never gets auto-removed"
+                    IsEnabled = isTrusted
                 };
-                keepBtn.Click += (_, _) =>
+
+                if (isTrusted)
                 {
-                    _tempSession.KeepSongPermanently(s.SongId);
-                    ShowStageToast("⭐ SONG KEPT PERMANENTLY", $"'{s.Title}' was saved permanently to your library!", "#22C55E");
-                    AudioWaveformAndSfxService.PlayStarPowerChime();
-                    RefreshSongsList();
-                    RefreshTempSessionBanner();
-                    RenderPeerLibrary();
-                };
+                    keepBtn.ToolTip = "Permanently keep this song in your customs library so it never gets auto-removed.";
+                    keepBtn.Click += async (_, _) =>
+                    {
+                        keepBtn.IsEnabled = false;
+                        keepBtn.Content = "Saving...";
+
+                        if (!alreadyOwned)
+                        {
+                            var (dlOk, dlErr) = await DownloadAndInstallPeerSongAsync(s, temporaryMode: true);
+                            if (!dlOk)
+                            {
+                                WpfMessageBox.Show($"Failed to download song for keeping: {dlErr}", "Keep Song", MessageBoxButton.OK, MessageBoxImage.Error);
+                                keepBtn.IsEnabled = true;
+                                keepBtn.Content = "⭐ Keep Forever";
+                                return;
+                            }
+                        }
+
+                        _tempSession.KeepSongPermanently(s.SongId);
+                        ShowStageToast("⭐ SONG KEPT PERMANENTLY", $"'{s.Title}' saved permanently to your library!", "#22C55E");
+                        AudioWaveformAndSfxService.PlayStarPowerChime();
+                        RefreshSongsList();
+                        RefreshTempSessionBanner();
+                        RenderPeerLibrary();
+                    };
+                }
+                else
+                {
+                    keepBtn.ToolTip = "Regular Friends sync songs temporarily for multiplayer. Upgrade to 'Trusted Friend' to permanently keep songs!";
+                }
                 actionStack.Children.Add(keepBtn);
             }
 
+            // SYNC BUTTON
             var dlBtn = new System.Windows.Controls.Button
             {
-                Content = alreadyOwned ? (isTempSessionSong ? "Temp Owned" : "Re-Download") : (TempSessionModeChk.IsChecked == true ? "Temp Sync" : "Sync Song"),
-                Style = (Style)FindResource(alreadyOwned ? "OutlineButton" : "GreenButton")
+                Content = alreadyOwned ? (isTempSessionSong ? "⚡ Temp Synced" : "Re-Sync") : "⚡ Sync Song",
+                Style = (Style)FindResource(alreadyOwned ? "OutlineButton" : "GreenButton"),
+                Padding = new Thickness(10, 4, 10, 4)
             };
             dlBtn.Click += async (_, _) =>
             {
                 dlBtn.IsEnabled = false;
                 dlBtn.Content = "Syncing...";
-                bool tempMode = TempSessionModeChk.IsChecked == true;
-                var (ok, err) = await DownloadAndInstallPeerSongAsync(s, tempMode);
+                var (ok, err) = await DownloadAndInstallPeerSongAsync(s, temporaryMode: true);
                 if (ok)
                 {
-                    dlBtn.Content = tempMode ? "Temp Installed" : "Installed";
+                    dlBtn.Content = "⚡ Synced";
                     RefreshSongsList();
                     RefreshTempSessionBanner();
                     RenderPeerLibrary();
@@ -6241,11 +6392,33 @@ public partial class MainWindow : Window
                 }
             };
             actionStack.Children.Add(dlBtn);
-            Grid.SetColumn(actionStack, 1);
-            grid.Children.Add(actionStack);
 
-            card.Child = grid;
-            PeerSongsPanel.Children.Add(card);
+            Grid.SetColumn(actionStack, 2);
+            rowGrid.Children.Add(actionStack);
+
+            rowBorder.Child = rowGrid;
+            PeerSongsPanel.Children.Add(rowBorder);
+        }
+    }
+
+    private void EndLobbySyncBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var (removed, kept, msg) = _tempSession.EndSessionAndCleanup();
+            AudioWaveformAndSfxService.PlayStarPowerChime();
+            ShowStageToast("⏹ LOBBY SYNC ENDED", $"Restored original library safely! {removed} temp song(s) cleared, {kept} kept song(s) preserved.", "#10B981");
+
+            RefreshSongsList();
+            RefreshTempSessionBanner();
+            RenderPeerLibrary();
+            RefreshSongsList();
+            RefreshTempSessionBanner();
+            RenderPeerLibrary();
+        }
+        catch (Exception ex)
+        {
+            WpfMessageBox.Show($"Error ending lobby sync: {ex.Message}", "End Lobby Sync", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -6280,7 +6453,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        bool tempMode = TempSessionModeChk.IsChecked == true;
+        bool tempMode = true;
         AutoSyncLobbyBtn.IsEnabled = false;
         PageP2P_StageHud.Report(10, "STARTING LOBBY SYNC", $"Preparing transfer of {missing.Count} track(s)...");
         if (tempMode)
@@ -7755,15 +7928,33 @@ public partial class MainWindow : Window
             PlayHypeSound(sfxType);
             ShowStageToast("📢 HYPE BROADCAST", $"Sent '{sfxType.ToUpperInvariant()}' over P2P lobby!", "#F59E0B");
 
-            // Broadcast soundboard event to peer via P2P if connected
+            // Dual transport 1: Direct P2P HTTP POST
             if (!string.IsNullOrWhiteSpace(_lastPeerBaseUrl))
             {
                 _ = Task.Run(async () =>
                 {
                     try
                     {
-                        using var client = new HttpClient(SignalingRelayService.CreateFastIPv4Handler()) { Timeout = TimeSpan.FromSeconds(2) };
+                        using var client = new HttpClient(SignalingRelayService.CreateFastIPv4Handler()) { Timeout = TimeSpan.FromSeconds(2.5) };
                         await client.PostAsync($"{_lastPeerBaseUrl.TrimEnd('/')}/api/lobby/hype-sfx?type={Uri.EscapeDataString(sfxType)}", null);
+                    }
+                    catch { }
+                });
+            }
+
+            // Dual transport 2: Global signaling relay fallback
+            var targetCode = AppConfig.Current.Friends.FirstOrDefault(f =>
+                (_lastPeerManifest != null && f.Username.Equals(_lastPeerManifest.MachineName, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrEmpty(_lastPeerBaseUrl) && !string.IsNullOrEmpty(f.LastAddress) && f.LastAddress.TrimEnd('/').Equals(_lastPeerBaseUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)))?.FriendCode
+                ?? AppConfig.Current.Friends.FirstOrDefault(f => f.IsOnlineNow)?.FriendCode;
+
+            if (!string.IsNullOrWhiteSpace(targetCode) && FriendService.SignalingRelay != null)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await FriendService.SignalingRelay.SendLobbyHypeSfxPacketAsync(targetCode, AppConfig.Current.FriendCode, sfxType);
                     }
                     catch { }
                 });
@@ -7775,23 +7966,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            switch (type.ToLowerInvariant())
-            {
-                case "airhorn":
-                case "lightning":
-                case "solo":
-                    AudioWaveformAndSfxService.PlayCompilePowerChord();
-                    break;
-                case "cheer":
-                    AudioWaveformAndSfxService.PlayStarPowerChime();
-                    break;
-                case "boo":
-                    AudioWaveformAndSfxService.PlayNoteMissClunk();
-                    break;
-                default:
-                    System.Media.SystemSounds.Exclamation.Play();
-                    break;
-            }
+            AudioWaveformAndSfxService.PlayHypeSound(type);
         }
         catch { }
     }

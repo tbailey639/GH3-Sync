@@ -254,6 +254,55 @@ public class TunnelAndMeshService : IDisposable
         }
     }
 
+    private CancellationTokenSource? _watchdogCts;
+
+    public void StartTunnelWatchdog(Func<Task>? onTunnelRestarted = null)
+    {
+        _watchdogCts?.Cancel();
+        _watchdogCts = new CancellationTokenSource();
+        var ct = _watchdogCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(10000, ct);
+                    if (!AppConfig.Current.P2pOnlineEnabled) continue;
+
+                    bool needsRestart = false;
+                    lock (_lock)
+                    {
+                        if (_tunnelProcess != null && _tunnelProcess.HasExited)
+                        {
+                            needsRestart = true;
+                        }
+                    }
+
+                    if (needsRestart)
+                    {
+                        _logger.LogWarn("[TUNNEL WATCHDOG] Cloudflare tunnel process exited unexpectedly. Auto-reconnecting...");
+                        var (ok, newUrl) = await StartQuickTunnelAsync(ct: ct);
+                        if (ok && !string.IsNullOrWhiteSpace(newUrl))
+                        {
+                            _logger.LogInfo($"[TUNNEL WATCHDOG] Quick Tunnel recovered: {newUrl}");
+                            if (onTunnelRestarted != null)
+                            {
+                                await onTunnelRestarted();
+                            }
+                        }
+                    }
+                }
+                catch (OperationCanceledException) { break; }
+                catch (Exception ex)
+                {
+                    _logger.LogWarn($"[TUNNEL WATCHDOG] Monitor check: {ex.Message}");
+                }
+            }
+        }, ct);
+    }
+
     public static bool VerifyCloudflaredSignature(string exePath, out string detail)
     {
         detail = "";

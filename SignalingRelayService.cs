@@ -85,6 +85,7 @@ public class SignalingRelayService
     public event Action<string, bool>? OnPeerReadyChanged;
     public event Action<string, int, List<string>>? OnPeerRouletteRoll;
     public event Action<string, string, string>? OnPeerActivityUpdated;
+    public event Action<string, string>? OnPeerHypeSfx;
 
     public SignalingRelayService(FriendService friends, SyncLogger? logger = null)
     {
@@ -252,6 +253,7 @@ public class SignalingRelayService
                         var existingFriend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(peerCode, StringComparison.OrdinalIgnoreCase));
                         if (existingFriend != null)
                         {
+                            existingFriend.LastSeenUtc = DateTime.UtcNow;
                             existingFriend.ActivityStatus = peerActivity;
                             if (!string.IsNullOrWhiteSpace(peerAddr) && !peerAddr.Contains("169.254."))
                             {
@@ -464,6 +466,37 @@ public class SignalingRelayService
         }
     }
 
+    public async Task<bool> SendLobbyHypeSfxPacketAsync(string targetCode, string senderCode, string sfxType)
+    {
+        var cleanTarget = CleanTopicCode(targetCode);
+        if (string.IsNullOrWhiteSpace(cleanTarget)) return false;
+
+        try
+        {
+            var innerJson = JsonSerializer.Serialize(new
+            {
+                type = "LOBBY_HYPE_SFX",
+                senderCode = NormalizeCode(senderCode),
+                sfxType = sfxType ?? "airhorn",
+                timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            });
+
+            var ntfyPayload = new
+            {
+                topic = $"gh3sync-req-{cleanTarget}",
+                message = innerJson
+            };
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4.0));
+            var resp = await _http.PostAsJsonAsync("https://ntfy.sh", ntfyPayload, cts.Token);
+            return resp.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private async Task RunSignalingLoopAsync(CancellationToken ct)
     {
         int cycleIndex = 0;
@@ -644,6 +677,20 @@ public class SignalingRelayService
 
                             OnPeerRouletteRoll?.Invoke(sCode, seed, songIds);
                             _logger?.LogInfo($"[SIGNALING] Received party roulette roll from {sCode} with {songIds.Count} songs (seed {seed})");
+                        }
+                        else if (type == "LOBBY_HYPE_SFX" && !string.IsNullOrWhiteSpace(sCode) && !sCode.Equals(AppConfig.Current.FriendCode, StringComparison.OrdinalIgnoreCase))
+                        {
+                            string sfxType = "airhorn";
+                            try
+                            {
+                                using var msgDoc = JsonDocument.Parse(msgText);
+                                var mr = msgDoc.RootElement;
+                                if (mr.TryGetProperty("sfxType", out var st)) sfxType = st.GetString() ?? "airhorn";
+                            }
+                            catch { }
+
+                            OnPeerHypeSfx?.Invoke(sCode, sfxType);
+                            _logger?.LogInfo($"[SIGNALING] Received lobby hype sound effect '{sfxType}' from {sCode}");
                         }
                     }
                 }

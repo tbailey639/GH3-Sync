@@ -4,6 +4,31 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). Nota
 
 ---
 
+## [v1.5.0] - 2026-11-20 — P2P Setlist Notebook, Permanent Song Keeping & Soundboard Hype Edition
+
+### 🎸 Guitar Hero III Authentic Setlist Notebook UI
+* **Authentic Setlist Notebook Design:** Rebuilt the P2P Lobby setlist browser to match the iconic Guitar Hero III setlist notebook interface. Features rich wooden table styling, cream parchment paper with red vertical margin rules and blue ruled lines, metallic paperclip badges, red stenciled rock tier headers, 5-star ratings, high score displays, and bottom arcade controller navigation pills (`UP/DOWN`, `SELECT: PREVIEW / SYNC`, `BACK: END SYNC`, `BONUS: KEEP SONG`).
+* **Active Track Highlight:** Highlighted tracks glow in burnt amber/gold marker ink (`#B45309`) with venue badges held by metallic paperclips.
+
+### ⭐ Dedicated Permanent Song Keeping & Safe Pre-Sync Restore
+* **Per-Song Permanent Keep Action:** Added a dedicated `⭐ Keep Forever` button directly on each synced song row. Once clicked, kept songs are permanently added to your library and will never be removed on session exit or disconnect.
+* **Regular Friends vs. Trusted Friends Distinction:** Regular friends can sync and play songs temporarily together in lobby sessions. Permanent keeping is exclusive to Trusted Friends, with locked regular-friend tooltips prompting trust upgrades.
+* **Always-Temporary Lobby Sessions:** Removed manual temporary mode checkbox; all multiplayer lobby sync sessions are safely temporary by default.
+* **Pre-Sync Snapshot & Post-Disconnect Restoration:** Automatically takes an immutable backup of `customs.pak.xen` before any lobby sync. Disconnecting or clicking `⏹ End Lobby Sync` cleanly restores original customs while seamlessly preserving all permanently kept songs.
+* **Automated Integrity Reconciliation:** Runs an integrity audit on application boot, lobby disconnect, and GH3 game launch to verify only original + permanently kept songs exist in your library.
+
+### 📢 Dual-Transport Lobby Hype Soundboard
+* **Multiplayer Soundboard SFX:** Fixed soundboard playback and peer broadcasting. Users can fire Airhorn, Stadium Cheer, Boo, Drum Fill, Lightning, and Solo Lick cues in real-time.
+* **Direct P2P + Global Signaling Relay:** Audio cues broadcast directly over HTTP (`/api/lobby/hype-sfx`) with instant fallback through the ntfy.sh signaling relay, guaranteeing sound effects deliver across any NAT or firewall.
+* **Synthesized Retro Rock Audio:** Custom in-memory PCM audio synthesizers generate punchy stadium sound cues with zero external dependencies.
+
+### ⚡ Startup White-Screen Flicker Elimination & Network Watchdog
+* **Smooth Splash Transition:** MainWindow now initializes with dark `#090A0F` background and smoothly renders its composition frame before splash fadeout, completely eliminating the white screen startup hang.
+* **Accurate Online/Offline Status:** Fixed offline friends falsely showing "⚪ Online". Inactive peers display "🔴 Offline" and active peers display "🟢 Online" with real-time ping latency.
+* **Cloudflare Tunnel Watchdog:** Automatically monitors Cloudflare Quick Tunnel processes, restarting dropped tunnels and re-broadcasting live presence to peer networks.
+
+---
+
 ## [v1.4.4] - 2026-11-19 — Thread Deadlock Immunity & High-Reliability Signaling Edition
 
 ### 🛡️ Thread Deadlock Immunity (Open Calls Pattern)

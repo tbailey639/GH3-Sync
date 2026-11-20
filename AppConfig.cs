@@ -22,7 +22,9 @@ public class FriendEntry
     public string LastAddress { get; set; } = "";
     public bool IsTrusted { get; set; }
     public string TrustToken { get; set; } = "";
-    public string ActivityStatus { get; set; } = "Online";
+    public string ActivityStatus { get; set; } = "Offline";
+    public DateTime LastSeenUtc { get; set; } = DateTime.MinValue;
+    public bool IsOnlineNow => (DateTime.UtcNow - LastSeenUtc).TotalSeconds < 55;
     public string ShowcaseSong { get; set; } = "";
     public int PingMs { get; set; } = -1;
     public bool IsLobbyReady { get; set; } = false;
@@ -179,6 +181,7 @@ public class AppConfigData
     public bool FilterPeerMissingOnly { get; set; } = false;
     public List<SongRequestItem> SongRequests { get; set; } = new();
     public List<FriendRequestItem> FriendRequests { get; set; } = new();
+    public HashSet<string> KeptFriendSongIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public static class AppConfig
@@ -278,6 +281,42 @@ public static class AppConfig
     }
 
     private static readonly byte[] DpapiEntropy = System.Text.Encoding.UTF8.GetBytes("GH3-SYNC-TRUST-DPAPI-v1");
+
+    public static bool IsKeptFriendSong(string songId)
+    {
+        if (string.IsNullOrWhiteSpace(songId)) return false;
+        lock (_lock)
+        {
+            Current.KeptFriendSongIds ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            return Current.KeptFriendSongIds.Contains(songId);
+        }
+    }
+
+    public static void MarkSongAsKept(string songId)
+    {
+        if (string.IsNullOrWhiteSpace(songId)) return;
+        lock (_lock)
+        {
+            Current.KeptFriendSongIds ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (Current.KeptFriendSongIds.Add(songId))
+            {
+                Save();
+            }
+        }
+    }
+
+    public static void UnmarkSongAsKept(string songId)
+    {
+        if (string.IsNullOrWhiteSpace(songId)) return;
+        lock (_lock)
+        {
+            Current.KeptFriendSongIds ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (Current.KeptFriendSongIds.Remove(songId))
+            {
+                Save();
+            }
+        }
+    }
 
     public static string ProtectSecret(string? plain) => ProtectToken(plain);
     public static string UnprotectSecret(string? protectedStr) => UnprotectToken(protectedStr);

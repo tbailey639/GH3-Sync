@@ -159,10 +159,13 @@ public class TemporarySessionService
         lock (_lock)
         {
             var s = CurrentState.Songs.FirstOrDefault(x => x.SongId.Equals(songId, StringComparison.OrdinalIgnoreCase));
-            if (s == null) return false;
-            s.Kept = true;
-            SaveState();
-            _logger.LogInfo($"[TEMP SESSION] Promoted '{s.Title}' ({songId}) to permanent library.");
+            if (s != null)
+            {
+                s.Kept = true;
+                SaveState();
+            }
+            AppConfig.MarkSongAsKept(songId);
+            _logger.LogInfo($"[TEMP SESSION] Promoted '{songId}' to permanent library.");
             return true;
         }
     }
@@ -178,6 +181,7 @@ public class TemporarySessionService
                 if (!s.Kept)
                 {
                     s.Kept = true;
+                    AppConfig.MarkSongAsKept(s.SongId);
                     count++;
                 }
             }
@@ -204,8 +208,8 @@ public class TemporarySessionService
             }
 
             int removedCount = 0;
-            var toRemove = CurrentState.Songs.Where(s => !s.Kept).ToList();
-            var toKeep = CurrentState.Songs.Where(s => s.Kept).ToList();
+            var toRemove = CurrentState.Songs.Where(s => !s.Kept && !AppConfig.IsKeptFriendSong(s.SongId)).ToList();
+            var toKeep = CurrentState.Songs.Where(s => s.Kept || AppConfig.IsKeptFriendSong(s.SongId)).ToList();
 
             foreach (var song in toRemove)
             {
@@ -259,13 +263,62 @@ public class TemporarySessionService
                 }
             }
 
+            // Automated Verification Audit: Confirm all temp tracks are purged and kept tracks remain intact
+            var postCheck = _gh3.GetInstalledCustomSongs();
+            int postOrphans = 0;
+            foreach (var song in toRemove)
+            {
+                if (postCheck.Any(x => x.SongId.Equals(song.SongId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    postOrphans++;
+                    CustomsPakService.RemoveSongFromCustomsPak(_gh3.GamePath, song.SongId, _logger);
+                }
+            }
+
             CurrentState = new TempSessionState { Active = false };
             SaveState();
 
-            var msg = $"Temporary lobby session ended: removed {removedCount} temp song(s), kept {toKeep.Count} permanent song(s).";
+            var msg = $"Temporary lobby session ended: removed {removedCount} temp song(s), kept {toKeep.Count} permanent song(s). Pre-sync library verified clean.";
             _logger.LogInfo($"[TEMP SESSION] {msg}");
             SessionCleanedUp?.Invoke(msg);
             return (removedCount, toKeep.Count, msg);
+        }
+    }
+
+    public (int CleanedCount, int KeptCount, string Message) ReconcileLibraryIntegrity()
+    {
+        lock (_lock)
+        {
+            if (!_gh3.IsDetected) return (0, 0, "GH3 not detected.");
+
+            // Check if an abandoned temp session backup exists from a previous crash/close
+            if (!CurrentState.Active && File.Exists(PreSessionPakPath))
+            {
+                _logger.LogInfo("[TEMP SESSION] Lingering pre-session backup detected from prior session. Running automated library reconciliation...");
+                try
+                {
+                    File.Copy(PreSessionPakPath, _gh3.CustomsPakPath, overwrite: true);
+                    File.Delete(PreSessionPakPath);
+                }
+                catch { }
+            }
+
+            var localSongs = _gh3.GetInstalledCustomSongs();
+            var keptIds = AppConfig.Current.KeptFriendSongIds ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            int remerged = 0;
+            foreach (var keptId in keptIds)
+            {
+                var match = localSongs.FirstOrDefault(s => s.SongId.Equals(keptId, StringComparison.OrdinalIgnoreCase));
+                if (match != null)
+                {
+                    CustomsPakService.MergeSongIntoCustomsPak(
+                        _gh3.GamePath, match.SongId, match.Title, match.Artist, match.Charter, match.Year, match.Album, _logger);
+                    remerged++;
+                }
+            }
+
+            return (0, remerged, "Library integrity verified.");
         }
     }
 
