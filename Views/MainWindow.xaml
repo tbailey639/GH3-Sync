@@ -2296,76 +2296,76 @@
                                     </LinearGradientBrush>
                                 </Canvas.Resources>
 
-                                <!-- Guitar Body Silhouette (Double-Cutaway Electric) -->
-                                <Path Data="M 54,18 C 22,18 14,44 14,75 C 14,106 22,132 54,132 C 82,132 100,114 118,116 C 138,118 156,138 182,132 C 202,127 212,112 204,98 C 198,90 202,88 210,88 L 210,62 C 202,62 198,60 206,50 C 216,36 202,16 178,18 C 154,20 138,34 118,34 C 100,34 82,18 54,18 Z"
-                                      Fill="{StaticResource GuitarBodyGrad}" Stroke="#334155" StrokeThickness="2.2"/>
+                                <!-- Guitar Body Silhouette (Official GH3 Gibson Les Paul) -->
+                                <Path Data="M 54,18 C 22,18 14,44 14,75 C 14,106 22,132 54,132 C 82,132 108,120 128,120 C 148,120 166,134 192,126 C 206,120 214,106 205,94 L 204,60 C 210,46 196,28 176,28 C 156,28 142,34 126,34 C 104,34 82,18 54,18 Z"
+                                      Fill="{StaticResource GuitarBodyGrad}" Stroke="#F5EFE6" StrokeThickness="2.4"/>
 
-                                <!-- Inner Body Contour Accent -->
-                                <Path Data="M 56,24 C 28,24 21,46 21,75 C 21,104 28,126 56,126 C 82,126 98,110 118,111 C 137,112 154,130 179,125 C 194,122 202,110 196,100 C 191,92 195,86 204,86 L 204,64 C 195,64 192,58 199,49 C 206,38 195,23 176,24 C 155,25 138,39 118,39 C 98,39 82,24 56,24 Z"
-                                      Fill="Transparent" Stroke="#1E3A8A" StrokeThickness="1" Opacity="0.65"/>
+                                <!-- Inner Body Contour Accent & Ivory Binding -->
+                                <Path Data="M 56,22 C 26,22 18,46 18,75 C 18,104 26,128 56,128 C 82,128 106,116 126,116 C 146,116 164,130 188,122 C 200,116 208,104 200,92 L 199,62 C 204,50 192,32 174,32 C 154,32 140,38 124,38 C 102,38 82,22 56,22 Z"
+                                      Fill="Transparent" Stroke="#E5D9C5" StrokeThickness="1.2" Opacity="0.85"/>
 
-                                <!-- Pickguard -->
-                                <Path Data="M 112,44 C 138,40 166,30 190,44 C 196,54 196,96 188,108 C 166,118 134,112 112,106 Z"
-                                      Fill="#162033" Stroke="#334155" StrokeThickness="1"/>
+                                <!-- Cream Les Paul Pickguard -->
+                                <Path Data="M 112,44 C 138,40 166,32 188,44 C 194,54 194,92 186,104 C 166,112 134,108 112,102 Z"
+                                      Fill="#F5EFE6" Stroke="#D6C7B2" StrokeThickness="1.2"/>
 
-                                <!-- Bridge & Tailpiece (Left String Anchor at x=92) -->
-                                <Rectangle Canvas.Left="76" Canvas.Top="52" Width="10" Height="46" RadiusX="3" RadiusY="3" Fill="#475569" Stroke="#94A3B8" StrokeThickness="1"/>
-                                <Rectangle Canvas.Left="90" Canvas.Top="50" Width="16" Height="50" RadiusX="2.5" RadiusY="2.5" Fill="#334155" Stroke="#94A3B8" StrokeThickness="1.2"/>
+                                <!-- Bridge & Tailpiece (Chrome Tune-O-Matic & Stopbar at x=92) -->
+                                <Rectangle Canvas.Left="76" Canvas.Top="52" Width="10" Height="46" RadiusX="3" RadiusY="3" Fill="#94A3B8" Stroke="#F1F5F9" StrokeThickness="1.2"/>
+                                <Rectangle Canvas.Left="90" Canvas.Top="50" Width="16" Height="50" RadiusX="2.5" RadiusY="2.5" Fill="#64748B" Stroke="#E2E8F0" StrokeThickness="1.4"/>
 
-                                <!-- Bridge & Neck Humbucker Pickups -->
-                                <Rectangle Canvas.Left="118" Canvas.Top="50" Width="22" Height="50" RadiusX="3" RadiusY="3" Fill="#0B1120" Stroke="#64748B" StrokeThickness="1.2"/>
-                                <Rectangle Canvas.Left="122" Canvas.Top="54" Width="6" Height="42" RadiusX="2" RadiusY="2" Fill="#1E293B"/>
-                                <Rectangle Canvas.Left="130" Canvas.Top="54" Width="6" Height="42" RadiusX="2" RadiusY="2" Fill="#1E293B"/>
+                                <!-- Bridge & Neck Humbucker Pickups with Chrome Covers -->
+                                <Rectangle Canvas.Left="118" Canvas.Top="50" Width="22" Height="50" RadiusX="3" RadiusY="3" Fill="#1E293B" Stroke="#CBD5E1" StrokeThickness="1.4"/>
+                                <Rectangle Canvas.Left="122" Canvas.Top="54" Width="6" Height="42" RadiusX="2" RadiusY="2" Fill="#334155"/>
+                                <Rectangle Canvas.Left="130" Canvas.Top="54" Width="6" Height="42" RadiusX="2" RadiusY="2" Fill="#334155"/>
 
-                                <Rectangle Canvas.Left="160" Canvas.Top="50" Width="22" Height="50" RadiusX="3" RadiusY="3" Fill="#0B1120" Stroke="#64748B" StrokeThickness="1.2"/>
-                                <Rectangle Canvas.Left="164" Canvas.Top="54" Width="6" Height="42" RadiusX="2" RadiusY="2" Fill="#1E293B"/>
-                                <Rectangle Canvas.Left="172" Canvas.Top="54" Width="6" Height="42" RadiusX="2" RadiusY="2" Fill="#1E293B"/>
+                                <Rectangle Canvas.Left="160" Canvas.Top="50" Width="22" Height="50" RadiusX="3" RadiusY="3" Fill="#1E293B" Stroke="#CBD5E1" StrokeThickness="1.4"/>
+                                <Rectangle Canvas.Left="164" Canvas.Top="54" Width="6" Height="42" RadiusX="2" RadiusY="2" Fill="#334155"/>
+                                <Rectangle Canvas.Left="172" Canvas.Top="54" Width="6" Height="42" RadiusX="2" RadiusY="2" Fill="#334155"/>
 
-                                <!-- Volume & Tone Knobs -->
-                                <Ellipse Canvas.Left="138" Canvas.Top="112" Width="12" Height="12" Fill="#334155" Stroke="#94A3B8" StrokeThickness="1.2"/>
-                                <Ellipse Canvas.Left="158" Canvas.Top="116" Width="12" Height="12" Fill="#334155" Stroke="#94A3B8" StrokeThickness="1.2"/>
+                                <!-- Amber Gold Speed Knobs (Volume & Tone) -->
+                                <Ellipse Canvas.Left="138" Canvas.Top="112" Width="13" Height="13" Fill="#D97706" Stroke="#FDE047" StrokeThickness="1.5"/>
+                                <Ellipse Canvas.Left="158" Canvas.Top="116" Width="13" Height="13" Fill="#D97706" Stroke="#FDE047" StrokeThickness="1.5"/>
 
-                                <!-- Fretboard Neck (x=204..526, y=55..95) -->
-                                <Rectangle Canvas.Left="204" Canvas.Top="55" Width="322" Height="40" Fill="{StaticResource FretboardGrad}" Stroke="#475569" StrokeThickness="1.4"/>
+                                <!-- Rosewood Fretboard Neck (x=204..526, y=55..95) with Ivory Binding -->
+                                <Rectangle Canvas.Left="204" Canvas.Top="55" Width="322" Height="40" Fill="{StaticResource FretboardGrad}" Stroke="#F5EFE6" StrokeThickness="1.8"/>
 
                                 <!-- Silver Fret Bars -->
-                                <Line X1="224" Y1="56" X2="224" Y2="94" Stroke="#64748B" StrokeThickness="1.4"/>
-                                <Line X1="246" Y1="56" X2="246" Y2="94" Stroke="#64748B" StrokeThickness="1.4"/>
-                                <Line X1="268" Y1="56" X2="268" Y2="94" Stroke="#64748B" StrokeThickness="1.4"/>
-                                <Line X1="291" Y1="56" X2="291" Y2="94" Stroke="#64748B" StrokeThickness="1.4"/>
-                                <Line X1="314" Y1="56" X2="314" Y2="94" Stroke="#64748B" StrokeThickness="1.4"/>
-                                <Line X1="338" Y1="56" X2="338" Y2="94" Stroke="#64748B" StrokeThickness="1.4"/>
-                                <Line X1="362" Y1="56" X2="362" Y2="94" Stroke="#64748B" StrokeThickness="1.4"/>
-                                <Line X1="386" Y1="56" X2="386" Y2="94" Stroke="#64748B" StrokeThickness="1.4"/>
-                                <Line X1="411" Y1="56" X2="411" Y2="94" Stroke="#64748B" StrokeThickness="1.4"/>
-                                <Line X1="436" Y1="56" X2="436" Y2="94" Stroke="#64748B" StrokeThickness="1.4"/>
-                                <Line X1="461" Y1="56" X2="461" Y2="94" Stroke="#64748B" StrokeThickness="1.4"/>
-                                <Line X1="486" Y1="56" X2="486" Y2="94" Stroke="#64748B" StrokeThickness="1.4"/>
-                                <Line X1="510" Y1="56" X2="510" Y2="94" Stroke="#64748B" StrokeThickness="1.4"/>
+                                <Line X1="224" Y1="56" X2="224" Y2="94" Stroke="#CBD5E1" StrokeThickness="1.6"/>
+                                <Line X1="246" Y1="56" X2="246" Y2="94" Stroke="#CBD5E1" StrokeThickness="1.6"/>
+                                <Line X1="268" Y1="56" X2="268" Y2="94" Stroke="#CBD5E1" StrokeThickness="1.6"/>
+                                <Line X1="291" Y1="56" X2="291" Y2="94" Stroke="#CBD5E1" StrokeThickness="1.6"/>
+                                <Line X1="314" Y1="56" X2="314" Y2="94" Stroke="#CBD5E1" StrokeThickness="1.6"/>
+                                <Line X1="338" Y1="56" X2="338" Y2="94" Stroke="#CBD5E1" StrokeThickness="1.6"/>
+                                <Line X1="362" Y1="56" X2="362" Y2="94" Stroke="#CBD5E1" StrokeThickness="1.6"/>
+                                <Line X1="386" Y1="56" X2="386" Y2="94" Stroke="#CBD5E1" StrokeThickness="1.6"/>
+                                <Line X1="411" Y1="56" X2="411" Y2="94" Stroke="#CBD5E1" StrokeThickness="1.6"/>
+                                <Line X1="436" Y1="56" X2="436" Y2="94" Stroke="#CBD5E1" StrokeThickness="1.6"/>
+                                <Line X1="461" Y1="56" X2="461" Y2="94" Stroke="#CBD5E1" StrokeThickness="1.6"/>
+                                <Line X1="486" Y1="56" X2="486" Y2="94" Stroke="#CBD5E1" StrokeThickness="1.6"/>
+                                <Line X1="510" Y1="56" X2="510" Y2="94" Stroke="#CBD5E1" StrokeThickness="1.6"/>
 
-                                <!-- Pearl Fret Inlay Markers -->
-                                <Ellipse Canvas.Left="254" Canvas.Top="72" Width="6" Height="6" Fill="#94A3B8" Opacity="0.55"/>
-                                <Ellipse Canvas.Left="300" Canvas.Top="72" Width="6" Height="6" Fill="#94A3B8" Opacity="0.55"/>
-                                <Ellipse Canvas.Left="347" Canvas.Top="72" Width="6" Height="6" Fill="#94A3B8" Opacity="0.55"/>
-                                <Ellipse Canvas.Left="396" Canvas.Top="72" Width="6" Height="6" Fill="#94A3B8" Opacity="0.55"/>
-                                <Ellipse Canvas.Left="446" Canvas.Top="64" Width="5.5" Height="5.5" Fill="#94A3B8" Opacity="0.6"/>
-                                <Ellipse Canvas.Left="446" Canvas.Top="80" Width="5.5" Height="5.5" Fill="#94A3B8" Opacity="0.6"/>
-                                <Ellipse Canvas.Left="495" Canvas.Top="72" Width="6" Height="6" Fill="#94A3B8" Opacity="0.55"/>
+                                <!-- Authentic Mother-of-Pearl Trapezoid Inlays -->
+                                <Path Canvas.Left="252" Canvas.Top="68" Data="M 1,0 L 7,0 L 8,14 L 0,14 Z" Fill="#E2E8F0" Opacity="0.75"/>
+                                <Path Canvas.Left="298" Canvas.Top="67" Data="M 1,0 L 8,0 L 9,16 L 0,16 Z" Fill="#E2E8F0" Opacity="0.75"/>
+                                <Path Canvas.Left="345" Canvas.Top="67" Data="M 1,0 L 8,0 L 9,16 L 0,16 Z" Fill="#E2E8F0" Opacity="0.75"/>
+                                <Path Canvas.Left="394" Canvas.Top="67" Data="M 1,0 L 8,0 L 9,16 L 0,16 Z" Fill="#E2E8F0" Opacity="0.75"/>
+                                <Path Canvas.Left="444" Canvas.Top="62" Data="M 1,0 L 7,0 L 8,9 L 0,9 Z" Fill="#E2E8F0" Opacity="0.75"/>
+                                <Path Canvas.Left="444" Canvas.Top="79" Data="M 1,0 L 7,0 L 8,9 L 0,9 Z" Fill="#E2E8F0" Opacity="0.75"/>
+                                <Path Canvas.Left="493" Canvas.Top="68" Data="M 1,0 L 7,0 L 8,14 L 0,14 Z" Fill="#E2E8F0" Opacity="0.75"/>
 
-                                <!-- Bone/Chrome Nut (Right String Progress End at x=526) -->
-                                <Rectangle Canvas.Left="524" Canvas.Top="54" Width="5" Height="42" RadiusX="1.5" RadiusY="1.5" Fill="#CBD5E1"/>
+                                <!-- Bone Nut (Right String Progress End at x=526) -->
+                                <Rectangle Canvas.Left="524" Canvas.Top="54" Width="5" Height="42" RadiusX="1.5" RadiusY="1.5" Fill="#F5EFE6" Stroke="#CBD5E1" StrokeThickness="1"/>
 
-                                <!-- Rock Headstock Silhouette -->
-                                <Path Data="M 529,56 L 548,46 L 622,42 L 628,58 L 614,76 L 624,96 L 612,106 L 548,100 L 529,94 Z"
-                                      Fill="{StaticResource GuitarBodyGrad}" Stroke="#334155" StrokeThickness="2"/>
+                                <!-- Iconic Gibson Open-Book Headstock Silhouette -->
+                                <Path Data="M 529,56 L 548,46 L 616,44 C 622,48 626,44 630,50 L 626,75 L 630,100 C 626,106 622,102 616,106 L 548,104 L 529,94 Z"
+                                      Fill="{StaticResource GuitarBodyGrad}" Stroke="#F5EFE6" StrokeThickness="2.2"/>
 
                                 <!-- 6 Chrome Tuning Pegs (3 Top, 3 Bottom) -->
-                                <Ellipse Canvas.Left="552" Canvas.Top="36" Width="10" Height="10" Fill="#64748B" Stroke="#CBD5E1" StrokeThickness="1.2"/>
-                                <Ellipse Canvas.Left="574" Canvas.Top="34" Width="10" Height="10" Fill="#64748B" Stroke="#CBD5E1" StrokeThickness="1.2"/>
-                                <Ellipse Canvas.Left="596" Canvas.Top="32" Width="10" Height="10" Fill="#64748B" Stroke="#CBD5E1" StrokeThickness="1.2"/>
-                                <Ellipse Canvas.Left="552" Canvas.Top="102" Width="10" Height="10" Fill="#64748B" Stroke="#CBD5E1" StrokeThickness="1.2"/>
-                                <Ellipse Canvas.Left="574" Canvas.Top="104" Width="10" Height="10" Fill="#64748B" Stroke="#CBD5E1" StrokeThickness="1.2"/>
-                                <Ellipse Canvas.Left="596" Canvas.Top="106" Width="10" Height="10" Fill="#64748B" Stroke="#CBD5E1" StrokeThickness="1.2"/>
+                                <Ellipse Canvas.Left="552" Canvas.Top="36" Width="10" Height="10" Fill="#94A3B8" Stroke="#F1F5F9" StrokeThickness="1.4"/>
+                                <Ellipse Canvas.Left="574" Canvas.Top="34" Width="10" Height="10" Fill="#94A3B8" Stroke="#F1F5F9" StrokeThickness="1.4"/>
+                                <Ellipse Canvas.Left="596" Canvas.Top="32" Width="10" Height="10" Fill="#94A3B8" Stroke="#F1F5F9" StrokeThickness="1.4"/>
+                                <Ellipse Canvas.Left="552" Canvas.Top="102" Width="10" Height="10" Fill="#94A3B8" Stroke="#F1F5F9" StrokeThickness="1.4"/>
+                                <Ellipse Canvas.Left="574" Canvas.Top="104" Width="10" Height="10" Fill="#94A3B8" Stroke="#F1F5F9" StrokeThickness="1.4"/>
+                                <Ellipse Canvas.Left="596" Canvas.Top="106" Width="10" Height="10" Fill="#94A3B8" Stroke="#F1F5F9" StrokeThickness="1.4"/>
 
                                 <!-- Headstock String Extensions (Nut to Tuning Posts) -->
                                 <Line X1="528" Y1="60" X2="557" Y2="52" Stroke="#475569" StrokeThickness="1.2"/>

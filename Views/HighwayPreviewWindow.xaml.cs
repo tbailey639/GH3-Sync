@@ -1096,7 +1096,7 @@ public partial class HighwayPreviewWindow : Window
         double offsetSec = (_offsetShiftMs + AppConfig.Current.CalibrationOffsetMs) / 1000.0;
         double scaleFactor = Math.Clamp(botHalfW / 260.0, 0.58, 1.0);
 
-        // Perspective fretboard polygon
+        // Perspective fretboard polygon with authentic GH3 dark rosewood / stage texture
         var board = new Polygon
         {
             Points = new PointCollection
@@ -1107,13 +1107,46 @@ public partial class HighwayPreviewWindow : Window
                 new WpfPoint(cx - botHalfW, h)
             },
             Fill = new LinearGradientBrush(
-                inSpNow ? WpfColor.FromRgb(8, 36, 62) : WpfColor.FromRgb(14, 18, 30),
-                inSpNow ? WpfColor.FromRgb(12, 52, 92) : WpfColor.FromRgb(22, 27, 44),
+                inSpNow ? WpfColor.FromRgb(6, 28, 52) : WpfColor.FromRgb(12, 13, 18),
+                inSpNow ? WpfColor.FromRgb(10, 46, 82) : WpfColor.FromRgb(20, 22, 32),
                 90),
             Stroke = new SolidColorBrush(inSpNow ? WpfColor.FromRgb(56, 189, 248) : (_mode == "edit" && isInteractivePrimary ? WpfColor.FromRgb(129, 140, 248) : WpfColor.FromRgb(71, 85, 105))),
-            StrokeThickness = inSpNow || (_mode == "edit" && isInteractivePrimary) ? 2.5 : 2.0
+            StrokeThickness = inSpNow || (_mode == "edit" && isInteractivePrimary) ? 2.8 : 2.0
         };
         HighwayCanvas.Children.Add(board);
+
+        // Authentic GH3 Highway Side Rails: Outer Chrome Bevel + Inner Neon Energy Rails
+        var railColor = inSpNow ? WpfColor.FromRgb(56, 189, 248) : WpfColor.FromRgb(249, 115, 22);
+        // Left Rail (Outer & Inner)
+        HighwayCanvas.Children.Add(new Line
+        {
+            X1 = cx - topHalfW - 2, Y1 = topY,
+            X2 = cx - botHalfW - 3, Y2 = h,
+            Stroke = new SolidColorBrush(WpfColor.FromArgb(180, 203, 213, 225)),
+            StrokeThickness = 2.6
+        });
+        HighwayCanvas.Children.Add(new Line
+        {
+            X1 = cx - topHalfW, Y1 = topY,
+            X2 = cx - botHalfW, Y2 = h,
+            Stroke = new SolidColorBrush(railColor),
+            StrokeThickness = inSpNow ? 3.0 : 1.8
+        });
+        // Right Rail (Outer & Inner)
+        HighwayCanvas.Children.Add(new Line
+        {
+            X1 = cx + topHalfW + 2, Y1 = topY,
+            X2 = cx + botHalfW + 3, Y2 = h,
+            Stroke = new SolidColorBrush(WpfColor.FromArgb(180, 203, 213, 225)),
+            StrokeThickness = 2.6
+        });
+        HighwayCanvas.Children.Add(new Line
+        {
+            X1 = cx + topHalfW, Y1 = topY,
+            X2 = cx + botHalfW, Y2 = h,
+            Stroke = new SolidColorBrush(railColor),
+            StrokeThickness = inSpNow ? 3.0 : 1.8
+        });
 
         if (!string.IsNullOrWhiteSpace(headerBadge))
         {
@@ -1135,19 +1168,19 @@ public partial class HighwayPreviewWindow : Window
         double HalfWidthAt(double norm) => topHalfW + (botHalfW - topHalfW) * Math.Pow(norm, 1.45);
         double LaneX(int fret, double norm) => cx + ((fret - 2.0) / 2.5) * HalfWidthAt(norm);
 
-        // Lane strings
+        // Lane strings with metallic nickel sheen
         for (int i = 0; i < 5; i++)
         {
             HighwayCanvas.Children.Add(new Line
             {
                 X1 = LaneX(i, 0.0), Y1 = topY,
                 X2 = LaneX(i, 1.12), Y2 = h,
-                Stroke = new SolidColorBrush(WpfColor.FromArgb(70, 148, 163, 184)),
-                StrokeThickness = 1.2
+                Stroke = new SolidColorBrush(WpfColor.FromArgb(85, 160, 175, 195)),
+                StrokeThickness = 1.3
             });
         }
 
-        // Beat gridlines
+        // Beat gridlines & Authentic GH3 3D Fret Wires
         double minVisible = _currentTimeSec - 0.12;
         double maxVisible = _currentTimeSec + lookaheadSec;
         for (int bi = 0; bi < _chart.BeatTimesSeconds.Count; bi++)
@@ -1160,23 +1193,41 @@ public partial class HighwayPreviewWindow : Window
             double y = ProjectY(norm);
             double hw = HalfWidthAt(norm);
             bool isMeasure = bi % 4 == 0;
+
+            // Fret wire shadow
+            HighwayCanvas.Children.Add(new Line
+            {
+                X1 = cx - hw, Y1 = y + 1.2,
+                X2 = cx + hw, Y2 = y + 1.2,
+                Stroke = new SolidColorBrush(WpfColor.FromArgb(90, 10, 12, 18)),
+                StrokeThickness = isMeasure ? 2.5 : 1.2
+            });
+            // Fret wire chrome highlight
             HighwayCanvas.Children.Add(new Line
             {
                 X1 = cx - hw, Y1 = y,
                 X2 = cx + hw, Y2 = y,
-                Stroke = new SolidColorBrush(isMeasure ? WpfColor.FromArgb(145, 226, 232, 240) : WpfColor.FromArgb(55, 148, 163, 184)),
-                StrokeThickness = isMeasure ? 2.0 : 1.0
+                Stroke = new SolidColorBrush(isMeasure ? WpfColor.FromArgb(170, 241, 245, 249) : WpfColor.FromArgb(70, 148, 163, 184)),
+                StrokeThickness = isMeasure ? 2.2 : 1.0
             });
         }
 
-        // Strike line & fret targets
+        // Strike line & Authentic GH3 3D Fret Targets
         double strikeHw = HalfWidthAt(1.0);
+        // Strike line shadow & highlight
+        HighwayCanvas.Children.Add(new Line
+        {
+            X1 = cx - strikeHw, Y1 = strikeY + 1.5,
+            X2 = cx + strikeHw, Y2 = strikeY + 1.5,
+            Stroke = new SolidColorBrush(WpfColor.FromArgb(130, 15, 23, 42)),
+            StrokeThickness = 3.0
+        });
         HighwayCanvas.Children.Add(new Line
         {
             X1 = cx - strikeHw, Y1 = strikeY,
             X2 = cx + strikeHw, Y2 = strikeY,
-            Stroke = new SolidColorBrush(WpfColor.FromRgb(203, 213, 225)),
-            StrokeThickness = 2.5
+            Stroke = new SolidColorBrush(WpfColor.FromRgb(241, 245, 249)),
+            StrokeThickness = 2.6
         });
 
         for (int f = 0; f < 5; f++)
@@ -1187,30 +1238,70 @@ public partial class HighwayPreviewWindow : Window
 
             if (flash)
             {
-                double bw = 58 * scaleFactor, bh = 30 * scaleFactor;
+                // Authentic GH3 strike explosion with colored aura
+                double bw = 64 * scaleFactor, bh = 34 * scaleFactor;
+                var burstAura = new Ellipse
+                {
+                    Width = bw * 1.25, Height = bh * 1.25,
+                    Fill = new SolidColorBrush(WpfColor.FromArgb(90, FretColors[f].R, FretColors[f].G, FretColors[f].B))
+                };
+                Canvas.SetLeft(burstAura, lx - bw * 0.625);
+                Canvas.SetTop(burstAura, strikeY - bh * 0.625);
+                HighwayCanvas.Children.Add(burstAura);
+
                 var burst = new Ellipse
                 {
                     Width = bw, Height = bh,
-                    Fill = new SolidColorBrush(WpfColor.FromArgb(115, 255, 255, 255)),
+                    Fill = new SolidColorBrush(WpfColor.FromArgb(170, 255, 255, 255)),
                     Stroke = new SolidColorBrush(FretColors[f]),
-                    StrokeThickness = 2.5
+                    StrokeThickness = 3.0
                 };
                 Canvas.SetLeft(burst, lx - bw * 0.5);
                 Canvas.SetTop(burst, strikeY - bh * 0.5);
                 HighwayCanvas.Children.Add(burst);
             }
 
-            double tw = 42 * scaleFactor, th = 20 * scaleFactor;
-            var target = new Ellipse
+            double tw = 44 * scaleFactor, th = 22 * scaleFactor;
+
+            // 1. Outer chrome metallic bezel ring
+            var outerBezel = new Ellipse
             {
                 Width = tw, Height = th,
-                Fill = new SolidColorBrush(held ? FretColors[f] : WpfColor.FromArgb(50, FretColors[f].R, FretColors[f].G, FretColors[f].B)),
-                Stroke = new SolidColorBrush(held ? WpfColor.FromRgb(255, 255, 255) : FretColors[f]),
-                StrokeThickness = held ? 3.0 : 2.4
+                Fill = new SolidColorBrush(WpfColor.FromRgb(15, 23, 42)),
+                Stroke = new SolidColorBrush(held ? WpfColor.FromRgb(255, 255, 255) : WpfColor.FromRgb(148, 163, 184)),
+                StrokeThickness = held ? 3.2 : 2.4
             };
-            Canvas.SetLeft(target, lx - tw * 0.5);
-            Canvas.SetTop(target, strikeY - th * 0.5);
-            HighwayCanvas.Children.Add(target);
+            Canvas.SetLeft(outerBezel, lx - tw * 0.5);
+            Canvas.SetTop(outerBezel, strikeY - th * 0.5);
+            HighwayCanvas.Children.Add(outerBezel);
+
+            // 2. Middle translucent colored lens / well
+            double mw = tw * 0.78, mh = th * 0.78;
+            var middleLens = new Ellipse
+            {
+                Width = mw, Height = mh,
+                Fill = new SolidColorBrush(held
+                    ? FretColors[f]
+                    : WpfColor.FromArgb(55, FretColors[f].R, FretColors[f].G, FretColors[f].B)),
+                Stroke = new SolidColorBrush(held ? WpfColor.FromRgb(255, 255, 255) : FretColors[f]),
+                StrokeThickness = held ? 2.0 : 1.4
+            };
+            Canvas.SetLeft(middleLens, lx - mw * 0.5);
+            Canvas.SetTop(middleLens, strikeY - mh * 0.5);
+            HighwayCanvas.Children.Add(middleLens);
+
+            // 3. Center metallic target hub
+            double cw = tw * 0.36, ch = th * 0.36;
+            var centerHub = new Ellipse
+            {
+                Width = cw, Height = ch,
+                Fill = new SolidColorBrush(held ? WpfColor.FromRgb(255, 255, 255) : WpfColor.FromArgb(180, 241, 245, 249)),
+                Stroke = new SolidColorBrush(held ? FretColors[f] : WpfColor.FromRgb(100, 116, 139)),
+                StrokeThickness = 1.0
+            };
+            Canvas.SetLeft(centerHub, lx - cw * 0.5);
+            Canvas.SetTop(centerHub, strikeY - ch * 0.5);
+            HighwayCanvas.Children.Add(centerHub);
         }
 
         // Notes & Sustain Tails
@@ -1257,16 +1348,30 @@ public partial class HighwayPreviewWindow : Window
             int fret = Math.Clamp(n.Fret, 0, 4);
             var gemColor = n.InStarPower ? WpfColor.FromRgb(56, 189, 248) : FretColors[fret];
 
+            // 3D Sustain Neon Beams
             if (tEnd > tStart + 0.08)
             {
                 double normEnd = Math.Clamp(1.0 - ((tEnd - _currentTimeSec) / lookaheadSec), 0.0, 1.05);
                 double yEnd = ProjectY(normEnd);
+                double tailW = Math.Max(3.5, 9.5 * scale);
+
+                // Outer translucent glowing neon aura
                 HighwayCanvas.Children.Add(new Line
                 {
                     X1 = LaneX(fret, normStart), Y1 = yStart,
                     X2 = LaneX(fret, normEnd), Y2 = yEnd,
-                    Stroke = new SolidColorBrush(WpfColor.FromArgb(200, gemColor.R, gemColor.G, gemColor.B)),
-                    StrokeThickness = Math.Max(3.0, 9.0 * scale),
+                    Stroke = new SolidColorBrush(WpfColor.FromArgb(160, gemColor.R, gemColor.G, gemColor.B)),
+                    StrokeThickness = tailW,
+                    StrokeStartLineCap = PenLineCap.Round,
+                    StrokeEndLineCap = PenLineCap.Round
+                });
+                // Center bright white-hot core
+                HighwayCanvas.Children.Add(new Line
+                {
+                    X1 = LaneX(fret, normStart), Y1 = yStart,
+                    X2 = LaneX(fret, normEnd), Y2 = yEnd,
+                    Stroke = new SolidColorBrush(WpfColor.FromArgb(190, 255, 255, 255)),
+                    StrokeThickness = Math.Max(1.5, tailW * 0.35),
                     StrokeStartLineCap = PenLineCap.Round,
                     StrokeEndLineCap = PenLineCap.Round
                 });
@@ -1275,27 +1380,60 @@ public partial class HighwayPreviewWindow : Window
             if (tStart < _currentTimeSec - 0.06) continue;
 
             double nx = LaneX(fret, normStart);
-            double gemW = 40.0 * scale;
-            double gemH = 19.0 * scale;
-            var gem = new Ellipse
+            double gemW = 42.0 * scale;
+            double gemH = 21.0 * scale;
+
+            // 1. Outer Dark Chrome Beveled Base Ring
+            var baseRim = new Ellipse
             {
                 Width = gemW, Height = gemH,
-                Fill = new SolidColorBrush(gemColor),
-                Stroke = System.Windows.Media.Brushes.White,
+                Fill = new SolidColorBrush(WpfColor.FromArgb(240, 15, 23, 42)),
+                Stroke = new SolidColorBrush(n.IsHopo ? WpfColor.FromRgb(255, 255, 255) : WpfColor.FromRgb(71, 85, 105)),
                 StrokeThickness = n.IsHopo ? 2.4 : 1.4
             };
-            Canvas.SetLeft(gem, nx - gemW * 0.5);
-            Canvas.SetTop(gem, yStart - gemH * 0.5);
-            HighwayCanvas.Children.Add(gem);
+            Canvas.SetLeft(baseRim, nx - gemW * 0.5);
+            Canvas.SetTop(baseRim, yStart - gemH * 0.5);
+            HighwayCanvas.Children.Add(baseRim);
 
+            // 2. 3D Rich Jewel Body
+            double jw = gemW * 0.86, jh = gemH * 0.86;
+            var jewel = new Ellipse
+            {
+                Width = jw, Height = jh,
+                Fill = new RadialGradientBrush(
+                    WpfColor.FromArgb(255, Math.Min((byte)255, (byte)(gemColor.R + 60)), Math.Min((byte)255, (byte)(gemColor.G + 60)), Math.Min((byte)255, (byte)(gemColor.B + 60))),
+                    gemColor),
+                Stroke = new SolidColorBrush(WpfColor.FromArgb(140, 255, 255, 255)),
+                StrokeThickness = 1.0
+            };
+            Canvas.SetLeft(jewel, nx - jw * 0.5);
+            Canvas.SetTop(jewel, yStart - jh * 0.5);
+            HighwayCanvas.Children.Add(jewel);
+
+            // 3. Iconic GH3 Specular Glass Highlight Crescent (Top Shine)
+            double sw = jw * 0.62, sh = jh * 0.38;
+            var specular = new Ellipse
+            {
+                Width = sw, Height = sh,
+                Fill = new SolidColorBrush(WpfColor.FromArgb(195, 255, 255, 255))
+            };
+            Canvas.SetLeft(specular, nx - sw * 0.5);
+            Canvas.SetTop(specular, yStart - jh * 0.44);
+            HighwayCanvas.Children.Add(specular);
+
+            // 4. Center Core: Raised White Crown (HOPO), Ice Crystal (Tap), or Recessed Core (Strum)
             if (n.IsHopo || n.IsTap)
             {
-                double capW = gemW * 0.52;
-                double capH = gemH * 0.52;
+                double capW = gemW * 0.48;
+                double capH = gemH * 0.48;
                 var cap = new Ellipse
                 {
                     Width = capW, Height = capH,
-                    Fill = n.IsTap ? new SolidColorBrush(WpfColor.FromRgb(186, 230, 253)) : System.Windows.Media.Brushes.White
+                    Fill = n.IsTap
+                        ? new SolidColorBrush(WpfColor.FromRgb(186, 230, 253))
+                        : System.Windows.Media.Brushes.White,
+                    Stroke = new SolidColorBrush(WpfColor.FromRgb(148, 163, 184)),
+                    StrokeThickness = 1.2
                 };
                 Canvas.SetLeft(cap, nx - capW * 0.5);
                 Canvas.SetTop(cap, yStart - capH * 0.5);

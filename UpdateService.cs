@@ -30,7 +30,7 @@ public class UpdateCheckResult
 /// </summary>
 public class UpdateService
 {
-    public const string CurrentAppVersion = "1.5.2";
+    public const string CurrentAppVersion = "1.5.3";
     private const string RepoOwner = "tbailey639";
     private const string RepoName = "GH3-Sync";
     private static readonly string LatestReleaseApiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
@@ -308,9 +308,9 @@ public class UpdateService
             if (!File.Exists(installerPath))
                 return (false, false, "Installer file not found.", logPath);
 
-            // Use /SILENT with Verb="runas" so Windows prompts for Administrator UAC elevation
-            // and Inno Setup installs cleanly over Program Files without getting blocked or silently aborted.
-            var args = $"/SILENT /NORESTART /SP- /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /LOG=\"{logPath}\"";
+            // Use /VERYSILENT /SUPPRESSMSGBOXES with Verb="runas" so Windows prompts for Administrator UAC elevation
+            // and Inno Setup installs completely silently in the background over Program Files without showing setup windows or getting blocked.
+            var args = $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /LOG=\"{logPath}\"";
             onDetail?.Invoke($"Executing upgrade: {Path.GetFileName(installerPath)}");
             onDetail?.Invoke($"Flags: {args}");
             onDetail?.Invoke("Preserving existing GH3-Sync install directory, settings, friends, and song library...");
@@ -325,6 +325,24 @@ public class UpdateService
             };
 
             Process.Start(psi);
+
+            // Launch detached relaunch guardian: waits for installer to complete, then guarantees GH3-Sync opens
+            try
+            {
+                var targetExe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "GH3-Sync", "GH3-Sync.exe");
+                var instName = Path.GetFileName(installerPath);
+                var watcherCmd = $"/c timeout /t 2 /nobreak >nul & :loop & tasklist /fi \"imagename eq {instName}\" 2>nul | find /i \"{instName}\" >nul && (timeout /t 1 /nobreak >nul & goto loop) & timeout /t 1 /nobreak >nul & tasklist /fi \"imagename eq GH3-Sync.exe\" 2>nul | find /i \"GH3-Sync.exe\" >nul || start \"\" \"{targetExe}\"";
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = watcherCmd,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                });
+            }
+            catch { }
+
             return (true, false, "", logPath);
         }
         catch (System.ComponentModel.Win32Exception wex) when (wex.NativeErrorCode == 1223)

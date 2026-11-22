@@ -176,8 +176,10 @@ public partial class GuitarTesterWindow : Window
 
     private static void SetFretVisual(System.Windows.Controls.Border box, System.Windows.Shapes.Ellipse dot, bool active, WpfColor bright, WpfColor dimBg)
     {
-        box.Background = new SolidColorBrush(active ? WpfColor.FromArgb(145, bright.R, bright.G, bright.B) : dimBg);
-        dot.Fill = new SolidColorBrush(active ? bright : WpfColor.FromArgb(80, bright.R, bright.G, bright.B));
+        box.Background = new SolidColorBrush(active ? WpfColor.FromArgb(175, bright.R, bright.G, bright.B) : dimBg);
+        box.BorderBrush = new SolidColorBrush(active ? WpfColor.FromRgb(255, 255, 255) : bright);
+        dot.Fill = new SolidColorBrush(active ? bright : WpfColor.FromArgb(90, bright.R, bright.G, bright.B));
+        dot.Stroke = new SolidColorBrush(active ? WpfColor.FromRgb(255, 255, 255) : bright);
     }
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e) => Close();

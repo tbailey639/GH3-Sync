@@ -48,8 +48,8 @@
             </DockPanel>
         </Border>
 
-        <!-- Fretboard & Telemetry Visual -->
-        <Border Grid.Row="2" Background="#11131B" BorderBrush="#262B3D" BorderThickness="1.5" CornerRadius="12" Padding="20">
+        <!-- Fretboard & Telemetry Visual: Authentic GH3 Gibson Les Paul Controller Neck -->
+        <Border Grid.Row="2" Background="#11131B" BorderBrush="#262B3D" BorderThickness="1.5" CornerRadius="12" Padding="18,16">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -57,40 +57,99 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <!-- 5 Fret Gems -->
-                <TextBlock x:Name="FretMapCaption" Grid.Row="0" Text="5-FRET NECK BUTTONS (Official GH3 Mapping — Click any fret to custom-bind a pad button)" FontSize="11" FontWeight="Bold" Foreground="#94A3B8" Margin="0,0,0,12"/>
-                <UniformGrid Grid.Row="1" Columns="5" Margin="0,0,0,20">
-                    <Border x:Name="FretG" Height="88" Margin="6,0" CornerRadius="12" Background="#0C1E14" BorderBrush="#22C55E" BorderThickness="2" Cursor="Hand" MouseLeftButtonDown="FretBox_Click" Tag="0">
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                            <Ellipse x:Name="FretGDot" Width="30" Height="30" Fill="#14532D" Stroke="#22C55E" StrokeThickness="2"/>
-                            <TextBlock x:Name="FretGLabel" Text="GREEN (L2/LT)" FontSize="11" FontWeight="Bold" Foreground="#86EFAC" Margin="0,6,0,0" HorizontalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
-                    <Border x:Name="FretR" Height="88" Margin="6,0" CornerRadius="12" Background="#240D11" BorderBrush="#EF4444" BorderThickness="2" Cursor="Hand" MouseLeftButtonDown="FretBox_Click" Tag="1">
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                            <Ellipse x:Name="FretRDot" Width="30" Height="30" Fill="#7F1D1D" Stroke="#EF4444" StrokeThickness="2"/>
-                            <TextBlock x:Name="FretRLabel" Text="RED (L1/LB)" FontSize="11" FontWeight="Bold" Foreground="#FCA5A5" Margin="0,6,0,0" HorizontalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
-                    <Border x:Name="FretY" Height="88" Margin="6,0" CornerRadius="12" Background="#241D08" BorderBrush="#EAB308" BorderThickness="2" Cursor="Hand" MouseLeftButtonDown="FretBox_Click" Tag="2">
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                            <Ellipse x:Name="FretYDot" Width="30" Height="30" Fill="#713F12" Stroke="#EAB308" StrokeThickness="2"/>
-                            <TextBlock x:Name="FretYLabel" Text="YELLOW (R1/RB)" FontSize="11" FontWeight="Bold" Foreground="#FDE047" Margin="0,6,0,0" HorizontalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
-                    <Border x:Name="FretB" Height="88" Margin="6,0" CornerRadius="12" Background="#0C1930" BorderBrush="#3B82F6" BorderThickness="2" Cursor="Hand" MouseLeftButtonDown="FretBox_Click" Tag="3">
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                            <Ellipse x:Name="FretBDot" Width="30" Height="30" Fill="#1E3A8A" Stroke="#3B82F6" StrokeThickness="2"/>
-                            <TextBlock x:Name="FretBLabel" Text="BLUE (R2/RT)" FontSize="11" FontWeight="Bold" Foreground="#93C5FD" Margin="0,6,0,0" HorizontalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
-                    <Border x:Name="FretO" Height="88" Margin="6,0" CornerRadius="12" Background="#261207" BorderBrush="#F97316" BorderThickness="2" Cursor="Hand" MouseLeftButtonDown="FretBox_Click" Tag="4">
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                            <Ellipse x:Name="FretODot" Width="30" Height="30" Fill="#7C2D12" Stroke="#F97316" StrokeThickness="2"/>
-                            <TextBlock x:Name="FretOLabel" Text="ORANGE (✕/A)" FontSize="11" FontWeight="Bold" Foreground="#FDBA74" Margin="0,6,0,0" HorizontalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
-                </UniformGrid>
+                <!-- Caption -->
+                <DockPanel Grid.Row="0" Margin="0,0,0,10">
+                    <TextBlock Text="🎸 GIBSON LES PAUL FRETBOARD (Authentic GH3 Controller Spec)" FontSize="11" FontWeight="ExtraBold" Foreground="#FDBA74"/>
+                    <TextBlock x:Name="FretMapCaption" Text="Official GH3 Mapping — Click any fret to bind a paddle/key" FontSize="11" Foreground="#94A3B8" HorizontalAlignment="Right"/>
+                </DockPanel>
+
+                <!-- Authentic GH3 Gibson Les Paul Rosewood Neck Container -->
+                <Border Grid.Row="1" Margin="0,0,0,18" CornerRadius="8" BorderBrush="#E5D9C5" BorderThickness="0,3,0,3" ClipToBounds="True">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Color="#2C1D18" Offset="0"/>
+                            <GradientStop Color="#1E130F" Offset="0.5"/>
+                            <GradientStop Color="#140D0A" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Border.Background>
+                    <Grid>
+                        <!-- Nickel-Steel Fret Dividers & Les Paul Mother-of-Pearl Inlays -->
+                        <Grid Margin="0,0,0,0" Height="104">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <!-- Inlay markers between frets -->
+                            <Path Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  Data="M 6,0 L 26,0 L 30,12 L 2,12 Z" Fill="#CBD5E1" Opacity="0.32"/>
+                            <Path Grid.Column="2" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  Data="M 4,0 L 28,0 L 32,14 L 0,14 Z" Fill="#CBD5E1" Opacity="0.32"/>
+                            <Path Grid.Column="3" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  Data="M 6,0 L 26,0 L 30,12 L 2,12 Z" Fill="#CBD5E1" Opacity="0.32"/>
+                            <!-- Nickel-silver fret wires -->
+                            <Rectangle Grid.Column="0" HorizontalAlignment="Right" Width="2.5" Fill="#94A3B8" Opacity="0.85"/>
+                            <Rectangle Grid.Column="1" HorizontalAlignment="Right" Width="2.5" Fill="#94A3B8" Opacity="0.85"/>
+                            <Rectangle Grid.Column="2" HorizontalAlignment="Right" Width="2.5" Fill="#94A3B8" Opacity="0.85"/>
+                            <Rectangle Grid.Column="3" HorizontalAlignment="Right" Width="2.5" Fill="#94A3B8" Opacity="0.85"/>
+                        </Grid>
+
+                        <!-- 5 Authentic Guitar Hero III Molded Fret Buttons -->
+                        <UniformGrid Columns="5" Margin="8,8">
+                            <!-- Green Fret -->
+                            <Border x:Name="FretG" Height="88" Margin="5,0" CornerRadius="10" Background="#0C2417" BorderBrush="#22C55E" BorderThickness="2.5" Cursor="Hand" MouseLeftButtonDown="FretBox_Click" Tag="0">
+                                <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <Ellipse Width="44" Height="44" Fill="#064E3B" Stroke="#10B981" StrokeThickness="1.5"/>
+                                    <Ellipse x:Name="FretGDot" Width="32" Height="32" Fill="#14532D" Stroke="#22C55E" StrokeThickness="2.5"/>
+                                    <Ellipse Width="16" Height="8" Margin="0,-14,0,0" Fill="#A7F3D0" Opacity="0.75"/>
+                                    <TextBlock x:Name="FretGLabel" Text="GREEN (L2/LT)" FontSize="10.5" FontWeight="Bold" Foreground="#86EFAC" Margin="0,52,0,0" HorizontalAlignment="Center"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- Red Fret -->
+                            <Border x:Name="FretR" Height="88" Margin="5,0" CornerRadius="10" Background="#2A0E13" BorderBrush="#EF4444" BorderThickness="2.5" Cursor="Hand" MouseLeftButtonDown="FretBox_Click" Tag="1">
+                                <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <Ellipse Width="44" Height="44" Fill="#7F1D1D" Stroke="#F87171" StrokeThickness="1.5"/>
+                                    <Ellipse x:Name="FretRDot" Width="32" Height="32" Fill="#991B1B" Stroke="#EF4444" StrokeThickness="2.5"/>
+                                    <Ellipse Width="16" Height="8" Margin="0,-14,0,0" Fill="#FECACA" Opacity="0.75"/>
+                                    <TextBlock x:Name="FretRLabel" Text="RED (L1/LB)" FontSize="10.5" FontWeight="Bold" Foreground="#FCA5A5" Margin="0,52,0,0" HorizontalAlignment="Center"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- Yellow Fret -->
+                            <Border x:Name="FretY" Height="88" Margin="5,0" CornerRadius="10" Background="#292008" BorderBrush="#EAB308" BorderThickness="2.5" Cursor="Hand" MouseLeftButtonDown="FretBox_Click" Tag="2">
+                                <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <Ellipse Width="44" Height="44" Fill="#713F12" Stroke="#FACC15" StrokeThickness="1.5"/>
+                                    <Ellipse x:Name="FretYDot" Width="32" Height="32" Fill="#854D0E" Stroke="#EAB308" StrokeThickness="2.5"/>
+                                    <Ellipse Width="16" Height="8" Margin="0,-14,0,0" Fill="#FEF08A" Opacity="0.75"/>
+                                    <TextBlock x:Name="FretYLabel" Text="YELLOW (R1/RB)" FontSize="10.5" FontWeight="Bold" Foreground="#FDE047" Margin="0,52,0,0" HorizontalAlignment="Center"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- Blue Fret -->
+                            <Border x:Name="FretB" Height="88" Margin="5,0" CornerRadius="10" Background="#0E1B33" BorderBrush="#3B82F6" BorderThickness="2.5" Cursor="Hand" MouseLeftButtonDown="FretBox_Click" Tag="3">
+                                <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <Ellipse Width="44" Height="44" Fill="#1E3A8A" Stroke="#60A5FA" StrokeThickness="1.5"/>
+                                    <Ellipse x:Name="FretBDot" Width="32" Height="32" Fill="#1D4ED8" Stroke="#3B82F6" StrokeThickness="2.5"/>
+                                    <Ellipse Width="16" Height="8" Margin="0,-14,0,0" Fill="#BFDBFE" Opacity="0.75"/>
+                                    <TextBlock x:Name="FretBLabel" Text="BLUE (R2/RT)" FontSize="10.5" FontWeight="Bold" Foreground="#93C5FD" Margin="0,52,0,0" HorizontalAlignment="Center"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- Orange Fret -->
+                            <Border x:Name="FretO" Height="88" Margin="5,0" CornerRadius="10" Background="#2B1307" BorderBrush="#F97316" BorderThickness="2.5" Cursor="Hand" MouseLeftButtonDown="FretBox_Click" Tag="4">
+                                <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <Ellipse Width="44" Height="44" Fill="#7C2D12" Stroke="#FB923C" StrokeThickness="1.5"/>
+                                    <Ellipse x:Name="FretODot" Width="32" Height="32" Fill="#C2410C" Stroke="#F97316" StrokeThickness="2.5"/>
+                                    <Ellipse Width="16" Height="8" Margin="0,-14,0,0" Fill="#FFEDD5" Opacity="0.75"/>
+                                    <TextBlock x:Name="FretOLabel" Text="ORANGE (✕/A)" FontSize="10.5" FontWeight="Bold" Foreground="#FDBA74" Margin="0,52,0,0" HorizontalAlignment="Center"/>
+                                </Grid>
+                            </Border>
+                        </UniformGrid>
+                    </Grid>
+                </Border>
 
                 <!-- Strum Bar + Triggers + Whammy + Star Power -->
                 <Grid Grid.Row="2">
@@ -100,15 +159,21 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Strum & Menu Buttons -->
+                    <!-- Strum & Menu Buttons (Gibson Les Paul Toggle Bar Style) -->
                     <StackPanel Grid.Column="0">
-                        <TextBlock Text="STRUM BAR &amp; SYSTEM BUTTONS" FontSize="11" FontWeight="Bold" Foreground="#94A3B8" Margin="0,0,0,8"/>
+                        <TextBlock Text="AUTHENTIC GH3 STRUM BAR &amp; BUTTONS" FontSize="11" FontWeight="Bold" Foreground="#94A3B8" Margin="0,0,0,8"/>
                         <UniformGrid Columns="2" Margin="0,0,0,10">
-                            <Border x:Name="StrumUpBox" Height="44" Margin="0,0,6,0" CornerRadius="8" Background="#141722" BorderBrush="#334155" BorderThickness="1.5">
-                                <TextBlock Text="▲ STRUM UP" FontSize="12" FontWeight="Bold" Foreground="#CBD5E1" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Border x:Name="StrumUpBox" Height="46" Margin="0,0,6,0" CornerRadius="9" Background="#141722" BorderBrush="#475569" BorderThickness="1.8">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <TextBlock Text="▲" FontSize="13" Foreground="#F97316" Margin="0,0,6,0"/>
+                                    <TextBlock Text="STRUM UP" FontSize="11.5" FontWeight="Bold" Foreground="#F1F5F9"/>
+                                </StackPanel>
                             </Border>
-                            <Border x:Name="StrumDownBox" Height="44" Margin="6,0,0,0" CornerRadius="8" Background="#141722" BorderBrush="#334155" BorderThickness="1.5">
-                                <TextBlock Text="▼ STRUM DOWN" FontSize="12" FontWeight="Bold" Foreground="#CBD5E1" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Border x:Name="StrumDownBox" Height="46" Margin="6,0,0,0" CornerRadius="9" Background="#141722" BorderBrush="#475569" BorderThickness="1.8">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <TextBlock Text="▼" FontSize="13" Foreground="#F97316" Margin="0,0,6,0"/>
+                                    <TextBlock Text="STRUM DOWN" FontSize="11.5" FontWeight="Bold" Foreground="#F1F5F9"/>
+                                </StackPanel>
                             </Border>
                         </UniformGrid>
                         <UniformGrid Columns="2">
@@ -116,17 +181,17 @@
                                 <TextBlock Text="OPTIONS / START" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <Border x:Name="BtnBackBox" Height="38" Margin="6,0,0,0" CornerRadius="8" Background="#141722" BorderBrush="#334155" BorderThickness="1">
-                                <TextBlock Text="⚡ STAR POWER (Create/Back)" FontSize="10.5" FontWeight="SemiBold" Foreground="#7DD3FC" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock Text="⚡ STAR POWER (Back/Create)" FontSize="10.5" FontWeight="SemiBold" Foreground="#7DD3FC" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                         </UniformGrid>
                     </StackPanel>
 
-                    <!-- Whammy & Analog Trigger Meters -->
+                    <!-- Whammy & Analog Trigger Meters (Gibson Chrome Lever Style) -->
                     <StackPanel Grid.Column="2">
                         <TextBlock Text="WHAMMY BAR &amp; ANALOG TRIGGERS (L2 / R2)" FontSize="11" FontWeight="Bold" Foreground="#94A3B8" Margin="0,0,0,8"/>
                         <DockPanel Margin="0,0,0,3">
                             <TextBlock x:Name="WhammyValueText" DockPanel.Dock="Right" Text="0%" FontSize="11.5" FontFamily="Consolas" Foreground="#38BDF8"/>
-                            <TextBlock Text="Whammy Axis (Left Stick / Whammy)" FontSize="11.5" Foreground="#CBD5E1"/>
+                            <TextBlock Text="🎸 Whammy Bar (Chrome Pitch Bend)" FontSize="11.5" Foreground="#CBD5E1"/>
                         </DockPanel>
                         <ProgressBar x:Name="WhammyBarMeter" Height="13" Minimum="0" Maximum="100" Value="0" Margin="0,0,0,10"/>
 

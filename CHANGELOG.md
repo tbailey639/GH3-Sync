@@ -4,6 +4,22 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). Nota
 
 ---
 
+## [v1.5.3] - 2026-11-22 — Authentic GH3 Gibson Les Paul Fretboard, Complete Installer Bundle & Silent Relaunch Guardian
+
+### 🎸 Authentic Guitar Hero III Gibson Les Paul Fretboard & Highway
+* **Gibson Les Paul Controller Neck & Fretboard:** Overhauled the Universal Controller Tester into an authentic Guitar Hero III Gibson Les Paul neck with rich dark rosewood grain, cream/ivory binding borders, nickel-silver fret dividers, mother-of-pearl trapezoid inlays, ribbed strum bar, and chrome whammy bar.
+* **3D Molded GH3 Fret Buttons:** Replaced generic flat boxes with authentic 3D molded Guitar Hero III fret buttons (Green, Red, Yellow, Blue, Orange) featuring outer chrome bezels, vivid translucent neon jewel caps, top specular highlights, and radiant Star Power bloom when pressed.
+* **Playable Highway 3D Overhaul:** Restyled the practice highway previewer to match authentic Guitar Hero III: dark rosewood plank, outer chrome rails, inner neon energy tracks, perspective 3D fret wires, 3D strike target rings with center hubs, and glossy 3D gemstone notes with white HOPO crowns and neon sustain ribbons.
+* **Gibson Les Paul Visualizer:** Updated the application update progress guitar to an authentic single-cutaway Gibson Les Paul silhouette with cream pickguard, amber gold speed knobs, and the iconic Gibson open-book headstock.
+
+### 🛡️ Complete Installer Binary Packaging & Startup Fix
+* **Self-Contained Runtime Packaging:** Fixed Inno Setup packaging to include all publish assemblies, .NET runtime libraries (`coreclr.dll`), and dependencies (`GH3-Sync.dll`, `System.*.dll`, `Microsoft.AspNetCore.*.dll`). Completely resolved `The application to execute does not exist: GH3-Sync.dll`, ensuring GH3-Sync opens cleanly on desktop after updating.
+* **Mandatory Administrator Elevation:** Added explicit `PrivilegesRequired=admin` to the Inno Setup configuration, guaranteeing that Windows UAC administrator elevation is always requested and properly prompted.
+* **Truly Silent Background Installation:** Updated the silent updater flags to `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS`, eliminating all installer progress popups for an unobtrusive background upgrade.
+* **Detached Relaunch Guardian:** Added a resilient background process watchdog that monitors the installer and automatically relaunches `GH3-Sync.exe` the moment file replacement completes.
+
+---
+
 ## [v1.5.2] - 2026-11-22 — Stage UI Overhaul, P2P Auto-Heal Handshake, Full-Song Chants & System Tray
 
 ### 🎸 Authentic Guitar Hero Stage UI Overhaul
