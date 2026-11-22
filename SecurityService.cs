@@ -573,6 +573,15 @@ public class SecurityService
         }
     }
 
+    public void UnblockIp(string clientIp)
+    {
+        if (string.IsNullOrWhiteSpace(clientIp) || IsLoopbackIp(clientIp.Trim())) return;
+        lock (_lock)
+        {
+            _failedAttempts.Remove(clientIp.Trim());
+        }
+    }
+
     public void BanIp(string ip)
     {
         if (string.IsNullOrWhiteSpace(ip) || IsLoopbackIp(ip.Trim())) return;

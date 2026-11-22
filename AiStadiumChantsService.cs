@@ -97,8 +97,8 @@ public class AiStadiumChantsService
 
             if (hasIsolatedVocals)
             {
-                // Multi-track mix: Authentic arena crowd bed (75%) + stadium reverberated isolated vocals (25%)
-                // ZERO harsh comb filters, ZERO resonant distortion spikes: pristine concert sound!
+                // Multi-track mix: Pristine arena crowd roar bed (45%) + massive stadium vocal choir (55%)
+                // Synthesizes the actual song's vocals into a full-arena crowd sing-along for the entire song!
                 psi.ArgumentList.Add("-stream_loop");
                 psi.ArgumentList.Add("-1");
                 psi.ArgumentList.Add("-i");
@@ -108,8 +108,8 @@ public class AiStadiumChantsService
                 psi.ArgumentList.Add(vocalSource);
 
                 var filtergraph =
-                    "[0:a]volume=0.85[crowd];" +
-                    "[1:a]highpass=f=180,lowpass=f=4200,aecho=0.8:0.88:60|120:0.3|0.2,volume=0.30[vox];" +
+                    "[0:a]volume=0.50[crowd];" +
+                    "[1:a]highpass=f=200,lowpass=f=3800,chorus=0.7:0.9:55:0.4:0.25:2,aecho=0.8:0.88:60|120|240:0.4|0.3|0.2,volume=0.75[vox];" +
                     "[crowd][vox]amix=inputs=2:duration=first:dropout_transition=2,volume=1.2,alimiter=limit=0.98[crowd_out]";
 
                 psi.ArgumentList.Add("-filter_complex");
@@ -195,8 +195,7 @@ public class AiStadiumChantsService
             Path.Combine(hDir, "Audio", "stadium_crowd_bed.mp3"),
             Path.Combine(hDir, "Audio", "stadium_crowd_bed.wav"),
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tools", "compiler", "Audio", "stadium_crowd_bed.mp3"),
-            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tools", "compiler", "Audio", "stadium_crowd_bed.wav"),
-            @"C:\Users\Johnny\.gemini\antigravity\brain\8dced7ba-6f3a-4632-8872-1a1f1b83cae3\scratch\beatit_wtde_audio\crowd.wav"
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tools", "compiler", "Audio", "stadium_crowd_bed.wav")
         };
 
         foreach (var c in candidates)

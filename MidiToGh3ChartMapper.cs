@@ -167,16 +167,16 @@ public static class MidiToGh3ChartMapper
         // Build all 4 Lead Guitar difficulties (with Riff Memory, Hand-Box Ergonomics, Forced HOPOs/Strums, Energy Chords)
         WriteDifficultyTrack(sb, "ExpertSingle", allEvents, lowPitch, highPitch, measureEnergies,
             soloStartTick, soloEndTick, safeBpm,
-            maxFrets: 5, minSpacingSec: 0.080 * feelScale,
+            maxFrets: 5, minSpacingSec: 0.052 * feelScale,
             allowChords: true, allowThreeNoteChords: true, allowSustains: true, allowForcedMarkers: true,
-            ampFloor: 0.12f, isBassTrack: false, statsOut: statsOut);
+            ampFloor: 0.08f, isBassTrack: false, statsOut: statsOut);
 
         // HardSingle: Full 5 frets (Green through Orange)! Introduces the index-finger slide and moderate density
         WriteDifficultyTrack(sb, "HardSingle", allEvents, lowPitch, highPitch, measureEnergies,
             soloStartTick, soloEndTick, safeBpm,
-            maxFrets: 5, minSpacingSec: 0.125 * feelScale,
+            maxFrets: 5, minSpacingSec: 0.095 * feelScale,
             allowChords: true, allowThreeNoteChords: false, allowSustains: true, allowForcedMarkers: true,
-            ampFloor: 0.16f, isBassTrack: false, statsOut: null);
+            ampFloor: 0.12f, isBassTrack: false, statsOut: null);
 
         // MediumSingle: Strictly 4 frets (Green, Red, Yellow, Blue). STRICTLY 0% Orange! Hand stays in home position
         WriteDifficultyTrack(sb, "MediumSingle", allEvents, lowPitch, highPitch, measureEnergies,
@@ -601,24 +601,30 @@ public static class MidiToGh3ChartMapper
                 }
                 else if (delta > 0)
                 {
-                    int step = delta <= 3 ? 1 : (delta <= 7 ? 2 : 3);
+                    int step = delta <= 2 ? 1 : (delta <= 5 ? 2 : 3);
                     int target = Math.Min(maxFrets - 1, prevFret + step);
-                    // Only break above boxMax on large jumps (>= 6 semitones) or very high notes
-                    if (delta < 6 && normPitch < 0.85) target = Math.Min(target, boxMax);
-                    fret = (int)Math.Round(target * 0.72 + absoluteFret * 0.28);
+                    if (delta < 5 && normPitch < 0.80) target = Math.Min(target, boxMax);
+                    
+                    // Heavy absolute weighting (65% absolute pitch vs 35% relative step) so low stays Green and high reaches Orange!
+                    fret = (int)Math.Round(target * 0.35 + absoluteFret * 0.65);
                     if (fret <= prevFret && prevFret < maxFrets - 1) fret = prevFret + 1;
                 }
                 else
                 {
                     int absDelta = -delta;
-                    int step = absDelta <= 3 ? 1 : (absDelta <= 7 ? 2 : 3);
+                    int step = absDelta <= 2 ? 1 : (absDelta <= 5 ? 2 : 3);
                     int target = Math.Max(0, prevFret - step);
-                    // Only break below boxMin on large drops (>= 6 semitones) or very low notes
-                    if (absDelta < 6 && normPitch > 0.15) target = Math.Max(target, boxMin);
-                    fret = (int)Math.Round(target * 0.72 + absoluteFret * 0.28);
+                    if (absDelta < 5 && normPitch > 0.20) target = Math.Max(target, boxMin);
+                    
+                    fret = (int)Math.Round(target * 0.35 + absoluteFret * 0.65);
                     if (fret >= prevFret && prevFret > 0) fret = prevFret - 1;
                 }
             }
+
+            // Vanilla GH3 Root & Peak Anchor Rules:
+            // Lowest fundamental notes firmly anchor to Green (0), highest screams hit Orange (maxFrets-1)
+            if (maxFrets >= 4 && normPitch <= 0.16) fret = 0;
+            else if (maxFrets == 5 && normPitch >= 0.84) fret = 4;
 
             fret = Math.Clamp(fret, 0, maxFrets - 1);
             assignedFrets[i] = fret;

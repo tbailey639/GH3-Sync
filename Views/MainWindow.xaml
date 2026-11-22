@@ -140,6 +140,26 @@
             </Grid>
         </Border>
 
+        <!-- ==================== WHAT'S NEW BANNER ==================== -->
+        <Border x:Name="WhatsNewBanner" Grid.Row="2" Visibility="Collapsed"
+                Background="#18130B" BorderBrush="#D97706" BorderThickness="0,0,0,1" Padding="18,9">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Background="#F59E0B" CornerRadius="4" Padding="7,2" Margin="0,0,12,0" VerticalAlignment="Center">
+                    <TextBlock Text="WHAT'S NEW" FontSize="10.5" FontWeight="Black" Foreground="#000000"/>
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock x:Name="WhatsNewTitleText" Text="🎸 GH3-Sync v1.5.2: Stage Overhaul &amp; P2P Auto-Heal Edition" FontSize="13" FontWeight="Bold" Foreground="#FDE68A"/>
+                    <TextBlock x:Name="WhatsNewSubtitleText" Text="• Authentic Guitar Hero Stage aesthetic • Direct P2P handshake auto-recovery • Full-song stadium chanting • Batch Rechart • System tray background mode" FontSize="11.5" Foreground="#F59E0B" Margin="0,2,0,0"/>
+                </StackPanel>
+                <Button Grid.Column="2" Content="✕" Style="{StaticResource OutlineButton}" Padding="10,4" VerticalAlignment="Center" Click="DismissWhatsNewBanner_Click" ToolTip="Dismiss What's New"/>
+            </Grid>
+        </Border>
+
         <!-- ==================== MAIN BODY ==================== -->
         <Grid Grid.Row="3">
             <Grid.ColumnDefinitions>
@@ -399,7 +419,7 @@
                                 <WrapPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                                     <Button x:Name="BatchDeleteBtn" Content="🗑️ Delete Selected" Style="{StaticResource DangerButton}" Padding="11,5" Margin="0,0,6,0" Click="BatchDeleteBtn_Click" ToolTip="Delete all checked songs from Guitar Hero III library"/>
                                     <Button x:Name="BatchFastRechartBtn" Content="⚡ Fast Re-Chart" Style="{StaticResource GreenButton}" Padding="10,5" Margin="0,0,6,0" Click="BatchFastRechartBtn_Click" ToolTip="Re-chart all selected songs from instant AI cache"/>
-                                    <Button x:Name="BatchRechartAiBtn" Content="🤖 Re-Chart AI v2" Style="{StaticResource BlueButton}" Padding="10,5" Margin="0,0,6,0" Click="BatchRechartAiBtn_Click" ToolTip="Batch load checked songs into Creator"/>
+                                    <Button x:Name="BatchRechartAiBtn" Content="🤖 Rechart" Style="{StaticResource BlueButton}" Padding="10,5" Margin="0,0,6,0" Click="BatchRechartAiBtn_Click" ToolTip="Batch load checked songs into Creator"/>
                                     <Button x:Name="BatchAddLobbyBtn" Content="+ Add to Lobby" Style="{StaticResource OutlineButton}" Padding="10,5" Margin="0,0,6,0" Click="BatchAddLobbyBtn_Click" ToolTip="Add checked songs to multiplayer lobby setlist"/>
                                     <Button x:Name="ExportSelectedBtn" Content="📦 Export Selected (0)" Style="{StaticResource FlameButton}" Padding="11,5" Margin="0,0,6,0" Click="ExportSelectedPack_Click" ToolTip="Export checked songs into a single package"/>
                                     <Button x:Name="BatchDeselectAllBtn" Content="✖ Clear" Style="{StaticResource OutlineButton}" Padding="9,5" Click="BatchDeselectAllBtn_Click" ToolTip="Deselect all songs"/>

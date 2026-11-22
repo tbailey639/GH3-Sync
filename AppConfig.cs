@@ -188,6 +188,7 @@ public class AppConfigData
     public List<SongRequestItem> SongRequests { get; set; } = new();
     public List<FriendRequestItem> FriendRequests { get; set; } = new();
     public HashSet<string> KeptFriendSongIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public string LastSeenWhatsNewVersion { get; set; } = "";
 }
 
 public static class AppConfig

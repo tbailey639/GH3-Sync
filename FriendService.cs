@@ -684,12 +684,28 @@ public class FriendService
         FriendRequestItem? notifyReq = null;
         lock (_lock)
         {
-            // If sender is already a friend, update their last address
+            // If sender is already a friend, update their address & mutual trust token, then re-acknowledge
             var existing = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
             if (existing != null)
             {
                 if (!string.IsNullOrWhiteSpace(senderAddress)) existing.LastAddress = senderAddress.Trim();
+                if (!string.IsNullOrWhiteSpace(proposedToken)) existing.TrustToken = proposedToken;
+                existing.IsTrusted = isTrusted;
+                existing.LastSeenUtc = DateTime.UtcNow;
                 AppConfig.Save();
+
+                // Re-broadcast FRIEND_ACCEPT packet to remote peer to guarantee they unstick from Pending
+                if (SignalingRelay != null)
+                {
+                    var myAddress = BestAddressProvider?.Invoke() ?? "http://127.0.0.1:7373";
+                    _ = SignalingRelay.SendFriendAcceptPacketAsync(
+                        cleanCode,
+                        AppConfig.Current.FriendCode,
+                        AppConfig.Current.Username,
+                        myAddress,
+                        existing.TrustToken);
+                }
+
                 return (true, true, "already_friends", Profile.Username, Profile.FriendCode);
             }
 
@@ -1012,11 +1028,13 @@ public class FriendService
             if (asTrusted)
             {
                 newFriend.IsTrusted = true;
-                if (string.IsNullOrEmpty(newFriend.TrustToken))
+                if (!string.IsNullOrEmpty(targetReq.ProposedTrustToken))
                 {
-                    newFriend.TrustToken = !string.IsNullOrEmpty(targetReq.ProposedTrustToken)
-                        ? targetReq.ProposedTrustToken
-                        : Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+                    newFriend.TrustToken = targetReq.ProposedTrustToken;
+                }
+                else if (string.IsNullOrEmpty(newFriend.TrustToken))
+                {
+                    newFriend.TrustToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
                 }
             }
 

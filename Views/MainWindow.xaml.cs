@@ -68,7 +68,7 @@ public partial class MainWindow : Window
     private ControllerPollingTesterService? _pollingTester;
     private readonly int _port;
 
-    private readonly DispatcherTimer _stageAnimTimer = new() { Interval = TimeSpan.FromMilliseconds(33) };
+    private readonly DispatcherTimer _stageAnimTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
     private readonly DispatcherTimer _stageToastTimer = new() { Interval = TimeSpan.FromSeconds(3.6) };
     private double _animPhase = 0;
     private double _rockMeterTargetAngle = 42.0;
@@ -241,8 +241,22 @@ public partial class MainWindow : Window
         SourceInitialized += MainWindow_SourceInitialized;
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
+        StateChanged += MainWindow_StateChanged;
 
         InitializeTrayIcon();
+    }
+
+    private void MainWindow_StateChanged(object? sender, EventArgs e)
+    {
+        if (WindowState == WindowState.Minimized)
+        {
+            Hide();
+            if (_trayIcon != null)
+            {
+                _trayIcon.Visible = true;
+                _trayIcon.ShowBalloonTip(1800, "GH3-Sync Active", "Running in the system tray so friends can sync songs & invite you to rock out!", WinForms.ToolTipIcon.Info);
+            }
+        }
     }
 
     private void MainWindow_SourceInitialized(object? sender, EventArgs e)
@@ -347,6 +361,19 @@ public partial class MainWindow : Window
         // Automated library audit & reconciliation: ensure only original + permanently kept songs exist in customs
         try { _tempSession.ReconcileLibraryIntegrity(); } catch { }
 
+        if (WhatsNewBanner != null)
+        {
+            if (AppConfig.Current.LastSeenWhatsNewVersion != UpdateService.CurrentAppVersion)
+            {
+                WhatsNewBanner.Visibility = Visibility.Visible;
+                if (WhatsNewTitleText != null) WhatsNewTitleText.Text = $"🎸 GH3-Sync v{UpdateService.CurrentAppVersion}: Stage Overhaul & P2P Auto-Heal Edition";
+            }
+            else
+            {
+                WhatsNewBanner.Visibility = Visibility.Collapsed;
+            }
+        }
+
         RefreshAllUiState();
 
         // First-time custom song save setup check (only prompts if Honeycomb}{Honeycomb save doesn't exist yet!)
@@ -382,6 +409,13 @@ public partial class MainWindow : Window
         {
             await RunUpdateCheckAsync(silentIfUpToDate: true);
         }
+    }
+
+    private void DismissWhatsNewBanner_Click(object sender, RoutedEventArgs e)
+    {
+        if (WhatsNewBanner != null) WhatsNewBanner.Visibility = Visibility.Collapsed;
+        AppConfig.Current.LastSeenWhatsNewVersion = UpdateService.CurrentAppVersion;
+        AppConfig.Save();
     }
 
     public void RestoreFromTrayOrActivate()
@@ -818,6 +852,7 @@ public partial class MainWindow : Window
         if (_isExiting) return;
         _isExiting = true;
         _stageAnimTimer?.Stop();
+        _isExplicitExit = true;
         StopAudioPreview();
         try { _tempSession?.EndSessionAndCleanup(); } catch { }
         try { _pollingTester?.Dispose(); } catch { }
@@ -827,8 +862,23 @@ public partial class MainWindow : Window
         System.Windows.Application.Current.Shutdown();
     }
 
+    private bool _isExplicitExit = false;
+
     private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        if (!_isExplicitExit)
+        {
+            e.Cancel = true;
+            WindowState = WindowState.Minimized;
+            Hide();
+            if (_trayIcon != null)
+            {
+                _trayIcon.Visible = true;
+                _trayIcon.ShowBalloonTip(2000, "GH3-Sync Active in Tray", "GH3-Sync is minimized to system tray so friends can still connect and sync.\nRight-click tray icon to Exit.", WinForms.ToolTipIcon.Info);
+            }
+            return;
+        }
+
         ExitApplication();
         Environment.Exit(0);
     }
@@ -2206,7 +2256,7 @@ public partial class MainWindow : Window
         ExportSelectedBtn.Content = $"📦 Export Selected ({selCount})";
         BatchDeleteBtn.Content = $"🗑️ Delete ({selCount})";
         BatchFastRechartBtn.Content = $"⚡ Fast Re-Chart ({selCount})";
-        BatchRechartAiBtn.Content = $"🤖 Re-Chart AI v2 ({selCount})";
+        BatchRechartAiBtn.Content = $"🤖 Rechart ({selCount})";
         BatchAddLobbyBtn.Content = $"+ Add to Lobby ({selCount})";
 
         bool hasSelection = selCount > 0;
@@ -2305,14 +2355,45 @@ public partial class MainWindow : Window
 
     private async void BatchRechartAiBtn_Click(object sender, RoutedEventArgs e)
     {
-        var target = _allSongs.FirstOrDefault(s => _selectedExportIds.Contains(s.SongId) && !string.IsNullOrEmpty(Gh3Service.FindSongAudioPath(s)));
-        if (target != null)
+        var targets = _allSongs.Where(s => _selectedExportIds.Contains(s.SongId) && !string.IsNullOrEmpty(Gh3Service.FindSongAudioPath(s))).ToList();
+        if (targets.Count == 0)
         {
-            await RechartSongInCreatorAsync(target);
+            WpfMessageBox.Show("Select at least one song with valid audio to re-chart.", "Rechart", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
         }
-        else
+
+        if (targets.Count == 1)
         {
-            WpfMessageBox.Show("Select at least one song with valid audio to re-chart.", "Re-Chart AI", MessageBoxButton.OK, MessageBoxImage.Information);
+            await RechartSongInCreatorAsync(targets[0]);
+            return;
+        }
+
+        var confirm = WpfMessageBox.Show(
+            $"You have selected {targets.Count} songs for batch Rechart.\n\nWould you like to load and re-chart all {targets.Count} songs in sequence?",
+            "Batch Rechart", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.Yes) return;
+
+        BatchRechartAiBtn.IsEnabled = false;
+        int completed = 0;
+        try
+        {
+            foreach (var song in targets)
+            {
+                ShowStageToast("🎸 RECHARTING...", $"Re-charting ({completed + 1}/{targets.Count}): {song.Title}", "#38BDF8");
+                var (ok, _) = await _creator.InstantRechartFromCacheAsync(song.ProjectDirectory, "Standard", 0, true, null);
+                if (!ok)
+                {
+                    await RechartSongInCreatorAsync(song);
+                }
+                completed++;
+            }
+            RefreshSongsList();
+            ShowStageToast("🎉 RECHART COMPLETE", $"Successfully re-charted {completed} song(s)!", "#22C55E");
+            WpfMessageBox.Show($"Batch Rechart complete! Re-charted {completed} of {targets.Count} songs.", "Rechart Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        finally
+        {
+            BatchRechartAiBtn.IsEnabled = true;
         }
     }
 
@@ -6052,7 +6133,7 @@ public partial class MainWindow : Window
             };
             statusBorder.Child = new TextBlock
             {
-                Text = !isOnline ? "🔴 Offline" : (friend.ActivityStatus == "Playing GH3" ? "🎸 Playing GH3" : (hasValidAddress ? "🟢 In Lobby" : "🟢 Online")),
+                Text = !isOnline ? FormatRelativeOffline(friend.LastSeenUtc) : (friend.ActivityStatus == "Playing GH3" ? "🎸 Playing GH3" : (hasValidAddress ? "🟢 In Lobby" : "🟢 Online")),
                 FontSize = 11,
                 FontWeight = FontWeights.Bold,
                 Foreground = new SolidColorBrush(isOnline ? WpfColor.FromRgb(110, 231, 183) : WpfColor.FromRgb(156, 163, 175))
@@ -6069,6 +6150,34 @@ public partial class MainWindow : Window
             });
 
             var actions = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+            // 🎸 Ask to Rock Out button directly in Lobby Card (visible for active trusted friends)
+            if (friend.IsTrusted && isOnline)
+            {
+                var rockOutBtn = new System.Windows.Controls.Button
+                {
+                    Content = "🎸 Ask to Rock Out",
+                    Style = (Style)FindResource("FlameButton"),
+                    Padding = new Thickness(12, 7, 12, 7),
+                    Margin = new Thickness(0, 0, 8, 0),
+                    ToolTip = $"Send real-time invite: '{AppConfig.Current.Username} wants to ROCK OUT with you!'"
+                };
+                rockOutBtn.Click += async (_, _) =>
+                {
+                    rockOutBtn.IsEnabled = false;
+                    rockOutBtn.Content = "Inviting...";
+                    try
+                    {
+                        await SendAskToPlayTogetherInviteAsync(friend.FriendCode, friend.Username, friend.LastAddress);
+                    }
+                    finally
+                    {
+                        rockOutBtn.IsEnabled = true;
+                        rockOutBtn.Content = "🎸 Ask to Rock Out";
+                    }
+                };
+                actions.Children.Add(rockOutBtn);
+            }
 
             var syncBtn = new System.Windows.Controls.Button
             {
@@ -6951,30 +7060,16 @@ public partial class MainWindow : Window
     {
         if (_lastPeerManifest == null) return;
         var localIds = _gh3.GetInstalledCustomSongs().Select(s => s.SongId).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var missing = GetPeerLobbySongs(_lastPeerManifest).Where(s => !localIds.Contains(s.SongId)).ToList();
+        var peerLobbySongs = GetPeerLobbySongs(_lastPeerManifest);
+        var missing = peerLobbySongs.Where(s => !localIds.Contains(s.SongId)).ToList();
 
         if (missing.Count == 0)
         {
-            // Asymmetric library: Local has all of Peer's songs, but Peer is missing Local's songs.
-            // Temporarily mirror Peer's customs.pak.xen so both games have identical slots 0..N for this match!
-            AutoSyncLobbyBtn.IsEnabled = false;
-            PeerCompareStatus.Text = $"Mirroring {_lastPeerManifest.MachineName}'s customs.pak.xen setlist slots...";
-            PageP2P_StageHud.Report(40, "MIRRORING SETLIST SLOTS", $"Matching slots 0..{_lastPeerManifest.Songs.Count - 1} with {_lastPeerManifest.MachineName}...");
-            _tempSession.BeginSessionIfNeeded(_lastPeerBaseUrl, autoCleanOnGameExit: true);
-            await PullPeerCustomsPakAsync();
-            AutoSyncLobbyBtn.IsEnabled = true;
-
-            RefreshSongsList();
-            RefreshTempSessionBanner();
-            RenderPeerLibrary();
-
-            PageP2P_StageHud.Finish("Setlist mirrored! Both games are 100% matched for multiplayer.");
-            ShowStageToast("🪞 SETLIST MIRRORED!", $"Temporarily matched {_lastPeerManifest.MachineName}'s setlist slots. Both games are 100% ready for online multiplayer!", "#22C55E");
+            PageP2P_StageHud.Finish("All lobby songs are already installed in your library!");
+            ShowStageToast("✅ ALREADY MATCHED!", $"All lobby songs from {_lastPeerManifest.MachineName} are already installed in your library! You are 100% ready for online multiplayer.", "#22C55E");
             WpfMessageBox.Show(
-                $"Setlist slots successfully mirrored from {_lastPeerManifest.MachineName}!\n\n" +
-                $"Both games now share the exact same {_lastPeerManifest.Songs.Count} custom song slots in matching order. You can launch GH3 and play together with zero loading screen freezes!\n\n" +
-                $"When you exit Guitar Hero III, your original custom library will be automatically restored.",
-                "Setlist Mirrored", MessageBoxButton.OK, MessageBoxImage.Information);
+                $"All {peerLobbySongs.Count} Lobby Setlist songs from {_lastPeerManifest.MachineName} are already installed in your local Guitar Hero III library!\n\nYour library is fully intact and you can launch Guitar Hero III to rock out together.",
+                "Lobby Already Synced", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -8453,7 +8548,7 @@ public partial class MainWindow : Window
             PlayHypeSound(sfxType);
             ShowStageToast("📢 HYPE BROADCAST", $"Sent '{sfxType.ToUpperInvariant()}' over P2P lobby!", "#F59E0B");
 
-            // Dual transport 1: Direct P2P HTTP POST
+            // Dual transport 1: Direct P2P HTTP POST to active peer
             if (!string.IsNullOrWhiteSpace(_lastPeerBaseUrl))
             {
                 _ = Task.Run(async () =>
@@ -8467,21 +8562,29 @@ public partial class MainWindow : Window
                 });
             }
 
-            // Dual transport 2: Global signaling relay fallback
-            var targetCode = AppConfig.Current.Friends.FirstOrDefault(f =>
-                (_lastPeerManifest != null && f.Username.Equals(_lastPeerManifest.MachineName, StringComparison.OrdinalIgnoreCase)) ||
-                (!string.IsNullOrEmpty(_lastPeerBaseUrl) && !string.IsNullOrEmpty(f.LastAddress) && f.LastAddress.TrimEnd('/').Equals(_lastPeerBaseUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)))?.FriendCode
-                ?? AppConfig.Current.Friends.FirstOrDefault(f => f.IsOnlineNow)?.FriendCode;
-
-            if (!string.IsNullOrWhiteSpace(targetCode) && FriendService.SignalingRelay != null)
+            // Dual transport 2: Broadcast to all known friends in lobby or online via direct HTTP & Global Relay
+            var targets = AppConfig.Current.Friends.Where(f => f.IsTrusted || f.IsOnlineNow || !string.IsNullOrWhiteSpace(f.LastAddress)).ToList();
+            if (targets.Count > 0 && FriendService.SignalingRelay != null)
             {
                 _ = Task.Run(async () =>
                 {
-                    try
+                    foreach (var fr in targets)
                     {
-                        await FriendService.SignalingRelay.SendLobbyHypeSfxPacketAsync(targetCode, AppConfig.Current.FriendCode, sfxType);
+                        try
+                        {
+                            if (!string.IsNullOrWhiteSpace(fr.LastAddress) && !fr.LastAddress.Contains("169.254.") && !fr.LastAddress.Equals(_lastPeerBaseUrl, StringComparison.OrdinalIgnoreCase))
+                            {
+                                try
+                                {
+                                    using var directClient = new HttpClient(SignalingRelayService.CreateFastIPv4Handler()) { Timeout = TimeSpan.FromSeconds(2.0) };
+                                    _ = directClient.PostAsync($"{fr.LastAddress.TrimEnd('/')}/api/lobby/hype-sfx?type={Uri.EscapeDataString(sfxType)}", null);
+                                }
+                                catch { }
+                            }
+                            await FriendService.SignalingRelay.SendLobbyHypeSfxPacketAsync(fr.FriendCode, AppConfig.Current.FriendCode, sfxType);
+                        }
+                        catch { }
                     }
-                    catch { }
                 });
             }
         }

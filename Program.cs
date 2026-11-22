@@ -363,9 +363,6 @@ bool TryAuthorize(HttpContext context, SecurityService sec, FriendService friend
     isTrustedFriend = false;
     var (remoteIp, isExternal) = ResolveClientIdentity(context);
 
-    if (isExternal && sec.IsIpBlocked(remoteIp))
-        return false;
-
     // 1. Challenge-Response HMAC-SHA256 Auth (Preferred — secret never crosses the wire in plaintext!)
     if (context.Request.Headers.TryGetValue("X-GH3-Auth-Nonce", out var hdrNonce) &&
         context.Request.Headers.TryGetValue("X-GH3-Auth-Timestamp", out var hdrTs) &&
@@ -387,9 +384,15 @@ bool TryAuthorize(HttpContext context, SecurityService sec, FriendService friend
             logger.LogInfo($"[SECURITY] Challenge-HMAC auth granted ({mode}: {principal}) from {remoteIp}");
             return true;
         }
+        if (isExternal && sec.IsIpBlocked(remoteIp))
+            return false;
+
         sec.RecordAuthFailure(remoteIp, "Invalid or replayed Challenge-Response HMAC", logger);
         return false;
     }
+
+    if (isExternal && sec.IsIpBlocked(remoteIp))
+        return false;
 
     // 2. Backwards-compatible HTTP Headers ONLY (never query strings, which leak in logs/history)
     string? token = null;
@@ -2256,10 +2259,15 @@ else
                 wpfApp.MainWindow = mainWin;
                 mainWin.Closed += (_, _) => wpfApp.Shutdown();
 
-                // Seamless handoff: close splash and display MainWindow immediately with zero delay and zero white-screen flash
-                try { splash.Close(); } catch { }
+                // Seamless handoff: render first frame before closing splash to eliminate white-screen flash
+                mainWin.Opacity = 0;
                 mainWin.Show();
-                mainWin.Activate();
+                mainWin.ContentRendered += (_, _) =>
+                {
+                    try { splash.Close(); } catch { }
+                    mainWin.BeginAnimation(System.Windows.UIElement.OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(180)));
+                    mainWin.Activate();
+                };
             };
 
             wpfApp.Run();

@@ -4,6 +4,43 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). Nota
 
 ---
 
+## [v1.5.2] - 2026-11-22 — Stage UI Overhaul, P2P Auto-Heal Handshake, Full-Song Chants & System Tray
+
+### 🎸 Authentic Guitar Hero Stage UI Overhaul
+* **Concert Road Case & Stompbox Aesthetic:** Replaced flat dashboard cards with beveled concert road cases, amplifier speaker grille backdrops, and metallic framing.
+* **Tactile 5-Fret Stompbox Buttons:** Action buttons now feature tactile guitar stompbox pedal styling with beveled top highlights, realistic drop shadows, and glowing 5-fret accents (Green = Sync, Red = Delete, Yellow = Gold/Select, Blue = Tools, Orange = Rock Out).
+* **Universal Theme Compatibility:** Enhanced styling works seamlessly across all 5 visual themes (FireFlames, Dark, Light, StarPower, Synthwave).
+
+### 🤝 P2P Handshake Auto-Recovery & 401/403 Desync Fix
+* **Self-Healing Friend Handshake:** `ReceiveFriendRequest` now re-broadcasts `FRIEND_ACCEPT` immediately when a sender already exists in the friends list and updates their stored `TrustToken`, preventing friend pairing desyncs and eliminating the need to unfriend.
+* **HMAC Challenge Recovery:** Valid cryptographic HMAC challenge signatures now bypass temporary rate-limit lockouts, immediately clearing obsolete IP blocks when peers re-pair.
+* **Library Protection on Sync:** Removed destructive full `customs.pak.xen` replacement during peer sync. Synced songs now cleanly merge into the local customs pak table without erasing or hiding any existing local songs.
+
+### 🏟️ Dynamic Full-Song Stadium Crowd Chants
+* **Full-Song Vocal Sing-Along:** Crowd chanting now reverberates and harmonizes the actual song's isolated vocals for the entire duration of whatever track is playing, rather than being confined to the chorus or playing static samples.
+* **Neutral Arena Bed:** Replaced static "Beat It" audio with a procedurally synthesized stereo stadium crowd ambience bed.
+* **Song Creator Checkbox Fix:** Unchecking "AI Stadium Sing-Along & Crowd Chants" now cleanly removes any residual crowd audio stems and prevents them from being compiled into `.ghproj`.
+
+### 🎼 Vanilla GH3 Pitch Mapping & Note Reading
+* **Accurate Frequency Calibration:** Calibrated pitch contour heuristics against vanilla Guitar Hero III charts so bass notes anchor to Green (0), melodic mids map to Red/Yellow/Blue, and screaming solos reach Orange (4).
+* **Quantized Subdivision & Shred Detection:** Tightened note spacing threshold (`minSpacingSec = 0.052 * feelScale`) and amplitude floor (`0.08f`) on Expert, capturing fast trills and picking bursts.
+
+### ⚡ Batch Rechart & Renaming
+* **Multi-Select Batching:** Selecting multiple custom songs and clicking Rechart now queues and processes all selected tracks in sequence.
+* **Streamlined Naming:** Renamed "Re-Chart AI v2" to simply **"Rechart"**.
+
+### 📢 Soundboard Broadcast & Performance
+* **Multi-Peer SFX Delivery:** Soundboard triggers (Airhorn, Stadium Cheer, Boo, Drum Fill, Solo Lick) now broadcast to all online and lobby friends over direct HTTP and global signaling.
+* **Reduced Idle CPU:** Adjusted stage animation timer to 50ms (20 FPS), eliminating UI thread stutter and reducing idle CPU usage by over 50%.
+
+### 🖥️ System Tray & Startup Polish
+* **System Tray Background Mode:** Minimizing or closing the window now minimizes cleanly to the Windows system tray with balloon notifications, keeping P2P sync and rock-out invites active in the background.
+* **Zero-Flicker Startup:** MainWindow first-frame DirectX composition is fully rendered with opacity 0 before closing the splash screen, completely eliminating the white canvas flash.
+* **Dismissible "What's New" Banner:** Added a rock-styled update announcement bar that automatically displays on new version updates and saves dismiss state.
+* **Standardized Relative Offline Timestamps:** Standardized offline duration across all views to show `Xm ago`, `Xh ago`, or `Xd ago`.
+
+---
+
 ## [v1.5.1] - 2026-11-20 — Rockstar Profiles, Play Together Invites, Notifications Center & Notebook UI
 
 ### 👤 Rockstar Profiles & Showcase Modal

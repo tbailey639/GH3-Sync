@@ -555,7 +555,11 @@ public class SongCreatorService
             int safeBassTier = Math.Clamp(meta.DiffRhythm, 1, 10);
 
             var crowdStemWav = Path.Combine(targetDir, "song_crowd.wav");
-            string effectiveCrowd = File.Exists(crowdStemWav) ? crowdStemWav : "";
+            if (!meta.EnableStadiumChants && File.Exists(crowdStemWav))
+            {
+                try { File.Delete(crowdStemWav); } catch { }
+            }
+            string effectiveCrowd = (meta.EnableStadiumChants && File.Exists(crowdStemWav)) ? crowdStemWav : "";
             string effectiveRhythm = !string.IsNullOrEmpty(rhythmAudioPath) ? rhythmAudioPath : effectiveCrowd;
 
             var projData = new
