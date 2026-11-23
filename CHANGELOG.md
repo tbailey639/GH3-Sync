@@ -4,7 +4,9 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). Nota
 
 ---
 
-## [v1.5.7] - 2026-11-23 — Stage-Authentic GH3 Highway, P2P Lobby Auto-Join & Multi-Song Recharting
+## [v1.5.8] - 2026-11-23 — Stage-Authentic GH3 Highway, P2P Lobby Auto-Join & Multi-Song Recharting
+
+* **Fixed TypeConverterMarkupExtension Launch Crash:** Fixed WPF launch exception caused by dual `<Content>` tagging of assets in single-file published packages. All logos and icons now embed cleanly as pure assembly resources.
 
 ### 🎸 Stage-Authentic Guitar Hero III Highway
 * **Vanilla GH3 Crimson Sunburst & Winged Emblem:** 16-point dramatic Crimson Sunburst rays with outstretched metallic wings and center crest ring accurately reproduced from the authentic Guitar Hero III arcade stage.
