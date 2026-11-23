@@ -125,6 +125,22 @@ public partial class MainWindow : Window
     [DllImport("dwmapi.dll", PreserveSig = true)]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
+    [DllImport("user32.dll", EntryPoint = "SetClassLongPtrW")]
+    private static extern IntPtr SetClassLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    [DllImport("user32.dll", EntryPoint = "SetClassLongW")]
+    private static extern int SetClassLong32(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateSolidBrush(uint crColor);
+
+    private static IntPtr SetClassLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
+    {
+        if (IntPtr.Size == 8)
+            return SetClassLongPtr64(hWnd, nIndex, dwNewLong);
+        return new IntPtr(SetClassLong32(hWnd, nIndex, unchecked((int)dwNewLong.ToInt64())));
+    }
+
     public MainWindow(
         Gh3Service gh3,
         SyncLogger logger,
@@ -267,6 +283,13 @@ public partial class MainWindow : Window
             var hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd != IntPtr.Zero)
             {
+                // Set Win32 window background brush to dark #090A0F to prevent any default white brush flash
+                var darkBrush = CreateSolidBrush(0x000F0A09); // BGR for #090A0F
+                if (darkBrush != IntPtr.Zero)
+                {
+                    SetClassLongPtr(hwnd, -10 /* GCLP_HBRBACKGROUND */, darkBrush);
+                }
+
                 var source = HwndSource.FromHwnd(hwnd);
                 source?.AddHook(WndProc);
             }

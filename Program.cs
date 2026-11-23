@@ -2278,11 +2278,21 @@ else
 
                 wpfApp.MainWindow = mainWin;
                 mainWin.Closed += (_, _) => wpfApp.Shutdown();
-                mainWin.Opacity = 1;
+                mainWin.Opacity = 0;
                 mainWin.Show();
-                mainWin.Activate();
 
-                try { await splash.FadeOutAndCloseAsync(); } catch { try { splash.Close(); } catch { } }
+                bool handedOff = false;
+                async void FinishHandoff()
+                {
+                    if (handedOff) return;
+                    handedOff = true;
+                    mainWin.Opacity = 1;
+                    mainWin.Activate();
+                    try { await splash.FadeOutAndCloseAsync(); } catch { try { splash.Close(); } catch { } }
+                }
+
+                mainWin.ContentRendered += (_, _) => FinishHandoff();
+                _ = Task.Delay(1400).ContinueWith(_ => mainWin.Dispatcher.Invoke(FinishHandoff));
             };
 
             wpfApp.Run();

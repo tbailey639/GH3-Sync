@@ -585,12 +585,36 @@ public static class MidiToGh3ChartMapper
             }
 
             double normPitch = Math.Clamp((ev.RootPitch - lowPitch) / (double)pitchSpan, 0.0, 1.0);
-            int absoluteFret = (int)Math.Round(normPitch * (maxFrets - 1));
+            
+            // Authentic Vanilla GH3 5-Fret Pitch Bin Distribution:
+            // Green = Low fundamentals, Red = Low-mid, Yellow = Mid, Blue = High-mid, Orange = Highest screams/solos
+            int pitchFret;
+            if (maxFrets == 5)
+            {
+                if (normPitch < 0.22) pitchFret = 0;        // Green
+                else if (normPitch < 0.44) pitchFret = 1;   // Red
+                else if (normPitch < 0.65) pitchFret = 2;   // Yellow
+                else if (normPitch < 0.85) pitchFret = 3;   // Blue
+                else pitchFret = 4;                         // Orange
+            }
+            else if (maxFrets == 4)
+            {
+                if (normPitch < 0.28) pitchFret = 0;        // Green
+                else if (normPitch < 0.55) pitchFret = 1;   // Red
+                else if (normPitch < 0.80) pitchFret = 2;   // Yellow
+                else pitchFret = 3;                         // Blue
+            }
+            else
+            {
+                if (normPitch < 0.38) pitchFret = 0;        // Green
+                else if (normPitch < 0.72) pitchFret = 1;   // Red
+                else pitchFret = 2;                         // Yellow
+            }
 
             int fret;
             if (prevPitch < 0)
             {
-                fret = Math.Clamp(absoluteFret, boxMin, boxMax);
+                fret = Math.Clamp(pitchFret, boxMin, boxMax);
             }
             else
             {
@@ -599,32 +623,38 @@ public static class MidiToGh3ChartMapper
                 {
                     fret = prevFret;
                 }
-                else if (delta > 0)
-                {
-                    int step = delta <= 2 ? 1 : (delta <= 5 ? 2 : 3);
-                    int target = Math.Min(maxFrets - 1, prevFret + step);
-                    if (delta < 5 && normPitch < 0.80) target = Math.Min(target, boxMax);
-                    
-                    // Heavy absolute weighting (65% absolute pitch vs 35% relative step) so low stays Green and high reaches Orange!
-                    fret = (int)Math.Round(target * 0.35 + absoluteFret * 0.65);
-                    if (fret <= prevFret && prevFret < maxFrets - 1) fret = prevFret + 1;
-                }
                 else
                 {
-                    int absDelta = -delta;
-                    int step = absDelta <= 2 ? 1 : (absDelta <= 5 ? 2 : 3);
-                    int target = Math.Max(0, prevFret - step);
-                    if (absDelta < 5 && normPitch > 0.20) target = Math.Max(target, boxMin);
+                    // Melodic contour movement with strong pitch register anchors:
+                    // Low notes stay anchored to Green/Red, mid notes to Yellow/Blue, high notes to Orange!
+                    int relativeStep = Math.Clamp(delta / 2, -2, 2);
+                    int melodicTarget = Math.Clamp(prevFret + relativeStep, 0, maxFrets - 1);
                     
-                    fret = (int)Math.Round(target * 0.35 + absoluteFret * 0.65);
-                    if (fret >= prevFret && prevFret > 0) fret = prevFret - 1;
+                    // Blend 75% pitch register with 25% melodic step
+                    fret = (int)Math.Round(pitchFret * 0.75 + melodicTarget * 0.25);
+                    
+                    // Enforce monotonic direction on distinct pitch changes without skipping registers
+                    if (delta > 0 && fret <= prevFret && prevFret < maxFrets - 1 && normPitch >= 0.28)
+                        fret = Math.Min(maxFrets - 1, prevFret + 1);
+                    else if (delta < 0 && fret >= prevFret && prevFret > 0 && normPitch <= 0.72)
+                        fret = Math.Max(0, prevFret - 1);
                 }
             }
 
-            // Vanilla GH3 Root & Peak Anchor Rules:
-            // Lowest fundamental notes firmly anchor to Green (0), highest screams hit Orange (maxFrets-1)
-            if (maxFrets >= 4 && normPitch <= 0.16) fret = 0;
-            else if (maxFrets == 5 && normPitch >= 0.84) fret = 4;
+            // Vanilla GH3 Strict Register Boundaries:
+            // Low notes NEVER climb past Red (1), high screams NEVER drop to Green (0)
+            if (maxFrets == 5)
+            {
+                if (normPitch <= 0.20) fret = 0;                          // Strict Green anchor
+                else if (normPitch <= 0.38) fret = Math.Min(fret, 1);     // Max Red for low-register riffs
+                else if (normPitch >= 0.86) fret = 4;                     // Strict Orange for screaming bends/solos
+                else if (normPitch >= 0.70) fret = Math.Max(fret, 2);     // Min Yellow for high register
+            }
+            else if (maxFrets >= 4)
+            {
+                if (normPitch <= 0.22) fret = 0;
+                else if (normPitch >= 0.82) fret = maxFrets - 1;
+            }
 
             fret = Math.Clamp(fret, 0, maxFrets - 1);
             assignedFrets[i] = fret;
@@ -674,29 +704,27 @@ public static class MidiToGh3ChartMapper
                 int rawSustainTicks = Math.Max(ev.DurationTicks, acousticTicks);
 
                 // In vanilla GH3, whenever a note has musical space before the next strike (gap >= 8th note / 96 ticks):
-                // 1) Held chords & downbeats ring out across the gap (75%-85% of available space)
-                // 2) Singing solo notes, sustained vibratos, and melody phrasing hold long notes
-                // 3) Sustained notes naturally fill the musical space so players can hold and whammy
-                bool hasMusicalGap = availableGapTicks >= (Resolution / 2); // >= 96 ticks (8th-note gap)
-                bool isSustainedNote = rawSustainTicks >= 80 || acousticDurationSec >= 0.20 || onBarDownbeat || inSolo || (ev.NoteCount >= 2);
+                // 1) Ringing chords & downbeats sustain across 75%-80% of the space
+                // 2) Singing solo notes, melody vibratos, and phrase ends hold long whammyable sustains
+                // 3) Any note with a gap >= quarter note (192 ticks) naturally rings out unless rapid strumming
+                bool hasMusicalGap = availableGapTicks >= 96; // >= 8th note gap
+                bool isSustainedNote = availableGapTicks >= 144 || rawSustainTicks >= 50 || acousticDurationSec >= 0.12 || onBarDownbeat || inSolo || (ev.NoteCount >= 2);
 
-                if (isSustainedNote && hasMusicalGap)
+                if (hasMusicalGap && isSustainedNote)
                 {
-                    // Generate rich, authentic GH3 long notes:
-                    // If the audio rings out, honor it; if there is a musical rest, sustain generously up to 80% of the gap
-                    int naturalSustain = Math.Max(rawSustainTicks, (int)(availableGapTicks * 0.80));
-                    int boundedSustain = Math.Min(naturalSustain, maxSustainHeadroom);
+                    // Fill 75%-80% of the musical gap, leaving a crisp visual release gap before next note
+                    int targetSustain = Math.Max(rawSustainTicks, (int)(availableGapTicks * 0.78));
+                    int boundedSustain = Math.Min(targetSustain, maxSustainHeadroom);
 
-                    // Quantize to 16th-note ticks (48 ticks). 48 ticks is the official minimum visible sustain tail in GH3!
-                    if (boundedSustain >= 64)
+                    if (boundedSustain >= 48)
                     {
-                        sustain = (boundedSustain / 48) * 48;
+                        sustain = (boundedSustain / 24) * 24; // Snap cleanly to musical 32nd/16th grid
                     }
                 }
                 else if (rawSustainTicks >= 48 && maxSustainHeadroom >= 48)
                 {
                     int boundedSustain = Math.Min(rawSustainTicks, maxSustainHeadroom);
-                    if (boundedSustain >= 48) sustain = (boundedSustain / 48) * 48;
+                    if (boundedSustain >= 48) sustain = (boundedSustain / 24) * 24;
                 }
             }
 
