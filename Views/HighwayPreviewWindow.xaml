@@ -93,9 +93,43 @@
             </DockPanel>
         </Border>
 
-        <!-- 5-Fret Perspective Highway Stage -->
-        <Border Grid.Row="2" Background="#05070D" BorderBrush="#1E293B" BorderThickness="1.5" CornerRadius="12" ClipToBounds="True">
+        <!-- 5-Fret Perspective Highway Stage (Authentic GH3 Concert Arena) -->
+        <Border Grid.Row="2" Background="#04060C" BorderBrush="#1E293B" BorderThickness="1.5" CornerRadius="12" ClipToBounds="True">
             <Grid>
+                <!-- Stage Backdrop: Deep Night Arena + Atmospheric Concert Stage Lighting Spotlights -->
+                <Canvas x:Name="StageBackdropCanvas" IsHitTestVisible="False">
+                    <!-- Amber Left Stage Spotlight Beam -->
+                    <Polygon Points="0,0 220,0 380,600 0,600" Opacity="0.12">
+                        <Polygon.Fill>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#F59E0B" Offset="0.0"/>
+                                <GradientStop Color="#EA580C" Offset="0.5"/>
+                                <GradientStop Color="Transparent" Offset="1.0"/>
+                            </LinearGradientBrush>
+                        </Polygon.Fill>
+                    </Polygon>
+                    <!-- Cyan / Magenta Right Stage Spotlight Beam -->
+                    <Polygon Points="940,0 720,0 560,600 940,600" Opacity="0.10">
+                        <Polygon.Fill>
+                            <LinearGradientBrush StartPoint="1,0" EndPoint="0,1">
+                                <GradientStop Color="#38BDF8" Offset="0.0"/>
+                                <GradientStop Color="#A855F7" Offset="0.5"/>
+                                <GradientStop Color="Transparent" Offset="1.0"/>
+                            </LinearGradientBrush>
+                        </Polygon.Fill>
+                    </Polygon>
+                    <!-- Bottom Stage Fog / Horizon Glow -->
+                    <Border Canvas.Bottom="0" Canvas.Left="0" Width="1200" Height="140" Opacity="0.22">
+                        <Border.Background>
+                            <RadialGradientBrush Center="0.5,1.0" GradientOrigin="0.5,1.0" RadiusX="0.6" RadiusY="1.0">
+                                <GradientStop Color="#F97316" Offset="0.0"/>
+                                <GradientStop Color="#9333EA" Offset="0.55"/>
+                                <GradientStop Color="Transparent" Offset="1.0"/>
+                            </RadialGradientBrush>
+                        </Border.Background>
+                    </Border>
+                </Canvas>
+
                 <Canvas x:Name="HighwayCanvas" Background="Transparent" SizeChanged="HighwayCanvas_SizeChanged"
                         MouseLeftButtonDown="HighwayCanvas_MouseLeftButtonDown"
                         MouseRightButtonDown="HighwayCanvas_MouseRightButtonDown"/>

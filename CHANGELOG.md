@@ -4,6 +4,13 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). Nota
 
 ---
 
+## [v1.5.9] - 2026-11-23 — Definitive Startup Crash Fix & Single-File Assembly Resource Packaging
+
+* **Fixed TypeConverterMarkupExtension Startup Crash:** Resolved the `System.Windows.Baml2006.TypeConverterMarkupExtension` / `ArgumentNullException: Value cannot be null. (Parameter 'path1')` exception at `MainWindow.InitializeComponent()` by updating all WPF Pack URIs to explicit assembly component paths (`pack://application:,,,/GH3-Sync;component/Assets/...`). This eliminates `ContentFilePart.GetStreamCore()` looking for loose content files via null `ResourceAssemblyLocation` in single-file published packages.
+* **Authentic GH3 Stage Lighting & Arena Ambiance:** Highway Previewer now features dual amber & cyan concert stage spotlight beams, bottom fog gradient, and full-width perspective highway matching in-game Guitar Hero III stages.
+
+---
+
 ## [v1.5.8] - 2026-11-23 — Stage-Authentic GH3 Highway, P2P Lobby Auto-Join & Multi-Song Recharting
 
 * **Fixed TypeConverterMarkupExtension Launch Crash:** Fixed WPF launch exception caused by dual `<Content>` tagging of assets in single-file published packages. All logos and icons now embed cleanly as pure assembly resources.
