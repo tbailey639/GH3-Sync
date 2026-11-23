@@ -2216,15 +2216,26 @@ public partial class MainWindow : Window
 
         if (isOnogami && SongCreatorService.HasAiCache(song.ProjectDirectory))
         {
-            AddItem("⚡ Fast Re-Chart (5-Sec AI Cache)", () =>
+            AddItem("⚡ Fast Re-Chart (Instant Studio Cache)", () =>
             {
                 OpenFastRechartDialog(song);
             });
         }
 
-        if (isOnogami && hasAudio)
+        if (_selectedExportIds.Count > 1 && _selectedExportIds.Contains(song.SongId))
         {
-            AddItem("🤖 Rechart (Full Studio Re-Analysis)", async () =>
+            AddItem($"🎸 Rechart All Selected ({_selectedExportIds.Count} songs)", () =>
+            {
+                BatchRechartAiBtn_Click(this, new RoutedEventArgs());
+            });
+            AddItem($"➕ Add All Selected to Creator ({_selectedExportIds.Count} songs)", () =>
+            {
+                BatchAddToCreatorBtn_Click(this, new RoutedEventArgs());
+            });
+        }
+        else if (isOnogami && hasAudio)
+        {
+            AddItem("🎸 Rechart (Full Studio Re-Analysis)", async () =>
             {
                 await RechartSongInCreatorAsync(song);
             });
@@ -2278,6 +2289,7 @@ public partial class MainWindow : Window
 
         bool hasSelection = selCount > 0;
         BatchSelectionBar.Visibility = hasSelection ? Visibility.Visible : Visibility.Collapsed;
+        if (BulkEditBtn != null) BulkEditBtn.Visibility = hasSelection ? Visibility.Visible : Visibility.Collapsed;
 
         if (BatchActionsDropdownBtn != null) BatchActionsDropdownBtn.Content = $"⚡ Batch Actions ({selCount}) ▾";
         if (BatchAddToCreatorBtn != null) BatchAddToCreatorBtn.Content = $"➕ Add to Creator ({selCount})";
@@ -2365,7 +2377,7 @@ public partial class MainWindow : Window
         var targets = _allSongs.Where(s => _selectedExportIds.Contains(s.SongId) && SongCreatorService.HasAiCache(s.ProjectDirectory)).ToList();
         if (targets.Count == 0)
         {
-            WpfMessageBox.Show("None of the selected songs have an instant AI analysis cache.\nRun 'Re-Chart AI v2' on a song first to build the instant cache.", "No Fast Cache", MessageBoxButton.OK, MessageBoxImage.Information);
+            WpfMessageBox.Show("None of the selected songs have an instant studio analysis cache.\nRun 'Rechart' on a song first to build the instant cache.", "No Fast Cache", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -2395,6 +2407,83 @@ public partial class MainWindow : Window
         }
     }
 
+    private string? ResolveSongAudio(CustomSongInfo song, bool preferGuitarStem = false)
+    {
+        if (song == null) return null;
+
+        if (!preferGuitarStem && !string.IsNullOrWhiteSpace(song.AudioPath) && File.Exists(song.AudioPath))
+            return song.AudioPath;
+
+        var ghAudio = Gh3Service.FindSongAudioPath(song, preferGuitarStem);
+        if (!string.IsNullOrWhiteSpace(ghAudio) && File.Exists(ghAudio))
+            return ghAudio;
+
+        // Check project directory
+        if (!string.IsNullOrWhiteSpace(song.ProjectDirectory) && Directory.Exists(song.ProjectDirectory))
+        {
+            var found = Directory.GetFiles(song.ProjectDirectory, "*.*", SearchOption.AllDirectories)
+                .FirstOrDefault(f => f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) ||
+                                     f.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) ||
+                                     f.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) ||
+                                     f.EndsWith(".flac", StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(found)) return found;
+        }
+
+        // Check known library folders
+        var candidateRoots = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_gh3.GamePath))
+        {
+            candidateRoots.Add(Path.Combine(_gh3.GamePath, "DATA", "PAK", "Custom_Songs"));
+        }
+        if (Directory.Exists(@"G:\Guitar Hero Songs")) candidateRoots.Add(@"G:\Guitar Hero Songs");
+
+        foreach (var root in candidateRoots)
+        {
+            if (!Directory.Exists(root)) continue;
+            try
+            {
+                var subdirs = Directory.GetDirectories(root);
+                foreach (var sub in subdirs)
+                {
+                    var dirName = Path.GetFileName(sub);
+                    if ((!string.IsNullOrWhiteSpace(song.Title) && dirName.Contains(song.Title, StringComparison.OrdinalIgnoreCase)) ||
+                        (!string.IsNullOrWhiteSpace(song.Artist) && dirName.Contains(song.Artist, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        var audio = Directory.GetFiles(sub, "*.*", SearchOption.AllDirectories)
+                            .FirstOrDefault(f => f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) ||
+                                                 f.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) ||
+                                                 f.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) ||
+                                                 f.EndsWith(".flac", StringComparison.OrdinalIgnoreCase));
+                        if (!string.IsNullOrWhiteSpace(audio)) return audio;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        return null;
+    }
+
+    private void PopulateCreatorFormFromQueue(QueuedSongItem item)
+    {
+        try
+        {
+            ModeAutoGenRadio.IsChecked = item.Meta.AutoGenerateChart;
+            ModeUploadRadio.IsChecked = !item.Meta.AutoGenerateChart;
+            CrAudioPathBox.Text = item.AudioPath;
+            if (!string.IsNullOrEmpty(item.ChartPath)) CrChartPathBox.Text = item.ChartPath;
+            CrTitleBox.Text = item.Meta.Title;
+            CrArtistBox.Text = item.Meta.Artist;
+            CrAlbumBox.Text = item.Meta.Album;
+            CrYearBox.Text = item.Meta.Year.ToString();
+            CrGenreBox.Text = item.Meta.Genre;
+            CrCharterBox.Text = item.Meta.Charter;
+            CrBpmBox.Text = item.Meta.Bpm.ToString("F1");
+            CrProgressLabel.Text = $"Batch Queue ready ({_batchQueue.Count} songs). Click 'Compile Batch Queue ({_batchQueue.Count})' to compile!";
+        }
+        catch { }
+    }
+
     private void BatchAddToCreatorBtn_Click(object sender, RoutedEventArgs e)
     {
         var targets = _allSongs.Where(s => _selectedExportIds.Contains(s.SongId)).ToList();
@@ -2405,9 +2494,11 @@ public partial class MainWindow : Window
         }
 
         int added = 0;
+        QueuedSongItem? firstItem = null;
+
         foreach (var song in targets)
         {
-            var audio = Gh3Service.FindSongAudioPath(song) ?? song.AudioPath;
+            var audio = ResolveSongAudio(song);
             if (string.IsNullOrEmpty(audio) || !File.Exists(audio)) continue;
             var chart = !string.IsNullOrWhiteSpace(song.ProjectDirectory) ? ChartDoctorService.FindChartFileInProject(song.ProjectDirectory) : null;
 
@@ -2438,11 +2529,24 @@ public partial class MainWindow : Window
                 CharterFriendCode = _friends?.Profile?.FriendCode ?? ""
             };
 
-            _batchQueue.Add(new QueuedSongItem(req, audio, chart));
+            var qItem = new QueuedSongItem(req, audio, chart);
+            _batchQueue.Add(qItem);
+            firstItem ??= qItem;
             added++;
         }
 
+        if (added == 0)
+        {
+            WpfMessageBox.Show("Could not locate source audio files for the selected songs to load into Creator.", "Audio Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         RenderBatchQueue();
+        if (firstItem != null)
+        {
+            PopulateCreatorFormFromQueue(firstItem);
+        }
+
         NavCreator.IsChecked = true;
         ShowStageToast("➕ ADDED TO CREATOR", $"Queued {added} song(s) into Song Creator for batch recompile!", "#22C55E");
     }
@@ -2484,26 +2588,21 @@ public partial class MainWindow : Window
 
     private async void BatchRechartAiBtn_Click(object sender, RoutedEventArgs e)
     {
-        var targets = _allSongs.Where(s => _selectedExportIds.Contains(s.SongId) && !string.IsNullOrEmpty(Gh3Service.FindSongAudioPath(s))).ToList();
+        var targets = _allSongs.Where(s => _selectedExportIds.Contains(s.SongId)).ToList();
         if (targets.Count == 0)
         {
-            WpfMessageBox.Show("Select at least one song with valid audio to re-chart.", "Rechart", MessageBoxButton.OK, MessageBoxImage.Information);
+            WpfMessageBox.Show("Select at least one song to rechart.", "Rechart", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
-        if (targets.Count == 1)
-        {
-            await RechartSongInCreatorAsync(targets[0]);
-            return;
-        }
-
-        // Add all selected songs directly into Creator's Batch Queue
         int added = 0;
+        QueuedSongItem? firstItem = null;
+
         foreach (var song in targets)
         {
-            var audio = Gh3Service.FindSongAudioPath(song);
+            var audio = ResolveSongAudio(song);
             if (string.IsNullOrEmpty(audio) || !File.Exists(audio)) continue;
-            var chart = ChartDoctorService.FindChartFileInProject(song.ProjectDirectory);
+            var chart = !string.IsNullOrWhiteSpace(song.ProjectDirectory) ? ChartDoctorService.FindChartFileInProject(song.ProjectDirectory) : null;
 
             var req = new SongCreationRequest
             {
@@ -2532,11 +2631,24 @@ public partial class MainWindow : Window
                 CharterFriendCode = _friends?.Profile?.FriendCode ?? ""
             };
 
-            _batchQueue.Add(new QueuedSongItem(req, audio, chart));
+            var qItem = new QueuedSongItem(req, audio, chart);
+            _batchQueue.Add(qItem);
+            firstItem ??= qItem;
             added++;
         }
 
+        if (added == 0)
+        {
+            WpfMessageBox.Show("None of the selected songs had valid audio files to rechart.", "Audio Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         RenderBatchQueue();
+        if (firstItem != null)
+        {
+            PopulateCreatorFormFromQueue(firstItem);
+        }
+
         NavCreator.IsChecked = true;
         ShowStageToast("🎸 ADDED TO RECHART QUEUE", $"Added {added} songs to Song Creator batch queue!", "#22C55E");
     }
@@ -3213,7 +3325,7 @@ public partial class MainWindow : Window
         };
 
         var stack = new StackPanel { Margin = new Thickness(20) };
-        stack.Children.Add(new TextBlock { Text = "⚡ Instant Re-Chart (Cached AI Analysis)", FontSize = 15.5, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 5) });
+        stack.Children.Add(new TextBlock { Text = "⚡ Instant Re-Chart (Cached Studio Analysis)", FontSize = 15.5, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 5) });
         stack.Children.Add(new TextBlock
         {
             Text = "Rebuilds the chart & recompiles into Guitar Hero III in ~5 seconds using this song's cached Basic Pitch + Librosa analysis (no Demucs wait!).",
@@ -3370,10 +3482,10 @@ public partial class MainWindow : Window
 
     private async Task RechartSongInCreatorAsync(CustomSongInfo song)
     {
-        var audio = Gh3Service.FindSongAudioPath(song, preferGuitarStem: false);
+        var audio = ResolveSongAudio(song, preferGuitarStem: false);
         if (string.IsNullOrWhiteSpace(audio) || !File.Exists(audio))
         {
-            WpfMessageBox.Show("Source audio file was not found in this song's project folder.", "Re-Chart AI v2", MessageBoxButton.OK, MessageBoxImage.Warning);
+            WpfMessageBox.Show("Source audio file was not found for this song.", "Rechart Studio", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
@@ -3388,7 +3500,42 @@ public partial class MainWindow : Window
         CrFocusCombo.SelectedIndex = 0; // Auto (Smart Multi-Lead)
         CrAudioMixCombo.SelectedIndex = 0; // Auto
         CrFeelCombo.SelectedIndex = 1; // Standard
-        CrProgressLabel.Text = $"Loaded '{song.Title}' for AI v2 re-charting! Click 'Create & Compile Song' when ready.";
+        CrProgressLabel.Text = $"Loaded '{song.Title}' for studio re-charting! Click 'Create & Compile Song' when ready.";
+
+        // Also add to batch queue if not already queued
+        if (!_batchQueue.Any(q => q.Meta.Title.Equals(song.Title, StringComparison.OrdinalIgnoreCase)))
+        {
+            var req = new SongCreationRequest
+            {
+                Title = song.Title,
+                Artist = song.Artist,
+                Album = song.Album,
+                Year = int.TryParse(song.Year, out var y) ? y : DateTime.Now.Year,
+                Genre = "Rock",
+                Charter = string.IsNullOrWhiteSpace(song.Charter) ? "Mad Scientist" : song.Charter,
+                Bpm = 120.0,
+                PreviewStartMs = 5000,
+                AutoDetectBpm = true,
+                UseVariableTempoMap = true,
+                ChartFeel = "Standard",
+                InstrumentFocus = "Auto",
+                AudioMixMode = "Auto",
+                AutoGenerateChart = true,
+                AutoCompile = true,
+                NormalizeLoudness = true,
+                UseCachedAiAnalysis = true,
+                EnableStadiumChants = true,
+                EnableBossBattle = false,
+                EnableTradeOffSolo = false,
+                EnableAiLyricsSections = true,
+                EnableCharterSignature = true,
+                CharterFriendCode = _friends?.Profile?.FriendCode ?? ""
+            };
+            var chart = !string.IsNullOrWhiteSpace(song.ProjectDirectory) ? ChartDoctorService.FindChartFileInProject(song.ProjectDirectory) : null;
+            _batchQueue.Add(new QueuedSongItem(req, audio, chart));
+            RenderBatchQueue();
+        }
+
         await DetectBpmInternalAsync(audio);
     }
 
@@ -4369,7 +4516,7 @@ public partial class MainWindow : Window
                 if (!string.IsNullOrWhiteSpace(result.StemEnergySummary))
                     lines.Add($"• Stem Balance: {result.StemEnergySummary}");
                 if (result.RepeatedRiffsMatched > 0 || result.ForcedMarkersApplied > 0 || result.BassNoteCount > 0)
-                    lines.Add($"• AI Chart v2: {result.TranscribedNoteCount:N0} Lead notes • {result.RepeatedRiffsMatched} repeating riffs locked • {result.ForcedMarkersApplied} forced HOPO/strum markers{(result.BassNoteCount > 0 ? $" • Co-Op Bass ({result.BassNoteCount:N0} notes)" : "")}");
+                    lines.Add($"• Studio Chart: {result.TranscribedNoteCount:N0} Lead notes • {result.RepeatedRiffsMatched} repeating riffs locked • {result.ForcedMarkersApplied} forced HOPO/strum markers{(result.BassNoteCount > 0 ? $" • Co-Op Bass ({result.BassNoteCount:N0} notes)" : "")}");
                 lines.Add($"• Folder: {result.ProjectDirectory}");
                 CrResultText.Text = string.Join("\n", lines);
 
@@ -4833,20 +4980,20 @@ public partial class MainWindow : Window
         UninstallAiBtn.IsEnabled = false;
         AiInstallProgressPanel.Visibility = Visibility.Visible;
         AiInstallProgressBar.Value = 0;
-        PageAiTools_StageHud.Report(5, "INITIALIZING AI STEM ENGINE", "Preparing isolated Python virtual environment & CUDA packages...");
+        PageAiTools_StageHud.Report(5, "INITIALIZING STEM ENGINE", "Preparing isolated Python virtual environment & CUDA packages...");
 
         var (ok, msg) = await _demucs.InstallAiEngineAsync((pct, step) => Dispatcher.Invoke(() =>
         {
             AiInstallProgressBar.Value = pct;
             AiInstallStepText.Text = $"[{pct}%] {step}";
-            PageAiTools_StageHud.Report(pct, "INSTALLING AI STEM ENGINE", step);
+            PageAiTools_StageHud.Report(pct, "INSTALLING STEM ENGINE", step);
         }));
 
         InstallAiBtn.IsEnabled = true;
         UninstallAiBtn.IsEnabled = true;
         RefreshToolsAndAiStatus();
         if (ok)
-            PageAiTools_StageHud.Finish("AI Demucs & Basic Pitch ready with GPU CUDA acceleration!");
+            PageAiTools_StageHud.Finish("Demucs & Basic Pitch ready with GPU CUDA acceleration!");
         else
             PageAiTools_StageHud.SetError("INSTALLATION NOTE", msg);
         WpfMessageBox.Show(msg, ok ? "Stem Tools Installed" : "Installation Note", MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
@@ -4856,11 +5003,51 @@ public partial class MainWindow : Window
     {
         if (WpfMessageBox.Show("Remove Demucs & Basic Pitch files to free disk space?", "Uninstall Stem Tools", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
             return;
-        PageAiTools_StageHud.Report(50, "UNINSTALLING AI ENGINE", "Removing virtual environments and weights...");
+        PageAiTools_StageHud.Report(50, "UNINSTALLING STEM ENGINE", "Removing virtual environments and weights...");
         var (ok, msg) = _demucs.UninstallAiEngine();
         RefreshToolsAndAiStatus();
-        PageAiTools_StageHud.Finish("AI stem engine removed.");
+        PageAiTools_StageHud.Finish("Stem separation engine removed.");
         WpfMessageBox.Show(msg, "Tools", MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+    }
+
+    private async void CleanAiCacheBtn_Click(object sender, RoutedEventArgs e)
+    {
+        PageAiTools_StageHud.Report(20, "CLEANING STEM CACHE", "Scanning for temporary audio buffers and download caches...");
+        long freedBytes = 0;
+        await Task.Run(() =>
+        {
+            try
+            {
+                var pipCache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "pip", "cache");
+                if (Directory.Exists(pipCache))
+                {
+                    var di = new DirectoryInfo(pipCache);
+                    foreach (var f in di.GetFiles("*", SearchOption.AllDirectories))
+                    {
+                        try { freedBytes += f.Length; f.Delete(); } catch { }
+                    }
+                }
+
+                if (Directory.Exists(DemucsService.AiToolsRoot))
+                {
+                    foreach (var d in Directory.GetDirectories(DemucsService.AiToolsRoot, "__pycache__", SearchOption.AllDirectories))
+                    {
+                        try
+                        {
+                            var di = new DirectoryInfo(d);
+                            foreach (var f in di.GetFiles()) { freedBytes += f.Length; }
+                            Directory.Delete(d, recursive: true);
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+        });
+
+        RefreshToolsAndAiStatus();
+        PageAiTools_StageHud.Finish($"Cleaned {freedBytes / (1024.0 * 1024.0):F1} MB of temporary stem cache!");
+        ShowStageToast("🧹 CACHE PURGED", $"Freed {freedBytes / (1024.0 * 1024.0):F1} MB of temporary files.", "#22C55E");
     }
 
     private void OpenAiFolderBtn_Click(object sender, RoutedEventArgs e)

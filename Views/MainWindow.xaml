@@ -70,7 +70,7 @@
                             <TextBlock Text="GH3" FontSize="21" FontWeight="Black" Foreground="{DynamicResource TextPrimary}"/>
                             <TextBlock Text="-SYNC" FontSize="21" FontWeight="Black" Foreground="{DynamicResource FlameGradient}"/>
                             <Border Background="{DynamicResource VersionBadgeBg}" BorderBrush="{DynamicResource VersionBadgeBorder}" BorderThickness="1" CornerRadius="5" Padding="7,1" Margin="10,0,0,0" VerticalAlignment="Center">
-                                <TextBlock x:Name="HeaderVersionBadge" Text="v1.5.4" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
+                                <TextBlock x:Name="HeaderVersionBadge" Text="v1.5.6" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
                             </Border>
                         </StackPanel>
                         <TextBlock Text="Guitar Hero III Companion  •  Studio Edition  •  by Mad Scientist" FontSize="11.5" Foreground="{DynamicResource TextMuted}"/>
@@ -153,8 +153,8 @@
                     <TextBlock Text="WHAT'S NEW" FontSize="10.5" FontWeight="Black" Foreground="#000000"/>
                 </Border>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock x:Name="WhatsNewTitleText" Text="🎸 GH3-Sync v1.5.5: Batch Creator, Instant P2P Sync &amp; Clean Studio Edition" FontSize="13" FontWeight="Bold" Foreground="#FDE68A"/>
-                    <TextBlock x:Name="WhatsNewSubtitleText" Text="• Batch Send to Song Creator &amp; Recompile • Zero 401 Auth P2P Sync • Timezone-Independent Online Clock • Zero AI Jargon • Seamless Splash Handoff" FontSize="11.5" Foreground="#F59E0B" Margin="0,2,0,0"/>
+                    <TextBlock x:Name="WhatsNewTitleText" Text="🎸 GH3-Sync v1.5.6: Authentic GH3 Highway, Batch Queue Studio &amp; Zero-White Startup" FontSize="13" FontWeight="Bold" Foreground="#FDE68A"/>
+                    <TextBlock x:Name="WhatsNewSubtitleText" Text="• Vanilla GH3 3D Highway Preview • Multi-Song Rechart &amp; Creator Batch Queue • Zero Background White Flash • Full Strum Gem Reflection • Authenticode Signed" FontSize="11.5" Foreground="#F59E0B" Margin="0,2,0,0"/>
                 </StackPanel>
                 <Button Grid.Column="2" Content="✕" Style="{StaticResource OutlineButton}" Padding="10,4" VerticalAlignment="Center" Click="DismissWhatsNewBanner_Click" ToolTip="Dismiss What's New"/>
             </Grid>
@@ -294,7 +294,7 @@
                             </StackPanel>
                             <WrapPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                 <Button Content="Refresh" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="RefreshSongs_Click" ToolTip="Refresh song library (F5)"/>
-                                <Button x:Name="BulkEditBtn" Content="✏️ Bulk Edit" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="BulkEditBtn_Click" ToolTip="Batch-edit Genre, Year, Charter &amp; Venue across checked songs"/>
+                                <Button x:Name="BulkEditBtn" Visibility="Collapsed" Content="✏️ Bulk Edit" Style="{StaticResource OutlineButton}" Padding="10,6" Margin="0,0,6,0" Click="BulkEditBtn_Click" ToolTip="Batch-edit Genre, Year, Charter &amp; Venue across checked songs"/>
                                 <Button x:Name="PartyModesMenuBtn" Content="🎮 Party Modes ▾" Style="{StaticResource GoldButton}" Padding="11,6" Margin="0,0,6,0" Click="PartyModesMenuBtn_Click" ToolTip="Hall of Fame, Tournaments, Boss Duels, Roulette &amp; Medleys">
                                     <Button.ContextMenu>
                                         <ContextMenu Background="#14121E" Foreground="White" BorderBrush="{DynamicResource BorderSubtle}">
@@ -992,6 +992,7 @@
 
                                 <StackPanel Orientation="Horizontal">
                                     <Button x:Name="InstallAiBtn" Content="Install Stem Tools (~700 MB - 1.2 GB)" Style="{StaticResource FlameButton}" Padding="16,9" Click="InstallAiEngineBtn_Click"/>
+                                    <Button x:Name="CleanAiCacheBtn" Content="🧹 Clean Cache" Style="{StaticResource OutlineButton}" Margin="10,0,0,0" Click="CleanAiCacheBtn_Click" ToolTip="Purge temporary pip download cache and python build caches"/>
                                     <Button x:Name="UninstallAiBtn" Content="Uninstall" Style="{StaticResource DangerButton}" Margin="10,0,0,0" Visibility="Collapsed" Click="UninstallAiEngineBtn_Click"/>
                                     <Button Content="Open Folder" Style="{StaticResource OutlineButton}" Margin="10,0,0,0" Click="OpenAiFolderBtn_Click"/>
                                 </StackPanel>
@@ -2049,7 +2050,7 @@
                                                 <Hyperlink NavigateUri="https://github.com/tbailey639/GH3-Sync" RequestNavigate="Hyperlink_RequestNavigate" Foreground="{DynamicResource CardInfoTitle}">GH3-Sync Repository</Hyperlink>
                                             </TextBlock>
                                         </StackPanel>
-                                        <TextBlock x:Name="AboutUpdateStatus" Text="Version 1.5.5 (Batch Creator, Instant P2P Sync &amp; Clean Studio Edition)" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
+                                        <TextBlock x:Name="AboutUpdateStatus" Text="Version 1.5.6 (Authentic GH3 Highway &amp; Batch Queue Studio Edition)" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="Check for Updates" Style="{StaticResource FlameButton}" VerticalAlignment="Center" Click="CheckUpdatesBtn_Click"/>
                                 </Grid>

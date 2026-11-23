@@ -2271,28 +2271,20 @@ else
 
                 splash.UpdateProgress(100, "Ready to Rock!");
                 var elapsed = (DateTime.UtcNow - splashStartTime).TotalMilliseconds;
-                if (elapsed < 1400)
+                if (elapsed < 1600)
                 {
-                    await Task.Delay((int)(1400 - elapsed));
+                    await Task.Delay((int)(1600 - elapsed));
                 }
 
                 wpfApp.MainWindow = mainWin;
                 mainWin.Closed += (_, _) => wpfApp.Shutdown();
-                mainWin.Opacity = 0;
+
+                // Smoothly fade out splash screen before displaying MainWindow to guarantee zero white background flash
+                try { await splash.FadeOutAndCloseAsync(); } catch { try { splash.Close(); } catch { } }
+
+                mainWin.Opacity = 1;
                 mainWin.Show();
-
-                bool handedOff = false;
-                async void FinishHandoff()
-                {
-                    if (handedOff) return;
-                    handedOff = true;
-                    mainWin.Opacity = 1;
-                    mainWin.Activate();
-                    try { await splash.FadeOutAndCloseAsync(); } catch { try { splash.Close(); } catch { } }
-                }
-
-                mainWin.ContentRendered += (_, _) => FinishHandoff();
-                _ = Task.Delay(1400).ContinueWith(_ => mainWin.Dispatcher.Invoke(FinishHandoff));
+                mainWin.Activate();
             };
 
             wpfApp.Run();

@@ -112,7 +112,7 @@ public partial class HighwayPreviewWindow : Window
             double bpm = _chart.Tempos.FirstOrDefault()?.Bpm ?? 120.0;
             var theme = HighwayThemeService.DetectTheme(_songTitle, _songArtist, bpm);
             if (CoachInsightText != null)
-                CoachInsightText.Text = $"🏟️ VENUE: {theme.VenueName} ({theme.Name}) • AI Coach: Ready";
+                CoachInsightText.Text = $"🏟️ VENUE: {theme.VenueName} ({theme.Name}) • Studio Coach: Ready";
         }
         catch { }
         SaveOffsetBtn.IsEnabled = !string.IsNullOrWhiteSpace(_projectDir) && _doctor != null;
@@ -855,7 +855,7 @@ public partial class HighwayPreviewWindow : Window
         if (CoachInsightText != null)
         {
             string startStr = $"{(int)(_peakSoloStartSec / 60)}:{(int)(_peakSoloStartSec % 60):D2}";
-            CoachInsightText.Text = $"🤖 AI COACH: Peak shred solo at {startStr} ({peakNps:F1} NPS). Suggested Debounce: 25ms • Recommended: 75% speed.";
+            CoachInsightText.Text = $"🎸 STUDIO COACH: Peak shred solo at {startStr} ({peakNps:F1} NPS). Suggested Debounce: 25ms • Recommended: 75% speed.";
         }
 
         double sliceW = canvasW / buckets;
@@ -1053,8 +1053,8 @@ public partial class HighwayPreviewWindow : Window
         int npsTotal;
         if (_trackMode == "split")
         {
-            double laneTopW = Math.Min(w * 0.105, 86.0);
-            double laneBotW = Math.Min(w * 0.225, 195.0);
+            double laneTopW = Math.Min(w * 0.08, 65.0);
+            double laneBotW = Math.Min(w * 0.22, 195.0);
             int leftNps = DrawPerspectiveHighway(w * 0.27, h, laneTopW, laneBotW, _activeNotes, "🎸 LEAD GUITAR", inSpNow, isInteractivePrimary: true);
             int rightNps = DrawPerspectiveHighway(w * 0.73, h, laneTopW, laneBotW, _activeBassNotes,
                 _activeBassNotes.Count > 0 ? "🎸 CO-OP BASS / RHYTHM" : "🎸 CO-OP BASS (NO CHART)", inSpNow, isInteractivePrimary: false);
@@ -1062,15 +1062,15 @@ public partial class HighwayPreviewWindow : Window
         }
         else if (_trackMode == "bass")
         {
-            double topHalfW = Math.Min(w * 0.16, 115.0);
-            double botHalfW = Math.Min(w * 0.38, 280.0);
+            double topHalfW = Math.Min(w * 0.11, 80.0);
+            double botHalfW = Math.Min(w * 0.44, 330.0);
             npsTotal = DrawPerspectiveHighway(w * 0.5, h, topHalfW, botHalfW, _activeBassNotes,
                 _activeBassNotes.Count > 0 ? "🎸 CO-OP BASS / RHYTHM" : "🎸 CO-OP BASS (NO BASS TRACK IN CHART)", inSpNow, isInteractivePrimary: true);
         }
         else
         {
-            double topHalfW = Math.Min(w * 0.16, 115.0);
-            double botHalfW = Math.Min(w * 0.38, 280.0);
+            double topHalfW = Math.Min(w * 0.11, 80.0);
+            double botHalfW = Math.Min(w * 0.44, 330.0);
             npsTotal = DrawPerspectiveHighway(w * 0.5, h, topHalfW, botHalfW, _activeNotes, null, inSpNow, isInteractivePrimary: true);
         }
 
@@ -1249,22 +1249,23 @@ public partial class HighwayPreviewWindow : Window
             });
         }
 
-        // Strike Line & Authentic GH3 Target Rings (Exact match to vanilla Guitar Hero III in-game HUD)
+        // Authentic GH3 Strike Line & Target Rings (Mounted baseplate fret behind target sockets)
         double strikeHw = HalfWidthAt(1.0);
-        // Strike bar chrome rail
+        // Baseboard drop shadow
         HighwayCanvas.Children.Add(new Line
         {
-            X1 = cx - strikeHw, Y1 = strikeY + 1.5,
-            X2 = cx + strikeHw, Y2 = strikeY + 1.5,
-            Stroke = new SolidColorBrush(WpfColor.FromArgb(180, 10, 15, 25)),
-            StrokeThickness = 3.5
+            X1 = cx - strikeHw, Y1 = strikeY + 2.0,
+            X2 = cx + strikeHw, Y2 = strikeY + 2.0,
+            Stroke = new SolidColorBrush(WpfColor.FromArgb(160, 10, 12, 18)),
+            StrokeThickness = 3.0
         });
+        // Subtle metallic strike fret wire behind target sockets
         HighwayCanvas.Children.Add(new Line
         {
             X1 = cx - strikeHw, Y1 = strikeY,
             X2 = cx + strikeHw, Y2 = strikeY,
-            Stroke = new SolidColorBrush(WpfColor.FromArgb(200, 226, 232, 240)),
-            StrokeThickness = 2.0
+            Stroke = new SolidColorBrush(WpfColor.FromArgb(110, 148, 163, 184)),
+            StrokeThickness = 1.6
         });
 
         // 5 Authentic GH3 Circular Strike Targets (Open center aperture + glowing colored ring + chrome bezel)
@@ -1537,6 +1538,17 @@ public partial class HighwayPreviewWindow : Window
                 Canvas.SetLeft(core, nx - coreW * 0.5);
                 Canvas.SetTop(core, yStart - coreH * 0.5);
                 HighwayCanvas.Children.Add(core);
+
+                // Iconic GH3 Dimple Specular Dot
+                var dimpleDot = new Ellipse
+                {
+                    Width = Math.Max(2.0, 3.2 * scale),
+                    Height = Math.Max(1.5, 2.2 * scale),
+                    Fill = System.Windows.Media.Brushes.White
+                };
+                Canvas.SetLeft(dimpleDot, nx - dimpleDot.Width * 0.5);
+                Canvas.SetTop(dimpleDot, yStart - dimpleDot.Height * 0.5);
+                HighwayCanvas.Children.Add(dimpleDot);
             }
         }
 

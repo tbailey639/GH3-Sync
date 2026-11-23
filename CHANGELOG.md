@@ -4,6 +4,33 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). Nota
 
 ---
 
+## [v1.5.6] - 2026-11-22 — Authentic GH3 Highway, Batch Queue Studio & Zero-White Startup Edition
+
+### 🎸 Authentic Guitar Hero III Highway & Note Gem Visuals
+* **Vanilla GH3 3D Highway Perspective:** Overhauled the highway projection camera to match authentic Guitar Hero III arcade geometry (`topHalfW: 80`, `botHalfW: 330`), giving deep, dramatic 3D neck taper.
+* **Eliminated Piercing Strike Bar:** Removed the bright white horizontal line that previously cut through the buttons. Replaced with subtle metallic fret wire behind the target sockets.
+* **Authentic Circular Target Sockets:** The 5 strike targets now feature 3D drop shadows, chrome outer bezels, luminous colored fret rings (Green, Red, Yellow, Blue, Orange), recessed dark apertures, and top chevron guide indicators pointing down into the sockets.
+* **Iconic Strum Gem Dimple & Reflection Dot:** Strum notes now render as 3D domed gemstones with dark metallic center dimples and specular reflection pin-dots, exactly matching vanilla GH3.
+* **HOPO White Crowns & 3D Neon Sustains:** HOPO notes feature glowing raised white crowns, while sustains render as thick 3D neon beam tubes with white-hot laser spines.
+* **Studio Coach:** Replaced all remaining occurrences of "AI COACH" with "STUDIO COACH".
+
+### 📦 Multi-Song Batch Rechart & Creator Queue
+* **Universal Multi-Song Queueing:** Selecting multiple songs (or using "Select All") and clicking "Rechart" or "Add to Creator" now resolves audio across project directories, workspace folders, and customs paths, queueing ALL selected songs into `_batchQueue`.
+* **Instant Batch Queue Table:** Song Creator immediately displays the interactive Batch Queue table, enables "Compile Batch Queue (N)", and populates the first song into form inputs for immediate visual feedback.
+* **Context Menu Batch Options:** Right-clicking checked songs in My Customs now includes "🎸 Rechart All Selected (N songs)" and "➕ Add All Selected to Creator (N songs)".
+* **Smart Auto-Collapse Bar:** Both the Batch Operations Toolbar and Bulk Edit button automatically hide (`Visibility.Collapsed`) when 0 songs are selected and appear as soon as any songs are checked.
+
+### 🛡️ Zero-White Startup & Seamless Dark Splash Handoff
+* **Eliminated White Window Behind Splash:** Refactored the startup sequence so `MainWindow` is never displayed while `SplashWindow` is active. The splash screen runs cleanly for 1.6 seconds, animates its glowing logo and 5 gems, and fades out before `MainWindow.Show()` is invoked.
+* **Win32 Dark Background Class:** Window class background brush initialized to pitch-black `#090A0F` with DWM dark mode enabled, guaranteeing zero white flashes on launch.
+
+### 🧹 Tools Tab Temp Cache Cleanup & UI Polish
+* **Cache Purge Tool:** Added a "🧹 Clean Cache" button in Tools & Stems to safely purge pip download caches, `__pycache__` directories, and temporary audio buffers.
+* **Zero AI Jargon:** Replaced all remaining "AI" strings across menus, tooltips, dialogs, and progress toasts with authentic studio terminology.
+* **Hidden Automatic Tunnel:** Internet tunnel options remain completely hidden from standard user view, running 100% silently in the background.
+
+---
+
 ## [v1.5.5] - 2026-11-22 — Batch Creator, Zero-Trust P2P Auto-Heal & Clean Studio Edition
 
 ### 📦 Unified Batch Selection & Creator Recompile

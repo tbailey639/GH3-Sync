@@ -17,7 +17,7 @@ public partial class SplashWindow : Window
         {
             if (SplashVersionSubtitle != null)
             {
-                SplashVersionSubtitle.Text = $"v{UpdateService.CurrentAppVersion} • ENCORE & ZERO-TRUST EDITION • BY MAD SCIENTIST";
+                SplashVersionSubtitle.Text = $"v{UpdateService.CurrentAppVersion} • STUDIO EDITION • BY MAD SCIENTIST";
             }
         }
         catch { }
@@ -31,7 +31,7 @@ public partial class SplashWindow : Window
         {
             if (SplashVersionSubtitle != null)
             {
-                SplashVersionSubtitle.Text = $"v{UpdateService.CurrentAppVersion} • ENCORE & ZERO-TRUST EDITION • BY MAD SCIENTIST";
+                SplashVersionSubtitle.Text = $"v{UpdateService.CurrentAppVersion} • STUDIO EDITION • BY MAD SCIENTIST";
             }
         }
         catch { }
