@@ -2201,7 +2201,7 @@ public partial class MainWindow : Window
 
         if (isOnogami && hasAudio)
         {
-            AddItem("🤖 Re-Chart AI v2 (Full Studio Re-Analysis)", async () =>
+            AddItem("🤖 Rechart (Full Studio Re-Analysis)", async () =>
             {
                 await RechartSongInCreatorAsync(song);
             });
@@ -2368,33 +2368,48 @@ public partial class MainWindow : Window
             return;
         }
 
-        var confirm = WpfMessageBox.Show(
-            $"You have selected {targets.Count} songs for batch Rechart.\n\nWould you like to load and re-chart all {targets.Count} songs in sequence?",
-            "Batch Rechart", MessageBoxButton.YesNo, MessageBoxImage.Question);
-        if (confirm != MessageBoxResult.Yes) return;
+        // Add all selected songs directly into Creator's Batch Queue
+        int added = 0;
+        foreach (var song in targets)
+        {
+            var audio = Gh3Service.FindSongAudioPath(song);
+            if (string.IsNullOrEmpty(audio) || !File.Exists(audio)) continue;
+            var chart = ChartDoctorService.FindChartFileInProject(song.ProjectDirectory);
 
-        BatchRechartAiBtn.IsEnabled = false;
-        int completed = 0;
-        try
-        {
-            foreach (var song in targets)
+            var req = new SongCreationRequest
             {
-                ShowStageToast("🎸 RECHARTING...", $"Re-charting ({completed + 1}/{targets.Count}): {song.Title}", "#38BDF8");
-                var (ok, _) = await _creator.InstantRechartFromCacheAsync(song.ProjectDirectory, "Standard", 0, true, null);
-                if (!ok)
-                {
-                    await RechartSongInCreatorAsync(song);
-                }
-                completed++;
-            }
-            RefreshSongsList();
-            ShowStageToast("🎉 RECHART COMPLETE", $"Successfully re-charted {completed} song(s)!", "#22C55E");
-            WpfMessageBox.Show($"Batch Rechart complete! Re-charted {completed} of {targets.Count} songs.", "Rechart Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                Title = song.Title,
+                Artist = song.Artist,
+                Album = song.Album,
+                Year = int.TryParse(song.Year, out var y) ? y : DateTime.Now.Year,
+                Genre = "Rock",
+                Charter = string.IsNullOrWhiteSpace(song.Charter) ? "Mad Scientist" : song.Charter,
+                Bpm = 120.0,
+                PreviewStartMs = 5000,
+                AutoDetectBpm = true,
+                UseVariableTempoMap = true,
+                ChartFeel = "Standard",
+                InstrumentFocus = "Auto",
+                AudioMixMode = "Auto",
+                AutoGenerateChart = true,
+                AutoCompile = true,
+                NormalizeLoudness = true,
+                UseCachedAiAnalysis = true,
+                EnableStadiumChants = true,
+                EnableBossBattle = false,
+                EnableTradeOffSolo = false,
+                EnableAiLyricsSections = true,
+                EnableCharterSignature = true,
+                CharterFriendCode = _friends?.Profile?.FriendCode ?? ""
+            };
+
+            _batchQueue.Add(new QueuedSongItem(req, audio, chart));
+            added++;
         }
-        finally
-        {
-            BatchRechartAiBtn.IsEnabled = true;
-        }
+
+        RenderBatchQueue();
+        NavCreator.IsChecked = true;
+        ShowStageToast("🎸 ADDED TO RECHART QUEUE", $"Added {added} songs to Song Creator batch queue!", "#22C55E");
     }
 
     private void BatchAddLobbyBtn_Click(object sender, RoutedEventArgs e)
@@ -3832,6 +3847,11 @@ public partial class MainWindow : Window
             AudioOffsetMs = offsetMs,
             UseCachedAiAnalysis = true,
             EnableStadiumChants = CrStadiumChantsChk.IsChecked == true,
+            EnableBossBattle = CrBossBattleChk?.IsChecked == true,
+            EnableTradeOffSolo = CrTradeOffSoloChk?.IsChecked == true,
+            EnableAiLyricsSections = CrAiLyricsSectionsChk?.IsChecked == true,
+            EnableCharterSignature = CrSignCharterChk?.IsChecked == true,
+            CharterFriendCode = _friends?.Profile?.FriendCode ?? "",
             CoverArtBytes = _creatorCoverArtBytes
         };
     }

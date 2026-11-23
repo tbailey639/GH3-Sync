@@ -60,6 +60,11 @@ public class SongCreationRequest
     public int AudioOffsetMs { get; set; } = 0;                 // Optional ±ms chart sync nudge
     public bool UseCachedAiAnalysis { get; set; } = true;       // Instant 5-second re-chart cache when available
     public bool EnableStadiumChants { get; set; } = true;       // AI Stadium crowd sing-along & chants
+    public bool EnableBossBattle { get; set; } = false;         // Boss Battle Duel power-ups
+    public bool EnableTradeOffSolo { get; set; } = false;       // Trade-Off Solo alternating duels
+    public bool EnableAiLyricsSections { get; set; } = true;    // AI Lyric & Section Markers
+    public bool EnableCharterSignature { get; set; } = true;    // Cryptographic Charter Signature (.gh3sig)
+    public string CharterFriendCode { get; set; } = "";         // Friend code for charter signature
     public byte[]? CoverArtBytes { get; set; }                  // Chosen album cover artwork bytes
     public string? CoverArtPath { get; set; }                   // Optional local cover artwork image file path
 }
@@ -97,6 +102,8 @@ public class SongCreatorService
     private readonly DemucsService? _demucs;
     private readonly Gh3Service _gh3;
     private readonly AiStadiumChantsService _stadiumChants = new();
+    private readonly BossBattleCreatorService _bossBattleService = new();
+    private readonly CharterSignatureService _charterSignatureService = new();
 
     public SongCreatorService(
         HoneycombCompilerService? compiler = null,
@@ -469,15 +476,6 @@ public class SongCreatorService
                 chartFullPath = Path.Combine(targetDir, $"notes{chartExt}");
                 File.WriteAllBytes(chartFullPath, chartBytes);
                 chartingEngine = "Uploaded Chart/MIDI";
-
-                if (chartExt == ".mid" || chartExt == ".midi")
-                {
-                    File.Copy(chartFullPath, midiFullPath, overwrite: true);
-                }
-                else if (chartExt == ".chart")
-                {
-                    TryConvertChart(chartFullPath);
-                }
             }
             else
             {
@@ -515,7 +513,69 @@ public class SongCreatorService
                     detectedSections: detectedSections,
                     statsOut: chartStats);
                 File.WriteAllText(chartFullPath, chartContent);
+            }
+
+            // Apply all creator checkbox enhancements to notes.chart BEFORE converting to MIDI & Honeycomb compilation:
+            if (File.Exists(chartFullPath) && chartFullPath.EndsWith(".chart", StringComparison.OrdinalIgnoreCase))
+            {
+                // 1. AI Lyric & Section Markers
+                if (meta.EnableAiLyricsSections)
+                {
+                    try
+                    {
+                        var ct = File.ReadAllText(chartFullPath);
+                        var withSec = AiLyricSectionService.InjectSectionsIntoChart(ct, songDuration, exactBpm > 40 ? exactBpm : 120.0);
+                        File.WriteAllText(chartFullPath, withSec);
+                    }
+                    catch { }
+                }
+
+                // 2. Trade-Off Solo Duels
+                if (meta.EnableTradeOffSolo)
+                {
+                    try
+                    {
+                        var ct = File.ReadAllText(chartFullPath);
+                        var (tradeOk, _, tradeChart) = TradeOffSoloService.GenerateTradeOffSoloChart(ct);
+                        if (tradeOk) File.WriteAllText(chartFullPath, tradeChart);
+                    }
+                    catch { }
+                }
+
+                // 3. Boss Battle Duel
+                if (meta.EnableBossBattle)
+                {
+                    try
+                    {
+                        var battleCfg = new BossBattleCreatorService.BossBattleConfig(
+                            BossName: "Lou the Devil",
+                            Difficulty: "Shredder",
+                            PowerUpDensity: 4,
+                            BossHealthDrain: 1.2,
+                            IncludeIntroSolo: true,
+                            Venue: meta.Venue
+                        );
+                        _bossBattleService.ConvertChartToBossBattle(chartFullPath, battleCfg);
+                    }
+                    catch { }
+                }
+
+                // 4. Cryptographic Charter Signature
+                if (meta.EnableCharterSignature)
+                {
+                    try
+                    {
+                        _charterSignatureService.SignChart(chartFullPath, meta.Charter, meta.CharterFriendCode);
+                    }
+                    catch { }
+                }
+
+                // Now convert the fully-enhanced .chart to .mid
                 TryConvertChart(chartFullPath);
+            }
+            else if (File.Exists(chartFullPath) && (chartFullPath.EndsWith(".mid", StringComparison.OrdinalIgnoreCase) || chartFullPath.EndsWith(".midi", StringComparison.OrdinalIgnoreCase)))
+            {
+                File.Copy(chartFullPath, midiFullPath, overwrite: true);
             }
 
             var chosenMidiPath = File.Exists(midiFullPath) ? midiFullPath : "";
@@ -555,9 +615,13 @@ public class SongCreatorService
             int safeBassTier = Math.Clamp(meta.DiffRhythm, 1, 10);
 
             var crowdStemWav = Path.Combine(targetDir, "song_crowd.wav");
-            if (!meta.EnableStadiumChants && File.Exists(crowdStemWav))
+            if (!meta.EnableStadiumChants)
             {
-                try { File.Delete(crowdStemWav); } catch { }
+                foreach (var cName in new[] { "song_crowd.wav", "song_crowd.mp3", "crowd.wav", "crowd.mp3" })
+                {
+                    var cp = Path.Combine(targetDir, cName);
+                    if (File.Exists(cp)) { try { File.Delete(cp); } catch { } }
+                }
             }
             string effectiveCrowd = (meta.EnableStadiumChants && File.Exists(crowdStemWav)) ? crowdStemWav : "";
             string effectiveRhythm = !string.IsNullOrEmpty(rhythmAudioPath) ? rhythmAudioPath : effectiveCrowd;

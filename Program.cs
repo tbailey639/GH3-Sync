@@ -2255,19 +2255,16 @@ else
                 }
 
                 splash.UpdateProgress(100, "Ready to Rock!");
+                await Task.Delay(250);
+
+                // Close splash screen before presenting the dark MainWindow so no white frame ever flashes
+                try { splash.Close(); } catch { }
 
                 wpfApp.MainWindow = mainWin;
                 mainWin.Closed += (_, _) => wpfApp.Shutdown();
-
-                // Seamless handoff: render first frame before closing splash to eliminate white-screen flash
-                mainWin.Opacity = 0;
+                mainWin.Opacity = 1;
                 mainWin.Show();
-                mainWin.ContentRendered += (_, _) =>
-                {
-                    try { splash.Close(); } catch { }
-                    mainWin.BeginAnimation(System.Windows.UIElement.OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(180)));
-                    mainWin.Activate();
-                };
+                mainWin.Activate();
             };
 
             wpfApp.Run();

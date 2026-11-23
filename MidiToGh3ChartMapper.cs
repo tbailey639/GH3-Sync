@@ -167,30 +167,30 @@ public static class MidiToGh3ChartMapper
         // Build all 4 Lead Guitar difficulties (with Riff Memory, Hand-Box Ergonomics, Forced HOPOs/Strums, Energy Chords)
         WriteDifficultyTrack(sb, "ExpertSingle", allEvents, lowPitch, highPitch, measureEnergies,
             soloStartTick, soloEndTick, safeBpm,
-            maxFrets: 5, minSpacingSec: 0.052 * feelScale,
+            maxFrets: 5, minSpacingSec: 0.098 * feelScale,
             allowChords: true, allowThreeNoteChords: true, allowSustains: true, allowForcedMarkers: true,
-            ampFloor: 0.08f, isBassTrack: false, statsOut: statsOut);
+            ampFloor: 0.14f, isBassTrack: false, statsOut: statsOut);
 
         // HardSingle: Full 5 frets (Green through Orange)! Introduces the index-finger slide and moderate density
         WriteDifficultyTrack(sb, "HardSingle", allEvents, lowPitch, highPitch, measureEnergies,
             soloStartTick, soloEndTick, safeBpm,
-            maxFrets: 5, minSpacingSec: 0.095 * feelScale,
+            maxFrets: 5, minSpacingSec: 0.155 * feelScale,
             allowChords: true, allowThreeNoteChords: false, allowSustains: true, allowForcedMarkers: true,
-            ampFloor: 0.12f, isBassTrack: false, statsOut: null);
+            ampFloor: 0.18f, isBassTrack: false, statsOut: null);
 
         // MediumSingle: Strictly 4 frets (Green, Red, Yellow, Blue). STRICTLY 0% Orange! Hand stays in home position
         WriteDifficultyTrack(sb, "MediumSingle", allEvents, lowPitch, highPitch, measureEnergies,
             soloStartTick, soloEndTick, safeBpm,
-            maxFrets: 4, minSpacingSec: 0.220 * feelScale,
+            maxFrets: 4, minSpacingSec: 0.260 * feelScale,
             allowChords: true, allowThreeNoteChords: false, allowSustains: true, allowForcedMarkers: false,
-            ampFloor: 0.22f, isBassTrack: false, statsOut: null);
+            ampFloor: 0.24f, isBassTrack: false, statsOut: null);
 
         // EasySingle: Strictly 3 frets (Green, Red, Yellow). Single notes only, relaxed tempo
         WriteDifficultyTrack(sb, "EasySingle", allEvents, lowPitch, highPitch, measureEnergies,
             soloStartTick, soloEndTick, safeBpm,
-            maxFrets: 3, minSpacingSec: 0.380 * feelScale,
+            maxFrets: 3, minSpacingSec: 0.420 * feelScale,
             allowChords: false, allowThreeNoteChords: false, allowSustains: true, allowForcedMarkers: false,
-            ampFloor: 0.30f, isBassTrack: false, statsOut: null);
+            ampFloor: 0.32f, isBassTrack: false, statsOut: null);
 
         // Build all 4 Co-Op Bass difficulties when isolated bass transcription is available
         if (hasCoopBass)
@@ -660,10 +660,10 @@ public static class MidiToGh3ChartMapper
             bool inSolo = soloStartTick > 0 && ev.Tick >= soloStartTick && ev.Tick <= soloEndTick;
             bool onBarDownbeat = (ev.Tick % TicksPerBar) == 0;
 
-            // Intelligent Musical Sustain Calculation:
+            // Authentic Guitar Hero III Musical Sustain Calculation:
             int nextNoteTick = (i + 1 < diffEvents.Count) ? diffEvents[i + 1].Tick : (ev.Tick + TicksPerBar * 2);
             int availableGapTicks = nextNoteTick - ev.Tick;
-            int maxSustainHeadroom = Math.Max(0, availableGapTicks - 48); // leave 48-tick (16th note) visual/strike safety gap
+            int maxSustainHeadroom = Math.Max(0, availableGapTicks - 36); // leave a crisp 36-tick visual/strike release gap
 
             int sustain = 0;
             if (allowSustains && maxSustainHeadroom >= 48)
@@ -671,31 +671,32 @@ public static class MidiToGh3ChartMapper
                 // Measure the note's acoustic duration in ticks
                 double acousticDurationSec = Math.Max(0.0, ev.EndSec - ev.StartSec);
                 int acousticTicks = (int)Math.Round(acousticDurationSec * (Resolution * (safeBpm / 60.0)));
+                int rawSustainTicks = Math.Max(ev.DurationTicks, acousticTicks);
 
-                // A note sustains if:
-                // a) It has measurable audio ring-out (>= 0.18s or DurationTicks >= 48)
-                // b) It is a chord on a bar downbeat (power chords naturally ring into the measure)
-                // c) It sits before a musical rest (gap >= 1 beat) or is a singing solo vibrato note
-                bool hasAudioSustain = acousticDurationSec >= 0.18 || ev.DurationTicks >= 48;
-                bool isCadenceHold = (onBarDownbeat && allowChords) || (availableGapTicks >= Resolution && acousticDurationSec >= 0.14);
-                bool isSoloSingingNote = inSolo && availableGapTicks >= Resolution && ev.PeakAmplitude >= 0.48f;
+                // In vanilla GH3, whenever a note has musical space before the next strike (gap >= 8th note / 96 ticks):
+                // 1) Held chords & downbeats ring out across the gap (75%-85% of available space)
+                // 2) Singing solo notes, sustained vibratos, and melody phrasing hold long notes
+                // 3) Sustained notes naturally fill the musical space so players can hold and whammy
+                bool hasMusicalGap = availableGapTicks >= (Resolution / 2); // >= 96 ticks (8th-note gap)
+                bool isSustainedNote = rawSustainTicks >= 80 || acousticDurationSec >= 0.20 || onBarDownbeat || inSolo || (ev.NoteCount >= 2);
 
-                if (hasAudioSustain || isCadenceHold || isSoloSingingNote)
+                if (isSustainedNote && hasMusicalGap)
                 {
-                    int intendedTicks = Math.Max(ev.DurationTicks, acousticTicks);
-
-                    if (isCadenceHold || isSoloSingingNote)
-                    {
-                        intendedTicks = Math.Max(intendedTicks, Math.Min(availableGapTicks / 2, Resolution));
-                    }
-
-                    int boundedSustain = Math.Min(intendedTicks, maxSustainHeadroom);
+                    // Generate rich, authentic GH3 long notes:
+                    // If the audio rings out, honor it; if there is a musical rest, sustain generously up to 80% of the gap
+                    int naturalSustain = Math.Max(rawSustainTicks, (int)(availableGapTicks * 0.80));
+                    int boundedSustain = Math.Min(naturalSustain, maxSustainHeadroom);
 
                     // Quantize to 16th-note ticks (48 ticks). 48 ticks is the official minimum visible sustain tail in GH3!
-                    if (boundedSustain >= 48)
+                    if (boundedSustain >= 64)
                     {
                         sustain = (boundedSustain / 48) * 48;
                     }
+                }
+                else if (rawSustainTicks >= 48 && maxSustainHeadroom >= 48)
+                {
+                    int boundedSustain = Math.Min(rawSustainTicks, maxSustainHeadroom);
+                    if (boundedSustain >= 48) sustain = (boundedSustain / 48) * 48;
                 }
             }
 

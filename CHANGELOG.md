@@ -4,6 +4,35 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). Nota
 
 ---
 
+## [v1.5.4] - 2026-11-22 — Authentic GH3 Highway, Song Creator Checkboxes & Signed SmartScreen Edition
+
+### 🎸 Authentic Guitar Hero III Highway & 3D Strike Buttons
+* **Authentic 3D Highway Stage:** Matched visual aesthetics directly to authentic Guitar Hero III arcade gameplay: dark stage plank with metallic outer side rails, illuminated warning chevrons, 5 distinct nickel-wound strings, and 3D metallic fret dividers with top highlights and drop shadows.
+* **Recessed Target Sockets & 3D Raised Strike Buttons:** Implemented two-tier strike line targets: recessed circular target sockets embedded in the highway surface, and physical 3D raised strike buttons (Green, Red, Yellow, Blue, Orange) with beveled chrome skirts, colored domed caps, top specular shine, and center contact dimples that physically depress and flare with radiant Star Power/flame bloom when held or strummed.
+* **Authentic 3D Neon Sustains:** Overhauled sustain rendering to thick, luminous neon colored light beams with razor-sharp white-hot center core spines, matching official GH3 long note appearance.
+
+### 🎼 Vanilla GH3 Note Density & Rich Long Notes
+* **Vanilla Note Spacing & Headroom:** Rebalanced note spacing (`0.098 * feelScale`) and amplitude floor (`0.14f` on Expert) back to authentic Guitar Hero III standards, eliminating excessive 19-note-per-second spam.
+* **Natural Musical Sustains:** Rewrote sustain duration calculations. Whenever musical space exists before the next strike (gap >= 96 ticks), chords and melodic phrasing hold and ring out up to 80% of the available headroom, quantized cleanly to 48 ticks (16th-note minimum visible tails).
+
+### 🛠️ Song Creator Checkboxes Pre-Compilation Baking
+* **Pre-Compilation Injection:** Boss Battle Duel power-ups, Trade-Off Solo alternating duels, AI Lyric & Section Markers, Cryptographic Charter Signature (`.gh3sig`), and AI Stadium Chants are now injected into `notes.chart` *before* converting to MIDI and compiling into Honeycomb `.ghproj` / `.pak.xen`, ensuring all options are baked into the compiled game song.
+* **Full-Song Crowd Chanting & Clean Uncheck:** Crowd chanting now reverberates whatever song is playing across its entire duration. Unchecking the box immediately deletes all crowd audio files from the project folder so no crowd audio is packed into the FSB.
+
+### ⚡ Batch Rechart Multi-Queueing
+* **Multi-Select Queueing:** Selecting multiple songs in My Customs and clicking "Rechart" queues ALL selected songs into the Song Creator Batch Queue and switches to the Creator tab.
+* **Simplified Naming:** Renamed "Re-Chart AI v2" to "Rechart" across all menus, buttons, and context options.
+
+### 🚀 Performance & Startup Polish
+* **White Screen Loading Elimination:** Resolved the white window background flashing behind the splash screen by deferring `MainWindow.Show()` until after the splash closes cleanly.
+* **Instant Tab Switching:** Replaced synchronous recursive directory size calculations on the AI tools folder with cached background tasks, eliminating the 1.5-second UI freeze when navigating to Song Creator or Tools & Stems.
+
+### 🛡️ Microsoft Defender SmartScreen & Authenticode Signing
+* **Publisher Metadata:** Added full Windows version and company metadata (`VersionInfoCompany`, `VersionInfoDescription`, `VersionInfoVersion`, `VersionInfoProductName`) to the Inno Setup installer.
+* **Authenticode Digital Signature:** Signed `GH3-Sync-Setup.exe` with Authenticode code signing certificate for "Mad Scientist (tbailey639)", ensuring Windows SmartScreen displays the official publisher name instead of "Unknown publisher".
+
+---
+
 ## [v1.5.3] - 2026-11-22 — Authentic GH3 Gibson Les Paul Fretboard, Complete Installer Bundle & Silent Relaunch Guardian
 
 ### 🎸 Authentic Guitar Hero III Gibson Les Paul Fretboard & Highway

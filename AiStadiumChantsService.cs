@@ -81,6 +81,12 @@ public class AiStadiumChantsService
                 }
             }
 
+            // If no isolated vocal stem was separated, use the source audio file itself so the crowd chants the entire current song playing!
+            if (string.IsNullOrEmpty(vocalSource) && File.Exists(audioPath))
+            {
+                vocalSource = audioPath;
+            }
+
             bool hasIsolatedVocals = !string.IsNullOrEmpty(vocalSource);
             progressCallback?.Invoke(40, hasIsolatedVocals
                 ? "Synthesizing authentic stadium concert crowd bed layered with vocal choir harmonics..."

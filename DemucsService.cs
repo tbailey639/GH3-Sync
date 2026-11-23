@@ -127,6 +127,10 @@ public class DemucsService
         }
     }
 
+    private static long _cachedInstalledSize = -1;
+    private static DateTime _lastSizeCheckUtc = DateTime.MinValue;
+    private static readonly object _sizeLock = new();
+
     public DemucsStatus GetStatus()
     {
         var exe = FindPythonOrDemucsExecutable();
@@ -142,12 +146,29 @@ public class DemucsService
         long totalSize = 0;
         if (Directory.Exists(AiToolsRoot))
         {
-            try
+            if (_cachedInstalledSize >= 0 && (DateTime.UtcNow - _lastSizeCheckUtc).TotalMinutes < 15)
             {
-                totalSize = Directory.GetFiles(AiToolsRoot, "*", SearchOption.AllDirectories)
-                    .Sum(f => { try { return new FileInfo(f).Length; } catch { return 0L; } });
+                totalSize = _cachedInstalledSize;
             }
-            catch { }
+            else
+            {
+                totalSize = _cachedInstalledSize >= 0 ? _cachedInstalledSize : 0;
+                // Calculate size in non-blocking background task to prevent UI freeze on tab navigation
+                _ = Task.Run(() =>
+                {
+                    try
+                    {
+                        long computed = Directory.GetFiles(AiToolsRoot, "*", SearchOption.AllDirectories)
+                            .Sum(f => { try { return new FileInfo(f).Length; } catch { return 0L; } });
+                        lock (_sizeLock)
+                        {
+                            _cachedInstalledSize = computed;
+                            _lastSizeCheckUtc = DateTime.UtcNow;
+                        }
+                    }
+                    catch { }
+                });
+            }
         }
 
         string msg;
