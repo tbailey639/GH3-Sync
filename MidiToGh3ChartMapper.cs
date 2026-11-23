@@ -704,27 +704,28 @@ public static class MidiToGh3ChartMapper
                 int rawSustainTicks = Math.Max(ev.DurationTicks, acousticTicks);
 
                 // In vanilla GH3, whenever a note has musical space before the next strike (gap >= 8th note / 96 ticks):
-                // 1) Ringing chords & downbeats sustain across 75%-80% of the space
+                // 1) Ringing chords & downbeats sustain across 80%-85% of the space
                 // 2) Singing solo notes, melody vibratos, and phrase ends hold long whammyable sustains
                 // 3) Any note with a gap >= quarter note (192 ticks) naturally rings out unless rapid strumming
-                bool hasMusicalGap = availableGapTicks >= 96; // >= 8th note gap
-                bool isSustainedNote = availableGapTicks >= 144 || rawSustainTicks >= 50 || acousticDurationSec >= 0.12 || onBarDownbeat || inSolo || (ev.NoteCount >= 2);
+                bool hasMusicalGap = availableGapTicks >= 72; // >= 8th note / dotted 16th gap
+                bool isSustainedNote = availableGapTicks >= 96 || rawSustainTicks >= 40 || acousticDurationSec >= 0.10 || onBarDownbeat || inSolo || (ev.NoteCount >= 2);
 
                 if (hasMusicalGap && isSustainedNote)
                 {
-                    // Fill 75%-80% of the musical gap, leaving a crisp visual release gap before next note
-                    int targetSustain = Math.Max(rawSustainTicks, (int)(availableGapTicks * 0.78));
+                    // Fill 80%-85% of the musical gap, leaving a crisp visual release gap before next note
+                    double fillRatio = availableGapTicks >= 384 ? 0.88 : (availableGapTicks >= 192 ? 0.84 : 0.78);
+                    int targetSustain = Math.Max(rawSustainTicks, (int)(availableGapTicks * fillRatio));
                     int boundedSustain = Math.Min(targetSustain, maxSustainHeadroom);
 
-                    if (boundedSustain >= 48)
+                    if (boundedSustain >= 36)
                     {
-                        sustain = (boundedSustain / 24) * 24; // Snap cleanly to musical 32nd/16th grid
+                        sustain = (boundedSustain / 12) * 12; // Snap cleanly to musical grid
                     }
                 }
-                else if (rawSustainTicks >= 48 && maxSustainHeadroom >= 48)
+                else if (rawSustainTicks >= 36 && maxSustainHeadroom >= 36)
                 {
                     int boundedSustain = Math.Min(rawSustainTicks, maxSustainHeadroom);
-                    if (boundedSustain >= 48) sustain = (boundedSustain / 24) * 24;
+                    if (boundedSustain >= 36) sustain = (boundedSustain / 12) * 12;
                 }
             }
 

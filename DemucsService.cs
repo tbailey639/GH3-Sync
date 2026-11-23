@@ -131,6 +131,15 @@ public class DemucsService
     private static DateTime _lastSizeCheckUtc = DateTime.MinValue;
     private static readonly object _sizeLock = new();
 
+    public static void InvalidateCachedSize()
+    {
+        lock (_sizeLock)
+        {
+            _cachedInstalledSize = -1;
+            _lastSizeCheckUtc = DateTime.MinValue;
+        }
+    }
+
     public DemucsStatus GetStatus()
     {
         var exe = FindPythonOrDemucsExecutable();

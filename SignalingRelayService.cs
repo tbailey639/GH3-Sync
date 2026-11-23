@@ -87,11 +87,31 @@ public class SignalingRelayService
     public event Action<string, string, string>? OnPeerActivityUpdated;
     public event Action<string, string>? OnPeerHypeSfx;
     public event Action<string, string, string>? OnPeerPlayInvite; // (senderCode, senderUsername, senderAddress)
+    public event Action<string, string, string>? OnPeerLobbyJoin; // (senderCode, senderUsername, senderAddress)
 
     public SignalingRelayService(FriendService friends, SyncLogger? logger = null)
     {
         _friends = friends;
         _logger = logger;
+    }
+
+    public static bool IsLikelyFriendCode(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        var s = raw.Trim();
+        if (s.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            s.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+            s.StartsWith("gh3sync://", StringComparison.OrdinalIgnoreCase) ||
+            s.Contains('@'))
+        {
+            return true;
+        }
+
+        var code = s.ToUpperInvariant();
+        if (code.StartsWith("GH3-")) code = code.Substring(4);
+        code = code.Replace("-", "");
+
+        return code.Length == 8 && code.All(c => (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'));
     }
 
     public static string CleanUsernameTopic(string? username)
@@ -179,8 +199,14 @@ public class SignalingRelayService
                 message = innerJson
             };
 
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6.0));
-            var resp = await _http.PostAsJsonAsync("https://ntfy.sh", ntfyPayload, cts.Token);
+            bool sigOk = false;
+            try
+            {
+                using var cts1 = new CancellationTokenSource(TimeSpan.FromSeconds(5.0));
+                var resp = await _http.PostAsJsonAsync("https://ntfy.sh", ntfyPayload, cts1.Token);
+                sigOk = resp.IsSuccessStatusCode;
+            }
+            catch { }
 
             // Also publish claim to username index topic for fast search and uniqueness protection
             var userTopic = CleanUsernameTopic(username);
@@ -188,17 +214,18 @@ public class SignalingRelayService
             {
                 try
                 {
+                    using var cts2 = new CancellationTokenSource(TimeSpan.FromSeconds(5.0));
                     var userPayload = new
                     {
                         topic = $"gh3sync-usr-{userTopic}",
                         message = innerJson
                     };
-                    await _http.PostAsJsonAsync("https://ntfy.sh", userPayload, cts.Token);
+                    await _http.PostAsJsonAsync("https://ntfy.sh", userPayload, cts2.Token);
                 }
                 catch { }
             }
 
-            return resp.IsSuccessStatusCode;
+            return sigOk;
         }
         catch
         {
@@ -285,18 +312,30 @@ public class SignalingRelayService
                         var c = r.TryGetProperty("code", out var cp) ? cp.GetString() ?? "" : "";
                         var u = r.TryGetProperty("username", out var up) ? up.GetString() ?? username : username;
                         var a = r.TryGetProperty("address", out var ap) ? ap.GetString() ?? "" : "";
-                        long ts = r.TryGetProperty("timestamp", out var tp) ? tp.GetInt64() : 0;
-                        bool isOnline = ts > 0 && (DateTimeOffset.UtcNow.ToUnixTimeSeconds() - ts) < 80;
+                        if (string.IsNullOrWhiteSpace(c)) c = ExtractField(msgText, "code");
+                        if (string.IsNullOrWhiteSpace(u)) u = ExtractField(msgText, "username");
+                        if (string.IsNullOrWhiteSpace(a)) a = ExtractField(msgText, "address");
 
-                        return new FriendLookupResult
+                        long ts = r.TryGetProperty("timestamp", out var tp) ? tp.GetInt64() : 0;
+                        if (ts == 0)
                         {
-                            Found = true,
-                            FriendCode = c,
-                            Username = u,
-                            Address = a,
-                            IsOnline = isOnline,
-                            Source = "SignalingIndex"
-                        };
+                            var tsStr = ExtractField(msgText, "timestamp");
+                            long.TryParse(tsStr, out ts);
+                        }
+                        bool isOnline = ts > 0 && (DateTimeOffset.UtcNow.ToUnixTimeSeconds() - ts) < 240;
+
+                        if (!string.IsNullOrWhiteSpace(c))
+                        {
+                            return new FriendLookupResult
+                            {
+                                Found = true,
+                                FriendCode = NormalizeCode(c),
+                                Username = string.IsNullOrWhiteSpace(u) ? username : u,
+                                Address = a,
+                                IsOnline = isOnline,
+                                Source = "SignalingIndex"
+                            };
+                        }
                     }
                 }
             }
@@ -657,6 +696,38 @@ public class SignalingRelayService
         }
     }
 
+    public async Task<bool> SendLobbySessionJoinPacketAsync(string targetCode, string senderCode, string senderUsername, string senderAddress)
+    {
+        var cleanTarget = CleanTopicCode(targetCode);
+        if (string.IsNullOrWhiteSpace(cleanTarget)) return false;
+
+        try
+        {
+            var innerJson = JsonSerializer.Serialize(new
+            {
+                type = "LOBBY_SESSION_JOIN",
+                senderCode = NormalizeCode(senderCode),
+                senderUsername = senderUsername ?? "Player",
+                senderAddress = (senderAddress ?? "").TrimEnd('/'),
+                timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            });
+
+            var ntfyPayload = new
+            {
+                topic = $"gh3sync-req-{cleanTarget}",
+                message = innerJson
+            };
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5.0));
+            var resp = await _http.PostAsJsonAsync("https://ntfy.sh", ntfyPayload, cts.Token);
+            return resp.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private async Task RunSignalingLoopAsync(CancellationToken ct)
     {
         int cycleIndex = 0;
@@ -856,6 +927,11 @@ public class SignalingRelayService
                         {
                             OnPeerPlayInvite?.Invoke(sCode, sName, sAddr);
                             _logger?.LogInfo($"[SIGNALING] Received 'ROCK OUT' play invite from {sName} ({sCode}) at {sAddr}");
+                        }
+                        else if (type == "LOBBY_SESSION_JOIN" && !string.IsNullOrWhiteSpace(sCode) && !sCode.Equals(AppConfig.Current.FriendCode, StringComparison.OrdinalIgnoreCase))
+                        {
+                            OnPeerLobbyJoin?.Invoke(sCode, sName, sAddr);
+                            _logger?.LogInfo($"[SIGNALING] Received multiplayer lobby session sync from {sName} ({sCode}) at {sAddr}");
                         }
                     }
                 }

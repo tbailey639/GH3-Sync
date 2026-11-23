@@ -48,7 +48,7 @@
                         </Ellipse.Fill>
                     </Ellipse>
                     <Image x:Name="LogoImage"
-                           Source="pack://application:,,,/Assets/gh3_sync_logo.png"
+                           Source="pack://application:,,,/GH3-Sync;component/Assets/gh3_sync_logo.png"
                            Width="136" Height="136"
                            RenderOptions.BitmapScalingMode="HighQuality"
                            RenderTransformOrigin="0.5,0.5">
@@ -64,7 +64,7 @@
                     <TextBlock Text="-SYNC" FontSize="34" FontWeight="Black" Foreground="{StaticResource FlameGradient}" FontFamily="Segoe UI"/>
                 </StackPanel>
 
-                <TextBlock x:Name="SplashVersionSubtitle" Text="v1.5.6  •  STUDIO EDITION  •  BY MAD SCIENTIST"
+                <TextBlock x:Name="SplashVersionSubtitle" Text="v1.5.7  •  STUDIO EDITION  •  BY MAD SCIENTIST"
                            FontSize="12" FontWeight="Bold" Foreground="#F59E0B"
                            HorizontalAlignment="Center" Margin="0,0,0,18"/>
 

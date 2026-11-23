@@ -150,6 +150,71 @@ public class FriendService
         return (true, "");
     }
 
+    public async Task<FriendLookupResult> LookupFriendByUsernameAsync(string query)
+    {
+        var q = (query ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(q))
+            return new FriendLookupResult { Found = false, Error = "Username query is empty." };
+
+        // 1. Check existing friends list
+        var friendMatch = AppConfig.Current.Friends.FirstOrDefault(f =>
+            f.Username.Equals(q, StringComparison.OrdinalIgnoreCase) ||
+            f.Username.Contains(q, StringComparison.OrdinalIgnoreCase));
+        if (friendMatch != null)
+        {
+            return new FriendLookupResult
+            {
+                Found = true,
+                FriendCode = friendMatch.FriendCode,
+                Username = friendMatch.Username,
+                Address = friendMatch.LastAddress,
+                IsOnline = friendMatch.IsOnlineNow,
+                Source = "FriendsList"
+            };
+        }
+
+        // 2. Check LAN peer discovery (exact + substring)
+        var lanPeers = PeerDiscoveryService.Instance?.GetAllDiscoveredPeers();
+        if (lanPeers != null)
+        {
+            var lanMatch = lanPeers.FirstOrDefault(p => p.Username.Equals(q, StringComparison.OrdinalIgnoreCase))
+                        ?? lanPeers.FirstOrDefault(p => p.Username.Contains(q, StringComparison.OrdinalIgnoreCase));
+            if (lanMatch != null)
+            {
+                return new FriendLookupResult
+                {
+                    Found = true,
+                    FriendCode = lanMatch.FriendCode,
+                    Username = lanMatch.Username,
+                    Address = lanMatch.Address,
+                    IsOnline = (DateTime.UtcNow - lanMatch.LastSeen).TotalSeconds < 180,
+                    Source = "LAN"
+                };
+            }
+        }
+
+        // 3. Check Global Signaling Relay
+        if (SignalingRelay != null)
+        {
+            var userLookup = await SignalingRelay.LookupPeerByUsernameAsync(q);
+            if (userLookup.Found) return userLookup;
+
+            // Try first word if multi-word username
+            if (q.Contains(' '))
+            {
+                var firstWord = q.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+                var subLookup = await SignalingRelay.LookupPeerByUsernameAsync(firstWord);
+                if (subLookup.Found) return subLookup;
+            }
+        }
+
+        return new FriendLookupResult
+        {
+            Found = false,
+            Error = $"No player found with Stage Name '{q}'. Make sure your friend has GH3-Sync open online!"
+        };
+    }
+
     /// <summary>
     /// Searches for a player across the network using either their Friend Code (GH3-XXXX-XXXX)
     /// OR their Stage Name / Username (e.g. "KuffyKush", "JohnnyRocker").
@@ -195,37 +260,30 @@ public class FriendService
             };
         }
 
-        // 3. Try lookup by Friend Code first
-        var codeLookup = await LookupFriendByCodeAsync(q);
-        if (codeLookup.Found) return codeLookup;
-
-        // 4. Try lookup by Username across LAN peer discovery
-        var lanMatch = PeerDiscoveryService.Instance?.GetAllDiscoveredPeers().FirstOrDefault(p =>
-            p.Username.Equals(q, StringComparison.OrdinalIgnoreCase));
-        if (lanMatch != null)
+        // 3. Fast routing: If input looks like a Friend Code or URL, search by Code first
+        bool isCodeOrUrl = SignalingRelayService.IsLikelyFriendCode(q);
+        if (isCodeOrUrl)
         {
-            return new FriendLookupResult
-            {
-                Found = true,
-                FriendCode = lanMatch.FriendCode,
-                Username = lanMatch.Username,
-                Address = lanMatch.Address,
-                IsOnline = (DateTime.UtcNow - lanMatch.LastSeen).TotalSeconds < 90,
-                Source = "LAN"
-            };
-        }
+            var codeLookup = await LookupFriendByCodeAsync(q);
+            if (codeLookup.Found) return codeLookup;
 
-        // 5. Try lookup by Username via Global Signaling Relay Index
-        if (SignalingRelay != null)
-        {
-            var userLookup = await SignalingRelay.LookupPeerByUsernameAsync(q);
+            var userLookup = await LookupFriendByUsernameAsync(q);
             if (userLookup.Found) return userLookup;
+        }
+        else
+        {
+            // Stage Name / Username: lookup by Username FIRST (LAN + Global Signaling ~300ms)
+            var userLookup = await LookupFriendByUsernameAsync(q);
+            if (userLookup.Found) return userLookup;
+
+            var codeLookup = await LookupFriendByCodeAsync(q);
+            if (codeLookup.Found) return codeLookup;
         }
 
         return new FriendLookupResult
         {
             Found = false,
-            Error = $"No player found with Stage Name or Friend Code '{q}'. Make sure your friend has GH3-Sync open!"
+            Error = $"No player found with Stage Name or Friend Code '{q}'. Make sure your friend has GH3-Sync open online!"
         };
     }
 
@@ -501,8 +559,8 @@ public class FriendService
 
     public async Task<SendFriendRequestResult> SendFriendRequestAsync(string rawFriendCode, bool asTrusted = true, string? customAddress = null, HttpClient? customClient = null)
     {
-        var lookup = await LookupFriendByCodeAsync(rawFriendCode, customClient);
-        var cleanCode = lookup.FriendCode;
+        var lookup = await SearchFriendAsync(rawFriendCode);
+        var cleanCode = lookup.Found ? lookup.FriendCode : SignalingRelayService.NormalizeCode(rawFriendCode);
 
         if (cleanCode.Equals(AppConfig.Current.FriendCode, StringComparison.OrdinalIgnoreCase))
         {
@@ -556,7 +614,7 @@ public class FriendService
 
         var client = customClient ?? _httpClient;
         var myAddress = BestAddressProvider?.Invoke() ?? "http://127.0.0.1:7373";
-        var proposedToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+        var proposedToken = DeriveSharedSecret(AppConfig.Current.FriendCode, cleanCode);
 
         var peerDisplay = !string.IsNullOrWhiteSpace(lookup.Username) ? lookup.Username : $"Player_{cleanCode[^4..]}";
 
@@ -797,7 +855,7 @@ public class FriendService
                     Address = senderAddress?.Trim() ?? (existingFriend?.LastAddress ?? ""),
                     Direction = "Incoming",
                     Status = "Pending",
-                    ProposedTrustToken = proposedToken ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)),
+                    ProposedTrustToken = proposedToken ?? DeriveSharedSecret(AppConfig.Current.FriendCode, cleanCode),
                     IsTrustedRequest = true,
                     RequestType = "TrustUpgrade",
                     CreatedAt = DateTime.UtcNow
@@ -847,7 +905,7 @@ public class FriendService
         }
 
         var myAddress = BestAddressProvider?.Invoke() ?? "http://127.0.0.1:7373";
-        var proposedToken = !string.IsNullOrWhiteSpace(friend.TrustToken) ? friend.TrustToken : Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+        var proposedToken = !string.IsNullOrWhiteSpace(friend.TrustToken) ? friend.TrustToken : DeriveSharedSecret(AppConfig.Current.FriendCode, cleanCode);
 
         if (SignalingRelay != null)
         {
@@ -931,7 +989,7 @@ public class FriendService
             if (!string.IsNullOrEmpty(targetReq.ProposedTrustToken))
                 friend.TrustToken = targetReq.ProposedTrustToken;
             else if (string.IsNullOrEmpty(friend.TrustToken))
-                friend.TrustToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+                friend.TrustToken = DeriveSharedSecret(AppConfig.Current.FriendCode, friend.FriendCode);
 
             AppConfig.Current.FriendRequests.RemoveAll(r => r.FriendCode.Equals(targetReq.FriendCode, StringComparison.OrdinalIgnoreCase));
             AppConfig.Save();
@@ -1035,7 +1093,7 @@ public class FriendService
                 }
                 else if (string.IsNullOrEmpty(newFriend.TrustToken))
                 {
-                    newFriend.TrustToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+                    newFriend.TrustToken = DeriveSharedSecret(AppConfig.Current.FriendCode, newFriend.FriendCode);
                 }
             }
 
@@ -1117,7 +1175,7 @@ public class FriendService
             }
             else if (isTrusted && string.IsNullOrEmpty(friend.TrustToken))
             {
-                friend.TrustToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+                friend.TrustToken = DeriveSharedSecret(AppConfig.Current.FriendCode, friend.FriendCode);
             }
 
             AppConfig.Save();
@@ -1179,12 +1237,15 @@ public class FriendService
                 cleanCode = "GH3-" + cleanCode;
             }
 
+            var derivedSecret = DeriveSharedSecret(AppConfig.Current.FriendCode, cleanCode);
+
             // Check if friend already exists by code
             var existing = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
             if (existing != null)
             {
                 if (!string.IsNullOrWhiteSpace(nickname)) existing.Username = EnsureUniqueNickname(nickname.Trim(), cleanCode);
                 if (!string.IsNullOrWhiteSpace(address)) existing.LastAddress = address.Trim();
+                if (string.IsNullOrEmpty(existing.TrustToken)) existing.TrustToken = derivedSecret;
                 AppConfig.Save();
                 return existing;
             }
@@ -1200,8 +1261,8 @@ public class FriendService
                 Username = uniqueName,
                 FriendCode = cleanCode,
                 LastAddress = address?.Trim() ?? "",
-                IsTrusted = false,
-                TrustToken = "",
+                IsTrusted = true,
+                TrustToken = derivedSecret,
                 AddedAt = DateTime.UtcNow
             };
 

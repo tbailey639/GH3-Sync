@@ -11,6 +11,7 @@
         Foreground="{DynamicResource TextPrimary}"
         FontFamily="Segoe UI"
         AllowDrop="True"
+        Visibility="Hidden"
         Opacity="1"
         Drop="Window_Drop"
         DragOver="Window_DragOver"
@@ -62,7 +63,7 @@
 
                 <!-- Brand -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Image Source="pack://application:,,,/Assets/gh3_sync_logo.png"
+                    <Image Source="pack://application:,,,/GH3-Sync;component/Assets/gh3_sync_logo.png"
                            Width="40" Height="40" Margin="0,0,12,0"
                            RenderOptions.BitmapScalingMode="HighQuality"/>
                     <StackPanel VerticalAlignment="Center">
@@ -70,7 +71,7 @@
                             <TextBlock Text="GH3" FontSize="21" FontWeight="Black" Foreground="{DynamicResource TextPrimary}"/>
                             <TextBlock Text="-SYNC" FontSize="21" FontWeight="Black" Foreground="{DynamicResource FlameGradient}"/>
                             <Border Background="{DynamicResource VersionBadgeBg}" BorderBrush="{DynamicResource VersionBadgeBorder}" BorderThickness="1" CornerRadius="5" Padding="7,1" Margin="10,0,0,0" VerticalAlignment="Center">
-                                <TextBlock x:Name="HeaderVersionBadge" Text="v1.5.6" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
+                                <TextBlock x:Name="HeaderVersionBadge" Text="v1.5.7" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource AccentFlameText}"/>
                             </Border>
                         </StackPanel>
                         <TextBlock Text="Guitar Hero III Companion  •  Studio Edition  •  by Mad Scientist" FontSize="11.5" Foreground="{DynamicResource TextMuted}"/>
@@ -153,7 +154,7 @@
                     <TextBlock Text="WHAT'S NEW" FontSize="10.5" FontWeight="Black" Foreground="#000000"/>
                 </Border>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock x:Name="WhatsNewTitleText" Text="🎸 GH3-Sync v1.5.6: Authentic GH3 Highway, Batch Queue Studio &amp; Zero-White Startup" FontSize="13" FontWeight="Bold" Foreground="#FDE68A"/>
+                    <TextBlock x:Name="WhatsNewTitleText" Text="🎸 GH3-Sync v1.5.7: Stage-Authentic GH3 Highway, P2P Lobby Auto-Join &amp; Batch Queue Recharting" FontSize="13" FontWeight="Bold" Foreground="#FDE68A"/>
                     <TextBlock x:Name="WhatsNewSubtitleText" Text="• Vanilla GH3 3D Highway Preview • Multi-Song Rechart &amp; Creator Batch Queue • Zero Background White Flash • Full Strum Gem Reflection • Authenticode Signed" FontSize="11.5" Foreground="#F59E0B" Margin="0,2,0,0"/>
                 </StackPanel>
                 <Button Grid.Column="2" Content="✕" Style="{StaticResource OutlineButton}" Padding="10,4" VerticalAlignment="Center" Click="DismissWhatsNewBanner_Click" ToolTip="Dismiss What's New"/>
@@ -813,7 +814,7 @@
                                     </StackPanel>
 
                                     <StackPanel Grid.Row="0" Grid.Column="2">
-                                        <TextBlock Text="Playable Instrument Focus (Neural Pitch Tracking)" FontSize="12" Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,4"/>
+                                        <TextBlock Text="Playable Instrument Focus (Audio Pitch Tracking)" FontSize="12" Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,4"/>
                                         <ComboBox x:Name="CrFocusCombo" SelectedIndex="0">
                                             <ComboBoxItem Content="Auto (Smart Multi-Lead — Play the Hook)"/>
                                             <ComboBoxItem Content="Lead Guitar (Rock / Metal)"/>
@@ -1600,7 +1601,7 @@
                                     <TextBlock Text="Performance &amp; Hardware Engine (Windows 11 Boost)" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,8"/>
                                     <CheckBox x:Name="SettingsTimerBoostChk" Content="Enable Windows 11 High-Precision Timer Boost (0.5ms microsecond note timing)" Margin="0,0,0,6"/>
                                     <CheckBox x:Name="SettingsZeroTrustChk" Content="Active Zero-Trust Sonic Quarantine (Pre-scan archives against zip bombs &amp; exploits)" Margin="0,0,0,6"/>
-                                    <CheckBox x:Name="SettingsGpuToggleChk" Content="Hardware GPU Acceleration for AI Demucs stem separation &amp; Basic Pitch" Margin="0,0,0,3"/>
+                                    <CheckBox x:Name="SettingsGpuToggleChk" Content="Hardware GPU Acceleration for Demucs stem separation &amp; Basic Pitch" Margin="0,0,0,3"/>
                                     <TextBlock x:Name="SettingsGpuStatusLabel" Text="Checking GPU..." FontSize="11.5" Foreground="{DynamicResource AccentFlameText}" Margin="20,0,0,10"/>
 
                                     <!-- Authentic Stage Vintage Amp Rotary Knobs (These go to 11!) -->
@@ -1961,7 +1962,7 @@
                             <Border Style="{StaticResource GhCard}">
                                 <StackPanel>
                                     <TextBlock Text="Component Updates &amp; Post-Update Compatibility" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,4"/>
-                                    <TextBlock Text="Verify GH3-Sync, Honeycomb compiler, BetterGH3, FFmpeg, Chorus Encore API, and AI Stem/Chart Engine (Demucs + Basic Pitch + Librosa). Run the 6-point compatibility self-test anytime."
+                                    <TextBlock Text="Verify GH3-Sync, Honeycomb compiler, BetterGH3, FFmpeg, Chorus Encore API, and Stem/Chart Engine (Demucs + Basic Pitch + Librosa). Run the 6-point compatibility self-test anytime."
                                                FontSize="12.5" Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" Margin="0,0,0,12"/>
 
                                     <CheckBox x:Name="SettingsAutoRollbackChk" Content="Automatically roll back package updates if post-update compatibility check fails" Margin="0,0,0,12" Checked="SettingsAutoRollbackChk_Changed" Unchecked="SettingsAutoRollbackChk_Changed"/>
@@ -2021,7 +2022,7 @@
 
                                     <TextBlock Text="6. Audio Fidelity Mix Modes &amp; Practice Stems" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
                                     <TextBlock TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource TextSecondary}" LineHeight="20">
-                                        • Studio Master: Untouched original studio audio in the backing channel with a duration-matched silent pad in the guitar stream. Guarantees zero AI warble or double-audio clipping—ideal for pop, rap, and electronic tracks.&#x0a;
+                                        • Studio Master: Untouched original studio audio in the backing channel with a duration-matched silent pad in the guitar stream. Guarantees zero audio warble or double-audio clipping—ideal for pop, rap, and electronic tracks.&#x0a;
                                         • Isolated Lead Stem: True Guitar Hero experience where the lead guitar or keyboard mutes when you miss a note.&#x0a;
                                         • Practice Stems: Click [⋮] → "Export Practice Stems" on any song to generate guitar-less backing tracks, solo guitar isolations, or 75% slowdown practice MP3s.
                                     </TextBlock>
@@ -2039,7 +2040,7 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel>
-                                        <TextBlock x:Name="CreditsVersionTitle" Text="GH3-Sync v1.5.5 — Created by Mad Scientist" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+                                        <TextBlock x:Name="CreditsVersionTitle" Text="GH3-Sync v1.5.7 — Created by Mad Scientist" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
                                         <StackPanel Orientation="Horizontal" Margin="0,4,0,4">
                                             <TextBlock Text="GitHub: " FontSize="12.5" Foreground="{DynamicResource TextMuted}"/>
                                             <TextBlock FontSize="12.5">
@@ -2050,7 +2051,7 @@
                                                 <Hyperlink NavigateUri="https://github.com/tbailey639/GH3-Sync" RequestNavigate="Hyperlink_RequestNavigate" Foreground="{DynamicResource CardInfoTitle}">GH3-Sync Repository</Hyperlink>
                                             </TextBlock>
                                         </StackPanel>
-                                        <TextBlock x:Name="AboutUpdateStatus" Text="Version 1.5.6 (Authentic GH3 Highway &amp; Batch Queue Studio Edition)" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
+                                        <TextBlock x:Name="AboutUpdateStatus" Text="Version 1.5.7 (Vanilla GH3 Highway &amp; Multi-Track Studio Edition)" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="Check for Updates" Style="{StaticResource FlameButton}" VerticalAlignment="Center" Click="CheckUpdatesBtn_Click"/>
                                 </Grid>
@@ -2063,8 +2064,8 @@
                                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource CardSuccessFg}" FontSize="12.5" LineHeight="22">
                                         • Honeycomb-GUI &amp; GH-Toolkit-Core — AddyMills &amp; the Neversoft modding community (PAK/QB compilation &amp; checksum tables)&#x0a;
                                         • Chorus Encore (enchor.us) — Community Clone Hero / Guitar Hero chart index &amp; SNG specification&#x0a;
-                                        • Demucs (htdemucs_6s) — Alexandre Défossez et al., Meta AI Research (6-stem audio separation)&#x0a;
-                                        • Basic Pitch — Spotify Audio Intelligence Lab (polyphonic pitch-to-MIDI neural transcription)&#x0a;
+                                        • Demucs (htdemucs_6s) — Alexandre Défossez et al., Meta Research (6-stem audio separation)&#x0a;
+                                        • Basic Pitch — Spotify Audio Lab (polyphonic pitch-to-MIDI neural transcription)&#x0a;
                                         • Librosa, SciPy, NumPy &amp; SoundFile — Precision beat-grid tracking, onset alignment &amp; audio DSP&#x0a;
                                         • BetterGH3 — Marchello &amp; the BetterGH3 Team (Guitar Hero III PC mod &amp; online multiplayer)&#x0a;
                                         • Neversoft Entertainment &amp; Activision — Guitar Hero III: Legends of Rock&#x0a;

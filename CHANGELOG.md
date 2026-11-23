@@ -4,6 +4,34 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). Nota
 
 ---
 
+## [v1.5.7] - 2026-11-23 — Stage-Authentic GH3 Highway, P2P Lobby Auto-Join & Multi-Song Recharting
+
+### 🎸 Stage-Authentic Guitar Hero III Highway
+* **Vanilla GH3 Crimson Sunburst & Winged Emblem:** 16-point dramatic Crimson Sunburst rays with outstretched metallic wings and center crest ring accurately reproduced from the authentic Guitar Hero III arcade stage.
+* **Smooth Dynamic Scrolling Highway:** Highway emblems now dynamically scroll down the neck synchronized with song playback tempo and lookahead speed.
+* **Heavy 3D Chrome Bevel Rails:** Deep 3D chrome beveled side rails with outer drop shadow and glowing orange/amber inner neon edges.
+* **Wound Nickel Strings & Silver Frets:** 5 metallic guitar strings with light streaks and 3D silver fret wires.
+* **Authentic Circular Target Sockets & Strum Gems:** 3D beveled strike rings with colored fret bodies, dark recessed aperture, center rivet, and indicator chevrons. Strum notes feature domed gemstones with dark metallic center dimples and specular reflection pin-dots.
+* **Authentic Vanilla GH3 Long Notes:** Upgraded mapper threshold (`availableGapTicks >= 72`, `fillRatio` 78%-88% of gap, snapping to 12 ticks), giving chords and solo phrases authentic vanilla GH3 whammyable sustains.
+
+### 🌐 Fixed Friend Search, Symmetric P2P Lobby & Zero-Trust Auto-Heal
+* **Fast-Routing Friend Search:** Fixed friend search by routing username lookups through local friends, LAN discovery, and global signaling relay in ~300ms, avoiding 15-second timeouts.
+* **Commutative Shared Secrets (Zero 401 Errors):** Replaced one-way random tokens with deterministic commutative shared secrets (`DeriveSharedSecret(codeA, codeB)`), guaranteeing mutual peers always share matching cryptographic trust tokens.
+* **Symmetric P2P Lobby Synchronization:** Connecting to a friend automatically dispatches a `LOBBY_SESSION_JOIN` signaling packet; the remote friend is automatically brought to Tab 5, configures address & token, and runs the setlist comparison so both players see the identical lobby screen simultaneously.
+
+### 📦 Multi-Song Batch Rechart & Creator Queue
+* **Context Menu Batch Operations:** Right-clicking checked songs in My Customs offers Add All Selected to Creator, Rechart All Selected, Fast Rechart All, Chart Doctor, Add All to Lobby, Export Package, and Delete All.
+* **Multi-Token & `song.ini` Audio Matcher:** Resolves custom song audio across `G:\Guitar Hero Songs` subdirectories and `song.ini` metadata, properly adding all selected songs into `_batchQueue`.
+* **Smart Auto-Collapse Bar:** Batch Operations Toolbar automatically hides when 0 songs are selected and reveals when songs are checked.
+
+### 🛡️ Clean Studio Terminology & Startup Polish
+* **Removed All AI Labels & Chorus Claps:** Replaced all "AI" terminology across checkboxes, options, and status messages with regular studio terminology. Removed "(Chorus claps)" from crowd chants.
+* **Disk Space & Cache Purge:** "Clean Stem Audio Cache" now prunes save backups down to the latest 10 snapshots, removes `torch/include` headers, test fixtures, and `__pycache__` to reclaim disk space.
+* **Timezone-Safe Clock & Online Status:** Enhanced `EnsureUtc` to handle local PC time zone conversions, ensuring relative offline statuses ("Just now", "15m ago", "2h ago") and presence are always accurate regardless of timezone.
+* **Zero-White Flash Startup:** MainWindow initialized with `Visibility="Hidden"` in XAML, preventing GDI white brush flashes while the splash screen runs.
+
+---
+
 ## [v1.5.6] - 2026-11-22 — Authentic GH3 Highway, Batch Queue Studio & Zero-White Startup Edition
 
 ### 🎸 Authentic Guitar Hero III Highway & Note Gem Visuals

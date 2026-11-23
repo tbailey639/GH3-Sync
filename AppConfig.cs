@@ -36,7 +36,7 @@ public class FriendEntry
         {
             var u = AppConfig.EnsureUtc(LastSeenUtc);
             var diff = (DateTime.UtcNow - u).TotalSeconds;
-            return diff >= -15 && diff < 65;
+            return diff >= -180 && diff < 240;
         }
     }
     public string ShowcaseSong { get; set; } = "";
@@ -206,7 +206,12 @@ public static class AppConfig
         if (dt == DateTime.MinValue || dt == DateTime.MaxValue) return dt;
         if (dt.Kind == DateTimeKind.Utc) return dt;
         if (dt.Kind == DateTimeKind.Local) return dt.ToUniversalTime();
-        return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+        // If unspecified, test whether treating as UTC or Local is closer to UtcNow
+        var asLocal = DateTime.SpecifyKind(dt, DateTimeKind.Local).ToUniversalTime();
+        var asUtc = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+        return Math.Abs((DateTime.UtcNow - asUtc).TotalHours) < Math.Abs((DateTime.UtcNow - asLocal).TotalHours)
+            ? asUtc
+            : asLocal;
     }
     private static readonly string ConfigDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GH3-Sync");
@@ -236,16 +241,22 @@ public static class AppConfig
                     if (data != null)
                     {
                         Current = data;
-                        // Decrypt DPAPI-protected Trust Tokens in memory
-                        if (Current.Friends != null)
-                        {
-                            foreach (var f in Current.Friends)
-                                f.TrustToken = UnprotectToken(f.TrustToken);
-                        }
                         if (string.IsNullOrEmpty(Current.FriendCode))
                         {
                             Current.FriendCode = GenerateFriendCode();
                             Save();
+                        }
+                        // Decrypt DPAPI-protected Trust Tokens in memory
+                        if (Current.Friends != null)
+                        {
+                            foreach (var f in Current.Friends)
+                            {
+                                f.TrustToken = UnprotectToken(f.TrustToken);
+                                if (string.IsNullOrEmpty(f.TrustToken) && !string.IsNullOrEmpty(Current.FriendCode) && !string.IsNullOrEmpty(f.FriendCode))
+                                {
+                                    f.TrustToken = FriendService.DeriveSharedSecret(Current.FriendCode, f.FriendCode);
+                                }
+                            }
                         }
                         if (Current.FriendRequests == null) Current.FriendRequests = new();
                         if (Current.Usage == null) Current.Usage = new FeatureUsageStats();

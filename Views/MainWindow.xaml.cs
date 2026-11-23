@@ -249,6 +249,10 @@ public partial class MainWindow : Window
             {
                 HandleRemotePeerPlayInvite(peerCode, peerUsername, peerAddr);
             });
+            FriendService.SignalingRelay.OnPeerLobbyJoin += (peerCode, peerUsername, peerAddr) => Dispatcher.BeginInvoke(() =>
+            {
+                HandleRemoteLobbySessionJoin(peerCode, peerUsername, peerAddr);
+            });
         }
 
         _playerTimer.Tick += PlayerTimer_Tick;
@@ -2222,20 +2226,46 @@ public partial class MainWindow : Window
             });
         }
 
-        if (_selectedExportIds.Count > 1 && _selectedExportIds.Contains(song.SongId))
+        if (_selectedExportIds.Count > 0)
         {
-            AddItem($"🎸 Rechart All Selected ({_selectedExportIds.Count} songs)", () =>
+            if (!_selectedExportIds.Contains(song.SongId))
             {
-                BatchRechartAiBtn_Click(this, new RoutedEventArgs());
-            });
+                _selectedExportIds.Add(song.SongId);
+                UpdateBatchSelectionBarUi();
+            }
+
             AddItem($"➕ Add All Selected to Creator ({_selectedExportIds.Count} songs)", () =>
             {
                 BatchAddToCreatorBtn_Click(this, new RoutedEventArgs());
             });
+            AddItem($"🎸 Rechart All Selected ({_selectedExportIds.Count} songs)", () =>
+            {
+                BatchRechartAiBtn_Click(this, new RoutedEventArgs());
+            });
+            AddItem($"⚡ Fast Re-Chart All Selected ({_selectedExportIds.Count} songs)", () =>
+            {
+                BatchFastRechartBtn_Click(this, new RoutedEventArgs());
+            });
+            AddItem($"⚕️ Run Chart Doctor on Selected ({_selectedExportIds.Count} songs)", () =>
+            {
+                BatchChartDoctorBtn_Click(this, new RoutedEventArgs());
+            });
+            AddItem($"➕ Add All Selected to Lobby Setlist ({_selectedExportIds.Count} songs)", () =>
+            {
+                BatchAddLobbyBtn_Click(this, new RoutedEventArgs());
+            });
+            AddItem($"📦 Export Selected as Package ({_selectedExportIds.Count} songs)", () =>
+            {
+                ExportSelectedPack_Click(this, new RoutedEventArgs());
+            });
+            AddItem($"🗑️ Delete All Selected ({_selectedExportIds.Count} songs)", () =>
+            {
+                BatchDeleteBtn_Click(this, new RoutedEventArgs());
+            }, isDanger: true);
         }
-        else if (isOnogami && hasAudio)
+        else if (hasAudio)
         {
-            AddItem("🎸 Rechart (Full Studio Re-Analysis)", async () =>
+            AddItem("🎸 Rechart in Song Creator", async () =>
             {
                 await RechartSongInCreatorAsync(song);
             });
@@ -2437,6 +2467,14 @@ public partial class MainWindow : Window
         }
         if (Directory.Exists(@"G:\Guitar Hero Songs")) candidateRoots.Add(@"G:\Guitar Hero Songs");
 
+        var cleanTitle = CleanSongTitleForMatching(song.Title);
+        var titleTokens = cleanTitle.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(w => w.Length >= 3 && !IsCommonStopword(w)).ToList();
+
+        var cleanArtist = CleanSongTitleForMatching(song.Artist);
+        var artistTokens = cleanArtist.Split(new[] { ' ', ',', '&', '/' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(w => w.Length >= 3 && !IsCommonStopword(w)).ToList();
+
         foreach (var root in candidateRoots)
         {
             if (!Directory.Exists(root)) continue;
@@ -2446,15 +2484,72 @@ public partial class MainWindow : Window
                 foreach (var sub in subdirs)
                 {
                     var dirName = Path.GetFileName(sub);
-                    if ((!string.IsNullOrWhiteSpace(song.Title) && dirName.Contains(song.Title, StringComparison.OrdinalIgnoreCase)) ||
-                        (!string.IsNullOrWhiteSpace(song.Artist) && dirName.Contains(song.Artist, StringComparison.OrdinalIgnoreCase)))
+                    bool match = false;
+
+                    // 1. Check song.ini if present
+                    var iniPath = Path.Combine(sub, "song.ini");
+                    if (File.Exists(iniPath))
                     {
-                        var audio = Directory.GetFiles(sub, "*.*", SearchOption.AllDirectories)
-                            .FirstOrDefault(f => f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) ||
-                                                 f.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) ||
-                                                 f.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) ||
-                                                 f.EndsWith(".flac", StringComparison.OrdinalIgnoreCase));
-                        if (!string.IsNullOrWhiteSpace(audio)) return audio;
+                        try
+                        {
+                            var lines = File.ReadAllLines(iniPath);
+                            foreach (var line in lines)
+                            {
+                                if (line.StartsWith("name", StringComparison.OrdinalIgnoreCase) && line.Contains('='))
+                                {
+                                    var val = line.Split('=', 2)[1].Trim();
+                                    if (val.Equals(song.Title, StringComparison.OrdinalIgnoreCase) ||
+                                        CleanSongTitleForMatching(val).Equals(cleanTitle, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        match = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+
+                    // 2. Token match on directory name
+                    if (!match)
+                    {
+                        var cleanDir = CleanSongTitleForMatching(dirName);
+                        if (cleanDir.Contains(cleanTitle, StringComparison.OrdinalIgnoreCase) ||
+                            cleanTitle.Contains(cleanDir, StringComparison.OrdinalIgnoreCase))
+                        {
+                            match = true;
+                        }
+                        else if (titleTokens.Count > 0 && titleTokens.All(t => cleanDir.Contains(t, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            match = true;
+                        }
+                        else if (titleTokens.Any(t => cleanDir.Contains(t, StringComparison.OrdinalIgnoreCase)) &&
+                                 artistTokens.Any(a => cleanDir.Contains(a, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            match = true;
+                        }
+                    }
+
+                    if (match)
+                    {
+                        var files = Directory.GetFiles(sub, "*.*", SearchOption.AllDirectories);
+                        if (preferGuitarStem)
+                        {
+                            var gStem = files.FirstOrDefault(f => Path.GetFileNameWithoutExtension(f).Equals("guitar", StringComparison.OrdinalIgnoreCase) &&
+                                (f.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)));
+                            if (!string.IsNullOrWhiteSpace(gStem)) return gStem;
+                        }
+
+                        var songAudio = files.FirstOrDefault(f => Path.GetFileNameWithoutExtension(f).Equals("song", StringComparison.OrdinalIgnoreCase) &&
+                            (f.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)));
+                        if (!string.IsNullOrWhiteSpace(songAudio)) return songAudio;
+
+                        var anyAudio = files.FirstOrDefault(f =>
+                            f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) ||
+                            f.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) ||
+                            f.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) ||
+                            f.EndsWith(".flac", StringComparison.OrdinalIgnoreCase));
+                        if (!string.IsNullOrWhiteSpace(anyAudio)) return anyAudio;
                     }
                 }
             }
@@ -2462,6 +2557,19 @@ public partial class MainWindow : Window
         }
 
         return null;
+    }
+
+    private static string CleanSongTitleForMatching(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "";
+        var cleaned = new string(text.Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : ' ').ToArray());
+        return string.Join(" ", cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    private static bool IsCommonStopword(string word)
+    {
+        var lower = word.ToLowerInvariant();
+        return lower is "the" or "and" or "for" or "with" or "featuring" or "feat" or "live" or "remastered" or "cover";
     }
 
     private void PopulateCreatorFormFromQueue(QueuedSongItem item)
@@ -5012,7 +5120,7 @@ public partial class MainWindow : Window
 
     private async void CleanAiCacheBtn_Click(object sender, RoutedEventArgs e)
     {
-        PageAiTools_StageHud.Report(20, "CLEANING STEM CACHE", "Scanning for temporary audio buffers and download caches...");
+        PageAiTools_StageHud.Report(20, "CLEANING STEM CACHE", "Scanning for temporary audio buffers, headers, and caches...");
         long freedBytes = 0;
         await Task.Run(() =>
         {
@@ -5040,7 +5148,37 @@ public partial class MainWindow : Window
                         }
                         catch { }
                     }
+
+                    // Remove torch/include header files (unnecessary for runtime inference)
+                    var torchInclude = Path.Combine(DemucsService.AiToolsRoot, "python", "Lib", "site-packages", "torch", "include");
+                    if (Directory.Exists(torchInclude))
+                    {
+                        try
+                        {
+                            var di = new DirectoryInfo(torchInclude);
+                            foreach (var f in di.GetFiles("*", SearchOption.AllDirectories)) { freedBytes += f.Length; }
+                            Directory.Delete(torchInclude, recursive: true);
+                        }
+                        catch { }
+                    }
+
+                    // Remove test fixtures
+                    var torchTesting = Path.Combine(DemucsService.AiToolsRoot, "python", "Lib", "site-packages", "torch", "testing");
+                    if (Directory.Exists(torchTesting))
+                    {
+                        try
+                        {
+                            var di = new DirectoryInfo(torchTesting);
+                            foreach (var f in di.GetFiles("*", SearchOption.AllDirectories)) { freedBytes += f.Length; }
+                            Directory.Delete(torchTesting, recursive: true);
+                        }
+                        catch { }
+                    }
                 }
+
+                // Prune old save backup snapshots down to 10 latest
+                _saves.PruneOldBackups(10);
+                DemucsService.InvalidateCachedSize();
             }
             catch { }
         });
@@ -5440,6 +5578,41 @@ public partial class MainWindow : Window
         }
     }
 
+    private void HandleRemoteLobbySessionJoin(string peerCode, string peerUsername, string peerAddr)
+    {
+        // Switch to P2P Sync & Lobby Tab so both users share identical screens
+        NavP2P.IsChecked = true;
+
+        var matchingFriend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(peerCode, StringComparison.OrdinalIgnoreCase));
+        if (matchingFriend != null && !string.IsNullOrWhiteSpace(peerAddr))
+        {
+            matchingFriend.LastAddress = peerAddr;
+            AppConfig.Save();
+        }
+
+        if (!string.IsNullOrWhiteSpace(peerAddr) && !peerAddr.Contains("169.254."))
+        {
+            PeerAddressBox.Text = peerAddr;
+        }
+
+        var secret = matchingFriend?.TrustToken;
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            secret = FriendService.DeriveSharedSecret(AppConfig.Current.FriendCode, peerCode);
+            if (matchingFriend != null)
+            {
+                matchingFriend.TrustToken = secret;
+                AppConfig.Save();
+            }
+        }
+        PeerPinBox.Text = secret;
+
+        ShowStageToast("🎸 LOBBY SYNC ACTIVE", $"{peerUsername} connected to multiplayer lobby! Comparing library...", "#22C55E");
+        AudioWaveformAndSfxService.PlayStarPowerChime();
+
+        ComparePeerBtn_Click(this, new RoutedEventArgs());
+    }
+
     private void UpdateNotificationsBadge()
     {
         int inviteCount = _pendingPlayInvites.Count;
@@ -5741,20 +5914,22 @@ public partial class MainWindow : Window
             await Task.Delay(260, cts.Token);
             if (cts.IsCancellationRequested) return;
 
-            var res = await _friends.LookupFriendByCodeAsync(rawInput);
+            var res = await _friends.SearchFriendAsync(rawInput);
             if (cts.IsCancellationRequested) return;
 
             if (res.Found)
             {
-                AutoDetectStatusIcon.Text = "🎸";
+                _detectedFriendResult = res;
+                AutoDetectStatusIcon.Text = res.IsOnline ? "🟢" : "🎸";
                 var statusStr = res.IsOnline ? "Online" : "Last seen";
-                AutoDetectStatusText.Text = $"✓ Player Detected: \"{res.Username}\" • {statusStr} via {res.Source} ({(string.IsNullOrEmpty(res.Address) ? "P2P" : res.Address)})";
+                AutoDetectStatusText.Text = $"✓ Player Detected: \"{res.Username}\" ({res.FriendCode}) • {statusStr} via {res.Source}";
                 AutoDetectStatusPill.BorderBrush = new SolidColorBrush(WpfColor.FromRgb(34, 197, 94)); // Green
             }
             else
             {
+                _detectedFriendResult = null;
                 AutoDetectStatusIcon.Text = "⚠️";
-                AutoDetectStatusText.Text = res.Error ?? $"Player {res.FriendCode} not detected online yet. Click 'Send Friend Request' to connect.";
+                AutoDetectStatusText.Text = res.Error ?? $"Player not detected online yet. Click 'Send Friend Request' to connect.";
                 AutoDetectStatusPill.BorderBrush = new SolidColorBrush(WpfColor.FromRgb(249, 115, 22)); // Amber
             }
         }
@@ -5779,9 +5954,14 @@ public partial class MainWindow : Window
     private async Task SendFriendRequestInternalAsync(bool asTrusted)
     {
         var rawCode = (AddFriendCodeBox.Text ?? "").Trim();
+        if (_detectedFriendResult != null && !string.IsNullOrWhiteSpace(_detectedFriendResult.FriendCode))
+        {
+            rawCode = _detectedFriendResult.FriendCode;
+        }
+
         if (string.IsNullOrWhiteSpace(rawCode))
         {
-            ShowStageToast("⚠️ FRIEND CODE REQUIRED", "Please enter a Friend Code (e.g. GH3-XXXX-XXXX).", "#EF4444");
+            ShowStageToast("⚠️ FRIEND CODE REQUIRED", "Please enter a Friend Code or Stage Name.", "#EF4444");
             return;
         }
 
@@ -6978,68 +7158,121 @@ public partial class MainWindow : Window
             PeerCompareStatus.Text = $"Security Block: {urlErr}";
             return;
         }
+
+        var matchingFriend = AppConfig.Current.Friends.FirstOrDefault(f => 
+            (!string.IsNullOrWhiteSpace(f.LastAddress) && f.LastAddress.TrimEnd('/').Equals(baseUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(f.LastAddress) && baseUrl.Contains(f.LastAddress.TrimEnd('/'))));
+
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            if (matchingFriend != null && !string.IsNullOrWhiteSpace(matchingFriend.TrustToken))
+            {
+                secret = matchingFriend.TrustToken;
+                PeerPinBox.Text = secret;
+            }
+            else if (matchingFriend != null && !string.IsNullOrWhiteSpace(matchingFriend.FriendCode))
+            {
+                secret = FriendService.DeriveSharedSecret(AppConfig.Current.FriendCode, matchingFriend.FriendCode);
+                matchingFriend.TrustToken = secret;
+                AppConfig.Save();
+                PeerPinBox.Text = secret;
+            }
+            else
+            {
+                secret = _security.PairingPin;
+            }
+        }
+
+        // Notify remote friend over Global Signaling Relay that a lobby sync session has started
+        if (matchingFriend != null && FriendService.SignalingRelay != null && !string.IsNullOrWhiteSpace(matchingFriend.FriendCode))
+        {
+            var myAddress = FriendService.BestAddressProvider?.Invoke() ?? "";
+            _ = FriendService.SignalingRelay.SendLobbySessionJoinPacketAsync(
+                matchingFriend.FriendCode,
+                AppConfig.Current.FriendCode,
+                AppConfig.Current.Username,
+                myAddress);
+        }
+
         PeerCompareStatus.Text = $"Connecting to {baseUrl}...";
         LobbyMatchBanner.Visibility = Visibility.Collapsed;
         PeerSongsPanel.Children.Clear();
 
         try
         {
-            using var resp = await SendChallengeHmacGetAsync(baseUrl, "/api/manifest", secret, TimeSpan.FromSeconds(15));
-            resp.EnsureSuccessStatusCode();
-            var rawBytes = await resp.Content.ReadAsByteArrayAsync();
-
-            // Mutual Host Identity Verification (ECDSA P-256 Signature + SSH-style TOFU Fingerprint Pinning)
-            if (resp.Headers.TryGetValues("X-GH3-Host-PubKey", out var pkVals) &&
-                resp.Headers.TryGetValues("X-GH3-Host-Signature", out var sigVals))
+            var resp = await SendChallengeHmacGetAsync(baseUrl, "/api/manifest", secret, TimeSpan.FromSeconds(15));
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized && matchingFriend != null && !string.IsNullOrWhiteSpace(matchingFriend.FriendCode))
             {
-                var pubKey = pkVals.FirstOrDefault() ?? "";
-                var sig = sigVals.FirstOrDefault() ?? "";
-                if (!SecurityService.VerifyHostSignature(pubKey, rawBytes, sig, out var hostFp))
+                var derivedSecret = FriendService.DeriveSharedSecret(AppConfig.Current.FriendCode, matchingFriend.FriendCode);
+                if (!derivedSecret.Equals(secret, StringComparison.OrdinalIgnoreCase))
                 {
-                    PeerCompareStatus.Text = "⚠️ SECURITY BLOCK: Peer manifest ECDSA signature failed verification (possible tampering)!";
-                    return;
+                    resp.Dispose();
+                    secret = derivedSecret;
+                    PeerPinBox.Text = secret;
+                    matchingFriend.TrustToken = secret;
+                    AppConfig.Save();
+                    resp = await SendChallengeHmacGetAsync(baseUrl, "/api/manifest", secret, TimeSpan.FromSeconds(15));
                 }
-                var pinStatus = SecurityService.CheckOrPinPeerFingerprint(baseUrl, hostFp, out var prevFp);
-                if (pinStatus == "MISMATCH")
+            }
+
+            using (resp)
+            {
+                resp.EnsureSuccessStatusCode();
+                var rawBytes = await resp.Content.ReadAsByteArrayAsync();
+
+                // Mutual Host Identity Verification (ECDSA P-256 Signature + SSH-style TOFU Fingerprint Pinning)
+                if (resp.Headers.TryGetValues("X-GH3-Host-PubKey", out var pkVals) &&
+                    resp.Headers.TryGetValues("X-GH3-Host-Signature", out var sigVals))
                 {
-                    var allowNew = WpfMessageBox.Show(
-                        $"⚠️ WARNING: PEER HOST IDENTITY CHANGED!\n\n" +
-                        $"Peer: {baseUrl}\n" +
-                        $"Previous Fingerprint: {prevFp}\n" +
-                        $"New Fingerprint:      {hostFp}\n\n" +
-                        $"This could mean your friend reinstalled Windows, OR someone is intercepting this address.\n\n" +
-                        $"Trust and pin the new identity?",
-                        "Host Identity Verification Warning",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Warning);
-                    if (allowNew != MessageBoxResult.Yes)
+                    var pubKey = pkVals.FirstOrDefault() ?? "";
+                    var sig = sigVals.FirstOrDefault() ?? "";
+                    if (!SecurityService.VerifyHostSignature(pubKey, rawBytes, sig, out var hostFp))
                     {
-                        PeerCompareStatus.Text = "Connection aborted due to Host Identity mismatch.";
+                        PeerCompareStatus.Text = "⚠️ SECURITY BLOCK: Peer manifest ECDSA signature failed verification (possible tampering)!";
                         return;
                     }
-                    AppConfig.Current.PinnedPeerFingerprints[baseUrl.TrimEnd('/').ToLowerInvariant()] = hostFp;
-                    AppConfig.Save();
+                    var pinStatus = SecurityService.CheckOrPinPeerFingerprint(baseUrl, hostFp, out var prevFp);
+                    if (pinStatus == "MISMATCH")
+                    {
+                        var allowNew = WpfMessageBox.Show(
+                            $"⚠️ WARNING: PEER HOST IDENTITY CHANGED!\n\n" +
+                            $"Peer: {baseUrl}\n" +
+                            $"Previous Fingerprint: {prevFp}\n" +
+                            $"New Fingerprint:      {hostFp}\n\n" +
+                            $"This could mean your friend reinstalled Windows, OR someone is intercepting this address.\n\n" +
+                            $"Trust and pin the new identity?",
+                            "Host Identity Verification Warning",
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Warning);
+                        if (allowNew != MessageBoxResult.Yes)
+                        {
+                            PeerCompareStatus.Text = "Connection aborted due to Host Identity mismatch.";
+                            return;
+                        }
+                        AppConfig.Current.PinnedPeerFingerprints[baseUrl.TrimEnd('/').ToLowerInvariant()] = hostFp;
+                        AppConfig.Save();
+                    }
                 }
+
+                var remote = JsonSerializer.Deserialize<LibraryManifest>(rawBytes, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                if (remote == null || remote.Songs == null)
+                {
+                    PeerCompareStatus.Text = "Peer returned an empty library.";
+                    return;
+                }
+
+                _lastPeerManifest = remote;
+                _lastPeerBaseUrl = baseUrl;
+                _lastPeerSecret = string.IsNullOrWhiteSpace(secret) ? _security.PairingPin : secret;
+
+                RenderPeerLibrary();
             }
-
-            var remote = JsonSerializer.Deserialize<LibraryManifest>(rawBytes, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-            if (remote == null || remote.Songs == null)
-            {
-                PeerCompareStatus.Text = "Peer returned an empty library.";
-                return;
-            }
-
-            _lastPeerManifest = remote;
-            _lastPeerBaseUrl = baseUrl;
-            _lastPeerSecret = string.IsNullOrWhiteSpace(secret) ? _security.PairingPin : secret;
-
-            RenderPeerLibrary();
         }
         catch (Exception ex)
         {
             // Auto-heal fallback: if direct connection timed out/failed, try resolving friend's live tunnel address via Signaling Relay
-            var matchingFriend = AppConfig.Current.Friends.FirstOrDefault(f => 
+            matchingFriend ??= AppConfig.Current.Friends.FirstOrDefault(f => 
                 (!string.IsNullOrWhiteSpace(f.LastAddress) && f.LastAddress.TrimEnd('/').Equals(baseUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)) ||
                 (!string.IsNullOrWhiteSpace(f.TrustToken) && f.TrustToken.Equals(secret, StringComparison.OrdinalIgnoreCase)));
 

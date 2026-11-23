@@ -249,6 +249,34 @@ public class SaveManager
         return list;
     }
 
+    public int PruneOldBackups(int keepCount = 20)
+    {
+        if (!Directory.Exists(BackupFolder)) return 0;
+        int pruned = 0;
+        try
+        {
+            var dirs = Directory.GetDirectories(BackupFolder)
+                .OrderByDescending(d => Directory.GetCreationTime(d))
+                .ToList();
+
+            if (dirs.Count > keepCount)
+            {
+                var toDelete = dirs.Skip(keepCount);
+                foreach (var d in toDelete)
+                {
+                    try
+                    {
+                        Directory.Delete(d, recursive: true);
+                        pruned++;
+                    }
+                    catch { }
+                }
+            }
+        }
+        catch { }
+        return pruned;
+    }
+
     private static string Sanitize(string s)
     {
         var chars = s.Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_').ToArray();

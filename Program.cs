@@ -376,6 +376,11 @@ bool TryAuthorize(HttpContext context, SecurityService sec, FriendService friend
             var mutual = FriendService.DeriveSharedSecret(AppConfig.Current.FriendCode, f.FriendCode);
             candidates.Add((mutual, f.IsTrusted ? "trusted" : "friend", f.Username));
         }
+        if (context.Request.Headers.TryGetValue("X-GH3-Sender-Code", out var senderCodeHdr) && !string.IsNullOrWhiteSpace(senderCodeHdr))
+        {
+            var senderMutual = FriendService.DeriveSharedSecret(AppConfig.Current.FriendCode, senderCodeHdr.ToString());
+            candidates.Add((senderMutual, "trusted", senderCodeHdr.ToString()));
+        }
         foreach (var inv in sec.GetActiveExpiringInvites())
             candidates.Add((inv.Token, "invite", inv.Label));
         candidates.Add((sec.PairingPin, "pin", "Session PIN"));
@@ -425,6 +430,18 @@ bool TryAuthorize(HttpContext context, SecurityService sec, FriendService friend
             sec.RecordAuthSuccess(remoteIp);
             logger.LogInfo($"[SECURITY] Expiring Invite access granted ({invite?.Label}) from {remoteIp}");
             return true;
+        }
+        if (context.Request.Headers.TryGetValue("X-GH3-Sender-Code", out var senderCodeDirect) && !string.IsNullOrWhiteSpace(senderCodeDirect))
+        {
+            var derivedDirect = FriendService.DeriveSharedSecret(AppConfig.Current.FriendCode, senderCodeDirect.ToString());
+            if (token.Equals(derivedDirect, StringComparison.OrdinalIgnoreCase))
+            {
+                sharedSecret = token;
+                isTrustedFriend = true;
+                sec.RecordAuthSuccess(remoteIp);
+                logger.LogInfo($"[SECURITY] Direct Derived Secret access granted for sender {senderCodeDirect} from {remoteIp}");
+                return true;
+            }
         }
         sec.RecordAuthFailure(remoteIp, "Invalid/revoked Trust or Invite Token", logger);
         return false;
@@ -2282,6 +2299,7 @@ else
                 // Smoothly fade out splash screen before displaying MainWindow to guarantee zero white background flash
                 try { await splash.FadeOutAndCloseAsync(); } catch { try { splash.Close(); } catch { } }
 
+                mainWin.Visibility = System.Windows.Visibility.Visible;
                 mainWin.Opacity = 1;
                 mainWin.Show();
                 mainWin.Activate();
