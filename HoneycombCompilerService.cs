@@ -939,10 +939,28 @@ public class HoneycombCompilerService
 
             // Check for authentic concert crowd sing-along / choir audio candidate
             string crowdCandidate = "";
-            foreach (var cand in new[] { "song_crowd.wav", "song_crowd.mp3", "crowd.wav", "crowd.mp3" })
+            bool allowCrowd = true;
+            var iniPath = Path.Combine(projectDir, "song.ini");
+            if (File.Exists(iniPath))
             {
-                var cp = Path.Combine(projectDir, cand);
-                if (File.Exists(cp) && new FileInfo(cp).Length > 1024) { crowdCandidate = cp; break; }
+                foreach (var line in File.ReadAllLines(iniPath))
+                {
+                    if (line.Trim().StartsWith("enable_stadium_chants", StringComparison.OrdinalIgnoreCase) &&
+                        line.Contains("false", StringComparison.OrdinalIgnoreCase))
+                    {
+                        allowCrowd = false;
+                        break;
+                    }
+                }
+            }
+
+            if (allowCrowd)
+            {
+                foreach (var cand in new[] { "song_crowd.wav", "song_crowd.mp3", "crowd.wav", "crowd.mp3" })
+                {
+                    var cp = Path.Combine(projectDir, cand);
+                    if (File.Exists(cp) && new FileInfo(cp).Length > 1024) { crowdCandidate = cp; break; }
+                }
             }
 
             if (audioMode.Equals("StudioMaster", StringComparison.OrdinalIgnoreCase) || !stems.HasMultiStems)

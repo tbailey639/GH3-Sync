@@ -45,6 +45,8 @@ public class CustomSongInfo
     public bool IsFavorite { get; set; } = false;
     public bool IsInLobbySetlist { get; set; } = false;
     public string AlbumArtPath { get; set; } = "";
+    public string AudioPath { get; set; } = "";
+    public bool HasAudio => !string.IsNullOrEmpty(AudioPath);
     public string AudioModeTag { get; set; } = "";
     public bool HasCoopBass { get; set; } = false;
     public int ExpertNoteCount { get; set; } = 0;
@@ -493,6 +495,25 @@ public class Gh3Service
             }
             catch { }
 
+            // Fast resolve primary audio path once during directory parsing
+            string audioPath = "";
+            foreach (var name in new[] { "song.mp3", "song.wav", "song.ogg", "guitar.mp3", "guitar.ogg", "guitar.wav" })
+            {
+                var p = Path.Combine(dirPath, name);
+                if (File.Exists(p)) { audioPath = p; break; }
+            }
+            if (string.IsNullOrEmpty(audioPath))
+            {
+                try
+                {
+                    audioPath = Directory.GetFiles(dirPath)
+                        .FirstOrDefault(f => f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) ||
+                                             f.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) ||
+                                             f.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase)) ?? "";
+                }
+                catch { }
+            }
+
             return new CustomSongInfo
             {
                 SongId = songId,
@@ -513,6 +534,7 @@ public class Gh3Service
                 IsCompiled = hasStandalonePak,
                 GhprojPath = ghprojPath,
                 AlbumArtPath = albumArt,
+                AudioPath = audioPath,
                 AudioModeTag = audioModeTag,
                 HasCoopBass = hasCoopBass,
                 ExpertNoteCount = expertNotes
@@ -774,6 +796,9 @@ public class Gh3Service
         if (song == null || string.IsNullOrWhiteSpace(song.ProjectDirectory) || !Directory.Exists(song.ProjectDirectory))
             return null;
 
+        if (!preferGuitarStem && !string.IsNullOrEmpty(song.AudioPath) && File.Exists(song.AudioPath))
+            return song.AudioPath;
+
         if (preferGuitarStem)
         {
             var guitarStem = Directory.GetFiles(song.ProjectDirectory, "guitar.wav", SearchOption.AllDirectories).FirstOrDefault()
@@ -785,13 +810,19 @@ public class Gh3Service
         foreach (var name in new[] { "song.mp3", "song.wav", "song.ogg", "guitar.mp3", "guitar.ogg", "guitar.wav" })
         {
             var p = Path.Combine(song.ProjectDirectory, name);
-            if (File.Exists(p)) return p;
+            if (File.Exists(p))
+            {
+                if (!preferGuitarStem) song.AudioPath = p;
+                return p;
+            }
         }
 
-        return Directory.GetFiles(song.ProjectDirectory)
+        var found = Directory.GetFiles(song.ProjectDirectory)
             .FirstOrDefault(f => f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) ||
                                  f.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) ||
                                  f.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase));
+        if (!preferGuitarStem && !string.IsNullOrEmpty(found)) song.AudioPath = found;
+        return found;
     }
 
     private static void AddOrMergeSong(CustomSongInfo projectSong, List<CustomSongInfo> songs, HashSet<string> seenSongIds)
@@ -831,6 +862,7 @@ public class Gh3Service
                 (string.IsNullOrWhiteSpace(existing.Artist) || existing.Artist == "Custom Artist"))
                 existing.Artist = projectSong.Artist;
             if (!string.IsNullOrEmpty(projectSong.AlbumArtPath)) existing.AlbumArtPath = projectSong.AlbumArtPath;
+            if (!string.IsNullOrEmpty(projectSong.AudioPath)) existing.AudioPath = projectSong.AudioPath;
             if (!string.IsNullOrEmpty(projectSong.AudioModeTag)) existing.AudioModeTag = projectSong.AudioModeTag;
             if (projectSong.HasCoopBass) existing.HasCoopBass = true;
             if (projectSong.ExpertNoteCount > 0) existing.ExpertNoteCount = projectSong.ExpertNoteCount;

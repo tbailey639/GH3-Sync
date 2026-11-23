@@ -312,8 +312,8 @@ public partial class MainWindow
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 8, 0)
         };
-        chk.Checked += (_, _) => { _selectedExportIds.Add(song.SongId); ExportSelectedBtn.Content = $"Selected ({_selectedExportIds.Count})"; };
-        chk.Unchecked += (_, _) => { _selectedExportIds.Remove(song.SongId); ExportSelectedBtn.Content = $"Selected ({_selectedExportIds.Count})"; };
+        chk.Checked += (_, _) => { _selectedExportIds.Add(song.SongId); UpdateBatchSelectionBarUi(); };
+        chk.Unchecked += (_, _) => { _selectedExportIds.Remove(song.SongId); UpdateBatchSelectionBarUi(); };
         DockPanel.SetDock(chk, Dock.Left);
         dp.Children.Add(chk);
 

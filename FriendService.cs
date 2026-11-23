@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -1259,6 +1260,19 @@ public class FriendService
         }
     }
 
+    public static string DeriveSharedSecret(string codeA, string codeB)
+    {
+        var cleanA = (codeA ?? "").Trim().ToUpperInvariant();
+        var cleanB = (codeB ?? "").Trim().ToUpperInvariant();
+        if (!cleanA.StartsWith("GH3-")) cleanA = "GH3-" + cleanA;
+        if (!cleanB.StartsWith("GH3-")) cleanB = "GH3-" + cleanB;
+        var pair = string.CompareOrdinal(cleanA, cleanB) < 0
+            ? $"{cleanA}:{cleanB}"
+            : $"{cleanB}:{cleanA}";
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes("GH3-SYNC-ZERO-TRUST-MUTUAL-KEY-v1"));
+        return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(pair))).ToLowerInvariant();
+    }
+
     public bool ValidateTrustToken(string? token, out FriendEntry? trustedFriend)
     {
         trustedFriend = null;
@@ -1266,10 +1280,21 @@ public class FriendService
 
         lock (_lock)
         {
-            trustedFriend = AppConfig.Current.Friends.FirstOrDefault(f =>
-                f.IsTrusted && !string.IsNullOrEmpty(f.TrustToken) &&
-                SecurityService.FixedTimeEquals(f.TrustToken, token.Trim()));
-            return trustedFriend != null;
+            foreach (var f in AppConfig.Current.Friends)
+            {
+                if (f.IsTrusted && !string.IsNullOrEmpty(f.TrustToken) && SecurityService.FixedTimeEquals(f.TrustToken, token.Trim()))
+                {
+                    trustedFriend = f;
+                    return true;
+                }
+                var mutual = DeriveSharedSecret(AppConfig.Current.FriendCode, f.FriendCode);
+                if (SecurityService.FixedTimeEquals(mutual, token.Trim()))
+                {
+                    trustedFriend = f;
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

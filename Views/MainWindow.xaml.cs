@@ -1847,7 +1847,7 @@ public partial class MainWindow : Window
     {
         bool isOnogami = song.CreatedWithOnogamiCreator || song.IsCreatedLocally;
         bool hasProject = !string.IsNullOrWhiteSpace(song.ProjectDirectory) && Directory.Exists(song.ProjectDirectory);
-        bool hasAudio = !string.IsNullOrEmpty(Gh3Service.FindSongAudioPath(song));
+        bool hasAudio = song.HasAudio || !string.IsNullOrEmpty(Gh3Service.FindSongAudioPath(song));
         double sizeMb = song.TotalSizeBytes / (1024.0 * 1024.0);
 
         // Guitar Hero III Authentic Setlist Notebook Row (lined paper, Impact font, star ratings)
@@ -2128,7 +2128,7 @@ public partial class MainWindow : Window
     {
         bool isOnogami = song.CreatedWithOnogamiCreator || song.IsCreatedLocally;
         bool hasProject = !string.IsNullOrWhiteSpace(song.ProjectDirectory) && Directory.Exists(song.ProjectDirectory);
-        bool hasAudio = !string.IsNullOrEmpty(Gh3Service.FindSongAudioPath(song));
+        bool hasAudio = song.HasAudio || !string.IsNullOrEmpty(Gh3Service.FindSongAudioPath(song));
         string? chartFile = hasProject ? ChartDoctorService.FindChartFileInProject(song.ProjectDirectory) : null;
 
         var menu = new System.Windows.Controls.ContextMenu
@@ -2253,26 +2253,34 @@ public partial class MainWindow : Window
             ? $"{totalCount:N0} song(s) available"
             : $"{selCount:N0} of {totalCount:N0} song(s) selected";
 
-        ExportSelectedBtn.Content = $"📦 Export Selected ({selCount})";
-        BatchDeleteBtn.Content = $"🗑️ Delete ({selCount})";
-        BatchFastRechartBtn.Content = $"⚡ Fast Re-Chart ({selCount})";
-        BatchRechartAiBtn.Content = $"🤖 Rechart ({selCount})";
-        BatchAddLobbyBtn.Content = $"+ Add to Lobby ({selCount})";
-
         bool hasSelection = selCount > 0;
-        BatchDeleteBtn.IsEnabled = hasSelection;
-        BatchFastRechartBtn.IsEnabled = hasSelection;
-        BatchRechartAiBtn.IsEnabled = hasSelection;
-        BatchAddLobbyBtn.IsEnabled = hasSelection;
-        ExportSelectedBtn.IsEnabled = hasSelection;
-        BatchDeselectAllBtn.IsEnabled = hasSelection;
+        BatchSelectionBar.Visibility = hasSelection ? Visibility.Visible : Visibility.Collapsed;
 
-        SelectAllSongsChk.IsChecked = totalCount > 0 && selCount >= totalCount;
+        if (BatchActionsDropdownBtn != null) BatchActionsDropdownBtn.Content = $"⚡ Batch Actions ({selCount}) ▾";
+        if (BatchAddToCreatorBtn != null) BatchAddToCreatorBtn.Content = $"➕ Add to Creator ({selCount})";
+        if (BatchRechartAiBtn != null) BatchRechartAiBtn.Content = $"🎸 Rechart ({selCount})";
+        if (BatchFastRechartBtn != null) BatchFastRechartBtn.Content = $"⚡ Fast Re-Chart ({selCount})";
+        if (BatchChartDoctorBtn != null) BatchChartDoctorBtn.Content = $"⚕️ Chart Doctor ({selCount})";
+        if (BatchAddLobbyBtn != null) BatchAddLobbyBtn.Content = $"+ Lobby ({selCount})";
+        if (ExportSelectedBtn != null) ExportSelectedBtn.Content = $"📦 Export ({selCount})";
+        if (BatchDeleteBtn != null) BatchDeleteBtn.Content = $"🗑️ Delete ({selCount})";
+
+        if (BatchDeleteBtn != null) BatchDeleteBtn.IsEnabled = hasSelection;
+        if (BatchFastRechartBtn != null) BatchFastRechartBtn.IsEnabled = hasSelection;
+        if (BatchRechartAiBtn != null) BatchRechartAiBtn.IsEnabled = hasSelection;
+        if (BatchAddLobbyBtn != null) BatchAddLobbyBtn.IsEnabled = hasSelection;
+        if (ExportSelectedBtn != null) ExportSelectedBtn.IsEnabled = hasSelection;
+        if (BatchDeselectAllBtn != null) BatchDeselectAllBtn.IsEnabled = hasSelection;
+
+        if (SelectAllSongsChk != null) SelectAllSongsChk.IsChecked = totalCount > 0 && selCount >= totalCount;
+        if (NotebookSelectAllChk != null) NotebookSelectAllChk.IsChecked = totalCount > 0 && selCount >= totalCount;
     }
 
     private void SelectAllSongsChk_Click(object sender, RoutedEventArgs e)
     {
-        bool checkAll = SelectAllSongsChk.IsChecked == true;
+        bool checkAll = sender == NotebookSelectAllChk
+            ? NotebookSelectAllChk?.IsChecked == true
+            : SelectAllSongsChk?.IsChecked == true;
         _selectedExportIds.Clear();
         if (checkAll)
         {
@@ -2282,6 +2290,7 @@ public partial class MainWindow : Window
                     _selectedExportIds.Add(s.SongId);
             }
         }
+        UpdateBatchSelectionBarUi();
         RefreshSongsList();
     }
 
@@ -2350,6 +2359,103 @@ public partial class MainWindow : Window
         }
         PageCustoms_StageHud.Finish($"Updated {count} song(s) from instant cache!");
         ShowStageToast("⚡ BATCH RE-CHART COMPLETE", $"Re-charted {count} song(s) in seconds.", "#22C55E");
+        RefreshSongsList();
+    }
+
+    private void BatchActionsDropdownBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (BatchActionsDropdownBtn?.ContextMenu != null)
+        {
+            BatchActionsDropdownBtn.ContextMenu.PlacementTarget = BatchActionsDropdownBtn;
+            BatchActionsDropdownBtn.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            BatchActionsDropdownBtn.ContextMenu.IsOpen = true;
+        }
+    }
+
+    private void BatchAddToCreatorBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var targets = _allSongs.Where(s => _selectedExportIds.Contains(s.SongId)).ToList();
+        if (targets.Count == 0)
+        {
+            WpfMessageBox.Show("Select at least one song to add to Song Creator.", "Add to Creator", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        int added = 0;
+        foreach (var song in targets)
+        {
+            var audio = Gh3Service.FindSongAudioPath(song) ?? song.AudioPath;
+            if (string.IsNullOrEmpty(audio) || !File.Exists(audio)) continue;
+            var chart = !string.IsNullOrWhiteSpace(song.ProjectDirectory) ? ChartDoctorService.FindChartFileInProject(song.ProjectDirectory) : null;
+
+            var req = new SongCreationRequest
+            {
+                Title = song.Title,
+                Artist = song.Artist,
+                Album = song.Album,
+                Year = int.TryParse(song.Year, out var y) ? y : DateTime.Now.Year,
+                Genre = "Rock",
+                Charter = string.IsNullOrWhiteSpace(song.Charter) ? "Mad Scientist" : song.Charter,
+                Bpm = 120.0,
+                PreviewStartMs = 5000,
+                AutoDetectBpm = true,
+                UseVariableTempoMap = true,
+                ChartFeel = "Standard",
+                InstrumentFocus = "Auto",
+                AudioMixMode = "Auto",
+                AutoGenerateChart = string.IsNullOrEmpty(chart),
+                AutoCompile = true,
+                NormalizeLoudness = true,
+                UseCachedAiAnalysis = true,
+                EnableStadiumChants = true,
+                EnableBossBattle = false,
+                EnableTradeOffSolo = false,
+                EnableAiLyricsSections = true,
+                EnableCharterSignature = true,
+                CharterFriendCode = _friends?.Profile?.FriendCode ?? ""
+            };
+
+            _batchQueue.Add(new QueuedSongItem(req, audio, chart));
+            added++;
+        }
+
+        RenderBatchQueue();
+        NavCreator.IsChecked = true;
+        ShowStageToast("➕ ADDED TO CREATOR", $"Queued {added} song(s) into Song Creator for batch recompile!", "#22C55E");
+    }
+
+    private async void BatchChartDoctorBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var targets = _allSongs.Where(s => _selectedExportIds.Contains(s.SongId)).ToList();
+        if (targets.Count == 0)
+        {
+            WpfMessageBox.Show("Select at least one song to run Chart Doctor.", "Chart Doctor", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        PageCustoms_StageHud.Report(15, "BATCH CHART DOCTOR", $"Checking & repairing {targets.Count} song(s)...");
+        int fixedCount = 0;
+        var opts = new ChartDoctorFixOptions
+        {
+            GenerateMissingDifficulties = true,
+            AddMissingStarPower = true,
+            AddMissingSections = true,
+            RecompileToGame = true
+        };
+
+        foreach (var song in targets)
+        {
+            if (string.IsNullOrWhiteSpace(song.ProjectDirectory) || !Directory.Exists(song.ProjectDirectory)) continue;
+            try
+            {
+                var (ok, _) = await _chartDoctor.RepairChartAndRecompileAsync(song.ProjectDirectory, opts);
+                if (ok) fixedCount++;
+            }
+            catch { }
+        }
+
+        PageCustoms_StageHud.Finish($"Chart Doctor scanned & repaired {fixedCount} song(s)!");
+        ShowStageToast("⚕️ CHART DOCTOR COMPLETE", $"Auto-fixed & recompiled {fixedCount} song(s)!", "#22C55E");
         RefreshSongsList();
     }
 
@@ -5386,15 +5492,17 @@ public partial class MainWindow : Window
         }
     }
 
-    private static string FormatRelativeOffline(DateTime utc)
+    private static string FormatRelativeOffline(DateTime raw)
     {
-        if (utc == DateTime.MinValue) return "🔴 Offline";
+        if (raw == DateTime.MinValue) return "🔴 Offline";
+        var utc = AppConfig.EnsureUtc(raw);
         var diff = DateTime.UtcNow - utc;
+        if (diff.TotalSeconds < 0) diff = TimeSpan.Zero;
         if (diff.TotalMinutes < 1) return "🔴 Offline - Just now";
         if (diff.TotalMinutes < 60) return $"🔴 Offline - {(int)diff.TotalMinutes}m ago";
         if (diff.TotalHours < 24) return $"🔴 Offline - {(int)diff.TotalHours}h ago";
         if (diff.TotalDays < 30) return $"🔴 Offline - {(int)diff.TotalDays}d ago";
-        return $"🔴 Offline - {utc:MMM dd}";
+        return $"🔴 Offline - {utc.ToLocalTime():MMM dd}";
     }
 
     private CancellationTokenSource? _autoDetectCts;
@@ -6232,8 +6340,13 @@ public partial class MainWindow : Window
                     }
 
                     PeerAddressBox.Text = targetAddress;
-                    if (!string.IsNullOrWhiteSpace(friend.TrustToken))
-                        PeerPinBox.Text = friend.TrustToken;
+                    string secretToUse = !string.IsNullOrWhiteSpace(friend.TrustToken) ? friend.TrustToken : "";
+                    if (string.IsNullOrWhiteSpace(secretToUse) && !string.IsNullOrWhiteSpace(friend.FriendCode))
+                    {
+                        secretToUse = FriendService.DeriveSharedSecret(AppConfig.Current.FriendCode, friend.FriendCode);
+                    }
+                    if (!string.IsNullOrWhiteSpace(secretToUse))
+                        PeerPinBox.Text = secretToUse;
 
                     ShowStageToast("🎸 CONNECTING TO LOBBY", $"Connecting directly to {friend.Username}...", "#22C55E");
                     ComparePeerBtn_Click(this, new RoutedEventArgs());

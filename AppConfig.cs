@@ -30,7 +30,15 @@ public class FriendEntry
     public string TrustToken { get; set; } = "";
     public string ActivityStatus { get; set; } = "Offline";
     public DateTime LastSeenUtc { get; set; } = DateTime.MinValue;
-    public bool IsOnlineNow => (DateTime.UtcNow - LastSeenUtc).TotalSeconds < 55;
+    public bool IsOnlineNow
+    {
+        get
+        {
+            var u = AppConfig.EnsureUtc(LastSeenUtc);
+            var diff = (DateTime.UtcNow - u).TotalSeconds;
+            return diff >= -15 && diff < 65;
+        }
+    }
     public string ShowcaseSong { get; set; } = "";
     public int PingMs { get; set; } = -1;
     public bool IsLobbyReady { get; set; } = false;
@@ -193,6 +201,13 @@ public class AppConfigData
 
 public static class AppConfig
 {
+    public static DateTime EnsureUtc(DateTime dt)
+    {
+        if (dt == DateTime.MinValue || dt == DateTime.MaxValue) return dt;
+        if (dt.Kind == DateTimeKind.Utc) return dt;
+        if (dt.Kind == DateTimeKind.Local) return dt.ToUniversalTime();
+        return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+    }
     private static readonly string ConfigDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GH3-Sync");
     private static readonly string ConfigPath = Path.Combine(ConfigDir, "config.json");

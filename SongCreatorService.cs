@@ -593,6 +593,7 @@ public class SongCreatorService
             iniSb.AppendLine($"diff_guitar = {meta.DiffGuitar}");
             iniSb.AppendLine($"diff_rhythm = {meta.DiffRhythm}");
             iniSb.AppendLine($"preview_start_time = {meta.PreviewStartMs}");
+            iniSb.AppendLine($"enable_stadium_chants = {(meta.EnableStadiumChants ? "true" : "false")}");
             iniSb.AppendLine("icon = onogami_creator");
             File.WriteAllText(iniPath, iniSb.ToString());
 

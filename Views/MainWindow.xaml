@@ -153,8 +153,8 @@
                     <TextBlock Text="WHAT'S NEW" FontSize="10.5" FontWeight="Black" Foreground="#000000"/>
                 </Border>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock x:Name="WhatsNewTitleText" Text="🎸 GH3-Sync v1.5.4: Authentic GH3 Highway, Song Creator &amp; SmartScreen Edition" FontSize="13" FontWeight="Bold" Foreground="#FDE68A"/>
-                    <TextBlock x:Name="WhatsNewSubtitleText" Text="• Authentic GH3 3D Highway &amp; Strike Buttons • Pre-compiled Song Creator Checkboxes • Full-Song Chants • Batch Rechart Queueing • Signed Authenticode Installer" FontSize="11.5" Foreground="#F59E0B" Margin="0,2,0,0"/>
+                    <TextBlock x:Name="WhatsNewTitleText" Text="🎸 GH3-Sync v1.5.5: Batch Creator, Instant P2P Sync &amp; Clean Studio Edition" FontSize="13" FontWeight="Bold" Foreground="#FDE68A"/>
+                    <TextBlock x:Name="WhatsNewSubtitleText" Text="• Batch Send to Song Creator &amp; Recompile • Zero 401 Auth P2P Sync • Timezone-Independent Online Clock • Zero AI Jargon • Seamless Splash Handoff" FontSize="11.5" Foreground="#F59E0B" Margin="0,2,0,0"/>
                 </StackPanel>
                 <Button Grid.Column="2" Content="✕" Style="{StaticResource OutlineButton}" Padding="10,4" VerticalAlignment="Center" Click="DismissWhatsNewBanner_Click" ToolTip="Dismiss What's New"/>
             </Grid>
@@ -411,18 +411,35 @@
                         <TextBlock Text="Tip: Drag and drop any .gh3song, .gh3pack, Clone Hero .sng/.zip/folder, or audio file directly onto this window."
                                    FontSize="11.5" Foreground="{DynamicResource TextSectionHeader}" Margin="2,-4,0,10"/>
 
-                        <!-- Dedicated Multi-Select & Batch Operations Bar -->
-                        <Border x:Name="BatchSelectionBar"
+                        <!-- Dedicated Multi-Select & Batch Operations Bar (Revealed when songs are selected) -->
+                        <Border x:Name="BatchSelectionBar" Visibility="Collapsed"
                                 Background="{DynamicResource BgCardHover}" BorderBrush="{DynamicResource AccentFlame}"
                                 BorderThickness="1" CornerRadius="10" Padding="12,8" Margin="0,0,0,10">
                             <DockPanel>
                                 <WrapPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button x:Name="BatchDeleteBtn" Content="🗑️ Delete Selected" Style="{StaticResource DangerButton}" Padding="11,5" Margin="0,0,6,0" Click="BatchDeleteBtn_Click" ToolTip="Delete all checked songs from Guitar Hero III library"/>
-                                    <Button x:Name="BatchFastRechartBtn" Content="⚡ Fast Re-Chart" Style="{StaticResource GreenButton}" Padding="10,5" Margin="0,0,6,0" Click="BatchFastRechartBtn_Click" ToolTip="Re-chart all selected songs from instant AI cache"/>
-                                    <Button x:Name="BatchRechartAiBtn" Content="🤖 Rechart" Style="{StaticResource BlueButton}" Padding="10,5" Margin="0,0,6,0" Click="BatchRechartAiBtn_Click" ToolTip="Batch load checked songs into Creator"/>
-                                    <Button x:Name="BatchAddLobbyBtn" Content="+ Add to Lobby" Style="{StaticResource OutlineButton}" Padding="10,5" Margin="0,0,6,0" Click="BatchAddLobbyBtn_Click" ToolTip="Add checked songs to multiplayer lobby setlist"/>
-                                    <Button x:Name="ExportSelectedBtn" Content="📦 Export Selected (0)" Style="{StaticResource FlameButton}" Padding="11,5" Margin="0,0,6,0" Click="ExportSelectedPack_Click" ToolTip="Export checked songs into a single package"/>
-                                    <Button x:Name="BatchDeselectAllBtn" Content="✖ Clear" Style="{StaticResource OutlineButton}" Padding="9,5" Click="BatchDeselectAllBtn_Click" ToolTip="Deselect all songs"/>
+                                    <Button x:Name="BatchActionsDropdownBtn" Content="⚡ Batch Actions ▾" Style="{StaticResource FlameButton}" Padding="11,5" Margin="0,0,6,0" Click="BatchActionsDropdownBtn_Click" ToolTip="Choose batch operation for all selected songs">
+                                        <Button.ContextMenu>
+                                            <ContextMenu Background="#14121E" Foreground="White" BorderBrush="{DynamicResource BorderSubtle}">
+                                                <MenuItem Header="➕ Send to Song Creator (Batch Recompile)" Click="BatchAddToCreatorBtn_Click"/>
+                                                <MenuItem Header="🎸 Rechart Studio (Multi-Track Extraction)" Click="BatchRechartAiBtn_Click"/>
+                                                <MenuItem Header="⚡ Fast Re-Chart (Instant Cache Nudge)" Click="BatchFastRechartBtn_Click"/>
+                                                <MenuItem Header="⚕️ Chart Doctor (Batch Auto-Fix &amp; Scorecard)" Click="BatchChartDoctorBtn_Click"/>
+                                                <Separator Background="{DynamicResource BorderSubtle}"/>
+                                                <MenuItem Header="➕ Add to Multiplayer Lobby Setlist" Click="BatchAddLobbyBtn_Click"/>
+                                                <MenuItem Header="📦 Export Custom Song Package (.gh3pack)" Click="ExportSelectedPack_Click"/>
+                                                <Separator Background="{DynamicResource BorderSubtle}"/>
+                                                <MenuItem Header="🗑️ Delete Selected Songs" Click="BatchDeleteBtn_Click"/>
+                                            </ContextMenu>
+                                        </Button.ContextMenu>
+                                    </Button>
+                                    <Button x:Name="BatchAddToCreatorBtn" Content="➕ Add to Creator" Style="{StaticResource GreenButton}" Padding="10,5" Margin="0,0,6,0" Click="BatchAddToCreatorBtn_Click" ToolTip="Load all selected songs into Song Creator batch queue to recompile"/>
+                                    <Button x:Name="BatchRechartAiBtn" Content="🎸 Rechart" Style="{StaticResource BlueButton}" Padding="10,5" Margin="0,0,6,0" Click="BatchRechartAiBtn_Click" ToolTip="Batch rechart checked songs"/>
+                                    <Button x:Name="BatchFastRechartBtn" Content="⚡ Fast Re-Chart" Style="{StaticResource OutlineButton}" Padding="9,5" Margin="0,0,6,0" Click="BatchFastRechartBtn_Click" ToolTip="Re-chart all selected songs from instant studio cache"/>
+                                    <Button x:Name="BatchChartDoctorBtn" Content="⚕️ Chart Doctor" Style="{StaticResource OutlineButton}" Padding="9,5" Margin="0,0,6,0" Click="BatchChartDoctorBtn_Click" ToolTip="Check &amp; auto-fix chart errors across all selected songs"/>
+                                    <Button x:Name="BatchAddLobbyBtn" Content="+ Lobby" Style="{StaticResource OutlineButton}" Padding="9,5" Margin="0,0,6,0" Click="BatchAddLobbyBtn_Click" ToolTip="Add checked songs to multiplayer lobby setlist"/>
+                                    <Button x:Name="ExportSelectedBtn" Content="📦 Export" Style="{StaticResource OutlineButton}" Padding="9,5" Margin="0,0,6,0" Click="ExportSelectedPack_Click" ToolTip="Export checked songs into a single package"/>
+                                    <Button x:Name="BatchDeleteBtn" Content="🗑️ Delete" Style="{StaticResource DangerButton}" Padding="9,5" Margin="0,0,6,0" Click="BatchDeleteBtn_Click" ToolTip="Delete all checked songs from Guitar Hero III library"/>
+                                    <Button x:Name="BatchDeselectAllBtn" Content="✖ Clear" Style="{StaticResource OutlineButton}" Padding="8,5" Click="BatchDeselectAllBtn_Click" ToolTip="Deselect all songs"/>
                                 </WrapPanel>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                     <CheckBox x:Name="SelectAllSongsChk" Content="Select All" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center" Margin="0,0,12,0" Click="SelectAllSongsChk_Click"/>
@@ -461,6 +478,7 @@
                                                 <TextBlock x:Name="CustomsVenueSub" Text="BETTERGH3 CUSTOM SONGS • CAREER SCORES &amp; RATINGS" FontSize="11.5" FontWeight="Bold" Foreground="#78350F" Margin="2,0,0,0"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <CheckBox x:Name="NotebookSelectAllChk" Content="Select All" FontWeight="Bold" FontSize="11.5" Foreground="#78350F" VerticalAlignment="Center" Margin="0,0,10,0" Click="SelectAllSongsChk_Click" ToolTip="Select or deselect all custom songs"/>
                                                 <Border Background="#FEF3C7" BorderBrush="#F59E0B" BorderThickness="1.5" CornerRadius="5" Padding="8,3" Margin="0,0,8,0">
                                                     <TextBlock x:Name="CustomsBadge" Text="★ MY CUSTOMS" FontSize="11" FontWeight="Bold" Foreground="#92400E"/>
                                                 </Border>
@@ -795,7 +813,7 @@
                                     </StackPanel>
 
                                     <StackPanel Grid.Row="0" Grid.Column="2">
-                                        <TextBlock Text="Playable Instrument Focus (Basic Pitch AI)" FontSize="12" Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,4"/>
+                                        <TextBlock Text="Playable Instrument Focus (Neural Pitch Tracking)" FontSize="12" Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,4"/>
                                         <ComboBox x:Name="CrFocusCombo" SelectedIndex="0">
                                             <ComboBoxItem Content="Auto (Smart Multi-Lead — Play the Hook)"/>
                                             <ComboBoxItem Content="Lead Guitar (Rock / Metal)"/>
@@ -874,13 +892,13 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <!-- Exclusive Enhancements (Stadium Chants, Boss Battle, Charter Signatures, Trade-Off Solos, AI Lyrics) -->
+                                <!-- Exclusive Enhancements (Stadium Chants, Boss Battle, Charter Signatures, Trade-Off Solos, Lyrics & Sections) -->
                                 <WrapPanel Margin="0,12,0,0">
-                                    <CheckBox x:Name="CrStadiumChantsChk" Content="🏟️ AI Stadium Sing-Along &amp; Crowd Chants (Chorus claps)" IsChecked="True" Margin="0,0,16,6"/>
+                                    <CheckBox x:Name="CrStadiumChantsChk" Content="🏟️ Stadium Sing-Along &amp; Crowd Chants" IsChecked="True" Margin="0,0,16,6"/>
                                     <CheckBox x:Name="CrBossBattleChk" Content="⚡ Boss Battle Duel (Broken String &amp; Double Notes power-ups)" IsChecked="False" Margin="0,0,16,6"/>
                                     <CheckBox x:Name="CrSignCharterChk" Content="🔏 Cryptographic Charter Signature (.gh3sig verified checkmark)" IsChecked="True" Margin="0,0,16,6"/>
                                     <CheckBox x:Name="CrTradeOffSoloChk" Content="🎸 Trade-Off Solo Duels (P1 Lead / P2 Co-Op alternating)" IsChecked="False" Margin="0,0,16,6"/>
-                                    <CheckBox x:Name="CrAiLyricsSectionsChk" Content="📝 AI Lyric &amp; Section Markers ([pr_verse], [pr_chorus])" IsChecked="True" Margin="0,0,16,6"/>
+                                    <CheckBox x:Name="CrAiLyricsSectionsChk" Content="📝 Lyric &amp; Section Markers ([pr_verse], [pr_chorus])" IsChecked="True" Margin="0,0,16,6"/>
                                 </WrapPanel>
 
                                 <!-- Actions + Interactive Editable Batch Queue -->
@@ -1132,7 +1150,7 @@
                                         <TextBlock Text="Direct Host/IP: " Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                         <TextBox x:Name="DirectAddressBox" ToolTip="e.g. 192.168.1.50:7373 or my-ddns.org:7373" FontFamily="Consolas"/>
                                     </DockPanel>
-                                    <StackPanel Orientation="Horizontal">
+                                    <StackPanel Orientation="Horizontal" Visibility="Collapsed">
                                         <Button x:Name="FriendsStartTunnelBtn" Content="🌐 Restart Internet Tunnel" Style="{StaticResource BlueButton}" Padding="10,5" Margin="0,0,8,0" Click="FriendsToggleTunnelBtn_Click"/>
                                         <TextBlock x:Name="FriendsTunnelHeadline" Text="Tunnel: Automatic" FontSize="11" Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center"/>
                                         <TextBlock x:Name="FriendsTunnelStatusIcon" Text="" Visibility="Collapsed"/>
@@ -1400,11 +1418,11 @@
                                     <TextBlock x:Name="P2pNetworkSummary" Text="Public IP &amp; NAT Status..." FontSize="11.5" Foreground="{DynamicResource TextSecondary}"/>
                                     <TextBlock x:Name="P2pPinSummary" Text="Session Pairing PIN: ------" FontSize="11.5" Foreground="{DynamicResource CardWarnTitle}" FontFamily="Consolas" Margin="0,2,0,4"/>
                                     <TextBlock x:Name="MeshNetworkSummaryText" Text="Mesh Interface Status..." FontSize="11" Foreground="{DynamicResource TextMuted}" Margin="0,2,0,2"/>
-                                    <TextBlock x:Name="TunnelStatusText" Text="HTTPS Tunnel Status..." FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,8"/>
+                                    <TextBlock x:Name="TunnelStatusText" Text="HTTPS Tunnel Status..." FontSize="11" FontFamily="Consolas" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,8" Visibility="Collapsed"/>
 
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                                         <Button Content="Refresh NAT / UPnP" Style="{StaticResource OutlineButton}" Padding="8,4" Margin="0,0,6,0" Click="RefreshNatBtn_Click"/>
-                                        <Button x:Name="StartTunnelBtn" Content="🌐 Restart HTTPS Tunnel" Style="{StaticResource BlueButton}" Padding="8,4" Margin="0,0,6,0" Click="ToggleTunnelBtn_Click"/>
+                                        <Button x:Name="StartTunnelBtn" Content="🌐 Restart HTTPS Tunnel" Style="{StaticResource BlueButton}" Padding="8,4" Margin="0,0,6,0" Click="ToggleTunnelBtn_Click" Visibility="Collapsed"/>
                                         <Button Content="Rescan Mesh" Style="{StaticResource OutlineButton}" Padding="8,4" Margin="0,0,6,0" Click="RescanMeshBtn_Click"/>
                                         <Button x:Name="CopyLobbyInviteBtn" Content="Copy Invite String" Style="{StaticResource OutlineButton}" Padding="8,4" Margin="0,0,6,0" Click="CopyLobbyInviteBtn_Click"/>
                                         <CheckBox x:Name="ExpiringInviteChk" Content="4-Hour Expiring Token" FontSize="11" VerticalAlignment="Center"/>
@@ -1945,12 +1963,12 @@
                                     <TextBlock Text="Verify GH3-Sync, Honeycomb compiler, BetterGH3, FFmpeg, Chorus Encore API, and AI Stem/Chart Engine (Demucs + Basic Pitch + Librosa). Run the 6-point compatibility self-test anytime."
                                                FontSize="12.5" Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" Margin="0,0,0,12"/>
 
-                                    <CheckBox x:Name="SettingsAutoRollbackChk" Content="Automatically roll back AI package updates if post-update compatibility check fails" Margin="0,0,0,12" Checked="SettingsAutoRollbackChk_Changed" Unchecked="SettingsAutoRollbackChk_Changed"/>
+                                    <CheckBox x:Name="SettingsAutoRollbackChk" Content="Automatically roll back package updates if post-update compatibility check fails" Margin="0,0,0,12" Checked="SettingsAutoRollbackChk_Changed" Unchecked="SettingsAutoRollbackChk_Changed"/>
 
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                                         <Button x:Name="CheckAllComponentsBtn" Content="Check All Component Updates" Style="{StaticResource FlameButton}" Margin="0,0,8,0" Click="CheckAllComponentsBtn_Click"/>
                                         <Button x:Name="RunCompatTestBtn" Content="Run 6-Point Self-Test" Style="{StaticResource GreenButton}" Margin="0,0,8,0" Click="RunCompatTestBtn_Click"/>
-                                        <Button x:Name="UpdateStemToolsBtn" Content="Update AI Tools (Safe)" Style="{StaticResource OutlineButton}" Click="UpdateStemToolsBtn_Click"/>
+                                        <Button x:Name="UpdateStemToolsBtn" Content="Update Stem Tools (Safe)" Style="{StaticResource OutlineButton}" Click="UpdateStemToolsBtn_Click"/>
                                     </StackPanel>
 
                                     <TextBlock x:Name="UpdatesCompStatusText" Text="Click 'Check All Component Updates' or 'Run 6-Point Self-Test' to verify your installation."
@@ -1984,19 +2002,19 @@
                                     <TextBlock Text="3. Managing My Customs, 3-Dot [⋮] Menu &amp; Batch Operations" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
                                     <TextBlock TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource TextSecondary}" LineHeight="20" Margin="0,0,0,10">
                                         • Decluttered Song Cards: Direct buttons are streamlined to "+ Lobby", "Edit", and "# Tag". All auxiliary actions (Highway 3D Preview, ⚕ Chart Doctor, Stems Explorer, Fast Re-Chart, Open Folder, Export, Delete) are housed in the sleek 3-dot [⋮] dropdown menu. You can also right-click anywhere on a song card to open the menu!&#x0a;
-                                        • Batch Selection Bar: Click the "Select All" checkbox or check individual songs to open the batch operations toolbar. Perform Bulk Delete (with single confirmation), Batch Fast Re-Chart, Batch Re-Chart AI v2, or Add to Lobby across multiple songs simultaneously.&#x0a;
+                                        • Batch Selection Bar: Click the "Select All" checkbox or check individual songs to open the batch operations toolbar. Perform Bulk Delete (with single confirmation), Batch Fast Re-Chart, Batch Rechart Studio, or Add to Lobby across multiple songs simultaneously.&#x0a;
                                         • Header Menus: Auxiliary features are organized into clean dropdowns: "🎮 Party Modes ▾" (Hall of Fame, Tournaments, Boss Battle, Roulette, Medley) and "🔧 Studio Tools ▾" (Soundcheck, Auto-Heal, Scorecard, Lag Calibration).
                                     </TextBlock>
 
-                                    <TextBlock Text="4. Fast Re-Chart (5-Sec Cache) vs Re-Chart AI v2" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
+                                    <TextBlock Text="4. Fast Re-Chart (5-Sec Cache) vs Rechart Studio" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
                                     <TextBlock TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource TextSecondary}" LineHeight="20" Margin="0,0,0,10">
-                                        • Songs created with GH3-Sync save a lightweight AI cache (~80 KB). Clicking "⚡ Fast Re-Chart" allows you to switch between Casual/Standard/Shredder feel or adjust Audio-Chart sync offset (±ms) in ~5 seconds without re-separating stems.&#x0a;
-                                        • "Re-Chart AI v2" loads the song back into the Creator studio for full audio re-processing and multi-lead routing.
+                                        • Songs created with GH3-Sync save a lightweight studio cache (~80 KB). Clicking "⚡ Fast Re-Chart" allows you to switch between Casual/Standard/Shredder feel or adjust Audio-Chart sync offset (±ms) in ~5 seconds without re-separating stems.&#x0a;
+                                        • "Rechart Studio" loads the song back into the Creator studio for full audio re-processing and multi-lead routing.
                                     </TextBlock>
 
                                     <TextBlock Text="5. Hardware &amp; GPU Acceleration (NVIDIA CUDA RTX Blackwell 5070)" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,4,0,3"/>
                                     <TextBlock TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource TextSecondary}" LineHeight="20" Margin="0,0,0,10">
-                                        • The embedded AI engine includes PyTorch CUDA 12.8 with native support for RTX 50-Series Blackwell (sm_120) and RTX 40/30/20 series GPUs. AI stem separation runs in under 30 seconds on GPU, with automatic graceful fallback to CPU if GPU memory is constrained.&#x0a;
+                                        • The embedded neural engine includes PyTorch CUDA 12.8 with native support for RTX 50-Series Blackwell (sm_120) and RTX 40/30/20 series GPUs. Multi-track stem separation runs in under 30 seconds on GPU, with automatic graceful fallback to CPU if GPU memory is constrained.&#x0a;
                                         • Toggle GPU acceleration and UI animations under Settings → General &amp; Paths.
                                     </TextBlock>
 
@@ -2020,7 +2038,7 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel>
-                                        <TextBlock x:Name="CreditsVersionTitle" Text="GH3-Sync v1.5.4 — Created by Mad Scientist" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+                                        <TextBlock x:Name="CreditsVersionTitle" Text="GH3-Sync v1.5.5 — Created by Mad Scientist" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
                                         <StackPanel Orientation="Horizontal" Margin="0,4,0,4">
                                             <TextBlock Text="GitHub: " FontSize="12.5" Foreground="{DynamicResource TextMuted}"/>
                                             <TextBlock FontSize="12.5">
@@ -2031,7 +2049,7 @@
                                                 <Hyperlink NavigateUri="https://github.com/tbailey639/GH3-Sync" RequestNavigate="Hyperlink_RequestNavigate" Foreground="{DynamicResource CardInfoTitle}">GH3-Sync Repository</Hyperlink>
                                             </TextBlock>
                                         </StackPanel>
-                                        <TextBlock x:Name="AboutUpdateStatus" Text="Version 1.5.4 (Authentic GH3 Highway, Song Creator &amp; SmartScreen Edition)" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
+                                        <TextBlock x:Name="AboutUpdateStatus" Text="Version 1.5.5 (Batch Creator, Instant P2P Sync &amp; Clean Studio Edition)" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="Check for Updates" Style="{StaticResource FlameButton}" VerticalAlignment="Center" Click="CheckUpdatesBtn_Click"/>
                                 </Grid>

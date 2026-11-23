@@ -371,6 +371,11 @@ bool TryAuthorize(HttpContext context, SecurityService sec, FriendService friend
         var candidates = new List<(string Secret, string Mode, string Principal)>();
         foreach (var f in friends.Friends.Where(x => x.IsTrusted && !string.IsNullOrWhiteSpace(x.TrustToken)))
             candidates.Add((f.TrustToken, "trusted", f.Username));
+        foreach (var f in friends.Friends)
+        {
+            var mutual = FriendService.DeriveSharedSecret(AppConfig.Current.FriendCode, f.FriendCode);
+            candidates.Add((mutual, f.IsTrusted ? "trusted" : "friend", f.Username));
+        }
         foreach (var inv in sec.GetActiveExpiringInvites())
             candidates.Add((inv.Token, "invite", inv.Label));
         candidates.Add((sec.PairingPin, "pin", "Session PIN"));
@@ -2111,6 +2116,15 @@ else
                 ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown
             };
 
+            try
+            {
+                var darkTheme = new System.Windows.ResourceDictionary { Source = new Uri("pack://application:,,,/Views/DarkTheme.xaml") };
+                var appTheme = new System.Windows.ResourceDictionary { Source = new Uri("pack://application:,,,/Views/AppTheme.xaml") };
+                wpfApp.Resources.MergedDictionaries.Add(darkTheme);
+                wpfApp.Resources.MergedDictionaries.Add(appTheme);
+            }
+            catch { }
+
             bool isMainWindowReady = false;
             wpfApp.DispatcherUnhandledException += (_, exArgs) =>
             {
@@ -2140,6 +2154,7 @@ else
 
                 var splash = new GH3_Sync.Views.SplashWindow();
                 splash.Show();
+                var splashStartTime = DateTime.UtcNow;
                 splash.UpdateProgress(20, "Starting background sync service...");
 
                 try
@@ -2255,16 +2270,19 @@ else
                 }
 
                 splash.UpdateProgress(100, "Ready to Rock!");
-                await Task.Delay(250);
-
-                // Close splash screen before presenting the dark MainWindow so no white frame ever flashes
-                try { splash.Close(); } catch { }
+                var elapsed = (DateTime.UtcNow - splashStartTime).TotalMilliseconds;
+                if (elapsed < 1400)
+                {
+                    await Task.Delay((int)(1400 - elapsed));
+                }
 
                 wpfApp.MainWindow = mainWin;
                 mainWin.Closed += (_, _) => wpfApp.Shutdown();
                 mainWin.Opacity = 1;
                 mainWin.Show();
                 mainWin.Activate();
+
+                try { await splash.FadeOutAndCloseAsync(); } catch { try { splash.Close(); } catch { } }
             };
 
             wpfApp.Run();

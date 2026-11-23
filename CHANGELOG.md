@@ -4,6 +4,34 @@ Created by **Mad Scientist** ([tbailey639](https://github.com/tbailey639)). Nota
 
 ---
 
+## [v1.5.5] - 2026-11-22 — Batch Creator, Zero-Trust P2P Auto-Heal & Clean Studio Edition
+
+### 📦 Unified Batch Selection & Creator Recompile
+* **Dedicated Batch Actions Menu:** Replaced scattered individual buttons with a unified "⚡ Batch Actions ▾" dropdown and action bar: Send to Song Creator (Batch Recompile), Rechart Studio, Fast Re-Chart, Chart Doctor (Batch Auto-Fix), Add to Lobby, Export Pack, and Bulk Delete.
+* **Smart Auto-Collapse Bar:** The batch operations toolbar now collapses cleanly (`Visibility.Collapsed`) when 0 songs are selected and smoothly expands as soon as any songs are checked.
+* **Instant "Select All" Notebook Header:** Added a prominent "Select All" toggle directly on the Guitar Hero notebook parchment header, allowing 1-click multi-selection across the entire library.
+* **Direct Batch Recompile in Creator:** Clicking "➕ Send to Creator (Batch Recompile)" instantly queues all selected tracks into Song Creator's batch queue with `AutoCompile = true`, navigates directly to Song Creator, and prepares for compilation.
+
+### 👥 P2P Zero-Trust Mutual Authentication (401 Unauthorized Auto-Heal)
+* **Deterministic Mutual Friend Secret:** Resolved the "401 (Unauthorized)" connection failure when connecting to trusted friends in the lobby. Friends now deterministically derive an identical shared cryptographic token (`DeriveSharedSecret`) based on their two sorted Friend Codes, guaranteeing immediate authenticated connection without requiring out-of-band token exchanges.
+* **Symmetrical Lobby & Auto-Retry:** Both peers in P2P Sync & Lobby now share identical real-time status and hype soundboard capabilities. If an authentication challenge ever reports 401, the client automatically auto-heals and retries with the mutual derived secret.
+* **Hidden Background Internet Tunnel:** Streamlined the P2P and Friends tabs by removing redundant manual "Restart Internet Tunnel" buttons from normal view. The Cloudflare Quick Tunnel and global signaling relay now operate 100% silently in the background.
+
+### ⏰ Timezone-Independent Online Clock & Statuses
+* **UTC Timestamp Normalization:** Fixed the 5-hour clock skew in offline statuses ("Offline 5h ago"). All timestamps are strictly parsed with `EnsureUtc`, eliminating timezone discrepancies between different client PCs.
+* **Local Time Presentation:** All displayed dates, backup timestamps, and relative status indicators ("Active just now", "Offline 15m ago") format strictly according to the user's local PC clock.
+
+### 🧹 Studio Naming Overhaul & Zero AI Jargon
+* **Authentic Studio Terms:** Replaced all artificial "AI" labels across menus, headers, tooltips, and status bars with authentic recording studio terminology ("Neural Pitch Tracking", "Multi-Track Stems", "Rechart Studio", "Instant Studio Cache").
+* **Crowd Chants Clean-Up:** Removed "Chorus claps" and isolated Beat It vocal remnants from the crowd chant generator. Restored the pristine 4-minute 38-second concert arena crowd soundbank and synthesized full-track sing-alongs matching whichever song is currently playing.
+* **Strict Uncheck Verification:** Unchecking "Stadium Sing-Along & Crowd Chants" in Song Creator now completely removes all crowd audio stems from the song project and sets `enable_stadium_chants = false` in `song.ini`, ensuring zero unwanted chanting audio compiles into the FSB soundbank.
+
+### ⚡ Instant Library Rendering (UI Hang Elimination)
+* **Zero Disk I/O UI Thread Rendering:** Added cached `AudioPath` directly to `CustomSongInfo`. Eliminating repeated recursive disk searches (`Directory.GetFiles`) during `BuildSongCard` rendering makes scrolling and setlist loading instantaneous.
+* **Seamless Splash Handoff:** Pre-merged dark theme dictionaries at application initialization and preserved the animated splash window until `MainWindow` has completed its initial frame rendering, permanently eliminating white screen flashes.
+
+---
+
 ## [v1.5.4] - 2026-11-22 — Authentic GH3 Highway, Song Creator Checkboxes & Signed SmartScreen Edition
 
 ### 🎸 Authentic Guitar Hero III Highway & 3D Strike Buttons
