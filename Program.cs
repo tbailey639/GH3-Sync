@@ -1,7 +1,4 @@
-﻿using System.IO;
-using System.IO.Pipes;
-using System.Net;
-using System.Net.Http;
+﻿using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
 using System.IO.Compression;
@@ -9,51 +6,11 @@ using System.Diagnostics;
 using GH3_Sync;
 
 var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-var appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GH3-Sync");
-var writableWebRoot = Path.Combine(appDataDir, "p2p_root");
-Directory.CreateDirectory(writableWebRoot);
-
-bool isHeadlessArg = args.Contains("--headless") || args.Contains("--no-gui") || args.Contains("--server") || args.Contains("--verify-features");
-bool hasCustomPortArg = args.Any(a => a.StartsWith("--port="));
-Mutex? singleInstanceMutex = null;
-
-if (!isHeadlessArg && !hasCustomPortArg)
-{
-    // Use initiallyOwned: false so the named kernel Mutex tracks single-instance lifetime
-    // without thread-affinity ownership (avoids ApplicationException on async shutdown threads).
-    singleInstanceMutex = new Mutex(false, @"Global\GH3_Sync_SingleInstance_v1", out bool createdNew);
-    if (!createdNew)
-    {
-        try
-        {
-            using var pipeClient = new NamedPipeClientStream(".", "GH3_Sync_RestorePipe", PipeDirection.Out);
-            pipeClient.Connect(1200);
-            using var sw = new StreamWriter(pipeClient);
-            sw.WriteLine("RESTORE");
-            sw.Flush();
-        }
-        catch { }
-        return;
-    }
-}
-
-AppDomain.CurrentDomain.UnhandledException += (_, exArgs) =>
-{
-    try
-    {
-        var err = exArgs.ExceptionObject?.ToString() ?? "Unknown fatal error";
-        File.WriteAllText(Path.Combine(appDataDir, "crash.log"), $"[{DateTime.Now}]\n{err}\n");
-        System.Windows.MessageBox.Show($"GH3-Sync encountered a startup error:\n\n{err}", "GH3-Sync Error",
-            System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-    }
-    catch { }
-};
-
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args = args,
-    ContentRootPath = appDataDir,
-    WebRootPath = writableWebRoot
+    ContentRootPath = baseDir,
+    WebRootPath = Path.Combine(baseDir, "wwwroot")
 });
 
 // Configure port
@@ -74,201 +31,30 @@ var gh3Service = new Gh3Service();
 var syncLogger = new SyncLogger(gh3Service.GamePath);
 var securityService = new SecurityService();
 var friendService = new FriendService(baseDir);
-var signalingRelay = new SignalingRelayService(friendService, syncLogger);
-SignalingRelayService.ActivityStatusProvider = () =>
-{
-    if (System.Diagnostics.Process.GetProcessesByName("GH3").Length > 0)
-        return "Playing GH3";
-    return "In Lobby";
-};
-signalingRelay.Start();
-FriendService.SignalingRelay = signalingRelay;
-
-// Purge any legacy link-local 169.254.* addresses from saved friends list
-foreach (var fr in AppConfig.Current.Friends)
-{
-    if (fr.LastAddress != null && fr.LastAddress.Contains("169.254."))
-    {
-        fr.LastAddress = "";
-        AppConfig.Save();
-    }
-}
-var saveManager = new SaveManager(syncLogger, gh3Service.GamePath);
+var saveManager = new SaveManager(syncLogger);
 var compilerService = new HoneycombCompilerService(gh3Service, syncLogger, saveManager);
-var cloneHeroService = new CloneHeroImportService(compilerService, syncLogger);
-var audioAnalysisService = new AudioAnalysisService(syncLogger);
-var demucsService = new DemucsService(syncLogger);
-var creatorService = new SongCreatorService(compilerService, audioAnalysisService, demucsService);
+var creatorService = new SongCreatorService(compilerService);
 var natService = new NatPortMappingService(port, syncLogger);
-var updateService = new UpdateService(syncLogger);
-var tempSessionService = new TemporarySessionService(gh3Service, saveManager, syncLogger);
-AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { tempSessionService.EndSessionAndCleanup(); } catch { } };
-try { tempSessionService.ReconcileLibraryIntegrity(); } catch { }
-var componentUpdater = new ComponentUpdaterService(gh3Service, updateService, demucsService, syncLogger);
-var chartDoctor = new ChartDoctorService(compilerService, syncLogger);
-var betterGh3Tweaks = new BetterGh3TweaksService(gh3Service, syncLogger);
-var tunnelService = new TunnelAndMeshService(port, syncLogger);
-var careerScores = new CareerSaveScoreService(gh3Service, saveManager, syncLogger);
-var discordRpc = new DiscordRpcService(
-    syncLogger,
-    () => gh3Service.GetInstalledCustomSongs().Count,
-    () => ((AppConfig.Current.LobbySetlistIds ?? new()).Count, Math.Clamp(AppConfig.Current.MaxLobbyAutoSyncSongs, 1, 25)));
 
 builder.Services.AddSingleton(gh3Service);
 builder.Services.AddSingleton(syncLogger);
 builder.Services.AddSingleton(securityService);
 builder.Services.AddSingleton(friendService);
 builder.Services.AddSingleton(compilerService);
-builder.Services.AddSingleton(cloneHeroService);
-builder.Services.AddSingleton(audioAnalysisService);
-builder.Services.AddSingleton(demucsService);
 builder.Services.AddSingleton(creatorService);
 builder.Services.AddSingleton(saveManager);
 builder.Services.AddSingleton(natService);
-builder.Services.AddSingleton(updateService);
-builder.Services.AddSingleton(tempSessionService);
-builder.Services.AddSingleton(componentUpdater);
-builder.Services.AddSingleton(tunnelService);
-builder.Services.AddSingleton(signalingRelay);
-builder.Services.AddSingleton(careerScores);
 builder.Services.AddHttpClient();
 
 var app = builder.Build();
 
-static (string EffectiveIp, bool IsExternal) ResolveClientIdentity(HttpContext context)
-{
-    var rawIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-    bool isDirectLoopback = SecurityService.IsLoopbackIp(rawIp);
-    // Cloudflare Quick Tunnel / reverse proxy connections arrive from 127.0.0.1 with CF-Connecting-IP / X-Forwarded-For
-    if (isDirectLoopback)
-    {
-        if (context.Request.Headers.TryGetValue("CF-Connecting-IP", out var cfIp) && !string.IsNullOrWhiteSpace(cfIp.ToString()))
-            return (cfIp.ToString().Trim(), true);
-        if (context.Request.Headers.TryGetValue("X-Forwarded-For", out var xff) && !string.IsNullOrWhiteSpace(xff.ToString()))
-            return (xff.ToString().Split(',')[0].Trim(), true);
-        return (rawIp, false);
-    }
-    return (rawIp, true);
-}
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
-static bool IsExternalP2pRoute(string path)
-{
-    if (path.Equals("/api/auth/challenge", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/api/manifest", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/api/download-customs-pak", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.StartsWith("/api/download/", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/api/profile", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/api/friends/request", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/api/friends/accept", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/api/friends/decline", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/api/friends/check-status", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/api/friends/trust-upgrade", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/api/friends/trust-upgrade-accept", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/api/lobby/ready", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/api/lobby/roulette-roll", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/api/lobby/hype-sfx", StringComparison.OrdinalIgnoreCase)) return true;
-    if (path.Equals("/api/lobby/play-invite", StringComparison.OrdinalIgnoreCase)) return true;
-    return false;
-}
-
-// Strict External-IP Lockdown, Localhost DNS-Rebinding/CSRF Shield, IP Ban, Online/Offline P2P Mode & Rate Limit Middleware
-app.Use(async (context, next) =>
-{
-    var (effectiveIp, isExternal) = ResolveClientIdentity(context);
-    var reqPath = context.Request.Path.Value ?? "/";
-
-    if (!isExternal)
-    {
-        // Localhost DNS-Rebinding Guard: reject spoofed Host headers (e.g. evil.com pointing to 127.0.0.1)
-        var hostName = context.Request.Host.Host ?? "";
-        bool validLocalHost = hostName.Equals("localhost", StringComparison.OrdinalIgnoreCase)
-                           || hostName == "127.0.0.1"
-                           || hostName == "::1"
-                           || hostName == "[::1]";
-        if (!string.IsNullOrEmpty(hostName) && !validLocalHost)
-        {
-            syncLogger.LogWarn($"[SECURITY] Blocked DNS-rebinding Host header '{hostName}' on {reqPath}");
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.WriteAsJsonAsync(new { error = "Forbidden: invalid local Host header." });
-            return;
-        }
-
-        // Localhost Browser CSRF Shield: reject cross-origin fetches from external websites
-        if (context.Request.Headers.TryGetValue("Origin", out var originHdr) && !string.IsNullOrWhiteSpace(originHdr.ToString()))
-        {
-            var origin = originHdr.ToString().Trim();
-            bool safeOrigin = origin.StartsWith("http://127.0.0.1", StringComparison.OrdinalIgnoreCase)
-                           || origin.StartsWith("http://localhost", StringComparison.OrdinalIgnoreCase)
-                           || origin.StartsWith("http://[::1]", StringComparison.OrdinalIgnoreCase);
-            if (!safeOrigin)
-            {
-                syncLogger.LogWarn($"[SECURITY] Blocked cross-origin browser CSRF request from '{origin}' to {reqPath}");
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                await context.Response.WriteAsJsonAsync(new { error = "Forbidden: cross-origin requests to local API are blocked." });
-                return;
-            }
-        }
-    }
-
-    if (isExternal)
-    {
-        // Auto-heal / update friend's live connection address when remote peer connects
-        if (context.Request.Headers.TryGetValue("X-GH3-Sender-Code", out var sc) &&
-            context.Request.Headers.TryGetValue("X-GH3-Sender-Address", out var sa))
-        {
-            var sCode = sc.ToString().Trim().ToUpperInvariant();
-            var sAddr = sa.ToString().Trim();
-            if (!string.IsNullOrEmpty(sCode) && !string.IsNullOrEmpty(sAddr) && !sAddr.Contains("169.254."))
-            {
-                if (!sCode.StartsWith("GH3-")) sCode = "GH3-" + sCode;
-                var friend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(sCode, StringComparison.OrdinalIgnoreCase));
-                if (friend != null && friend.LastAddress != sAddr)
-                {
-                    friend.LastAddress = sAddr;
-                    AppConfig.Save();
-                    syncLogger.LogInfo($"[FRIENDS] Auto-updated live address for {friend.Username} to {sAddr}");
-                }
-            }
-        }
-
-        if (securityService.IsIpBlocked(effectiveIp))
-        {
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.WriteAsJsonAsync(new { error = "Access denied: IP is temporarily locked or banned." });
-            return;
-        }
-
-        if (!IsExternalP2pRoute(reqPath))
-        {
-            syncLogger.LogWarn($"[SECURITY] Blocked external IP {effectiveIp} from local-only endpoint: {reqPath}");
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.WriteAsJsonAsync(new { error = "Forbidden: endpoint restricted to local desktop access only." });
-            return;
-        }
-
-        if (!AppConfig.Current.P2pOnlineEnabled)
-        {
-            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-            await context.Response.WriteAsJsonAsync(new { error = "Peer P2P sharing is currently in Offline Mode." });
-            return;
-        }
-    }
-
-    if (!securityService.CheckRequestRateLimit(effectiveIp, syncLogger))
-    {
-        context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-        await context.Response.WriteAsJsonAsync(new { error = "Rate limit exceeded. Please wait a moment and try again." });
-        return;
-    }
-
-    await next();
-});
-
-// Start In-Game Overlay & Discord Rich Presence
+// Start In-Game Overlay
 var overlay = new InGameOverlay(syncLogger);
 overlay.Start();
-discordRpc.Start();
-syncLogger.LogInfo("In-game HUD overlay & Discord Rich Presence services started.");
+syncLogger.LogInfo("In-game HUD overlay service started.");
 syncLogger.LogInfo($"[SECURITY] Session Pairing PIN: {securityService.PairingPin}");
 syncLogger.LogInfo($"[PROFILE] Active user: {friendService.Profile.Username} ({friendService.Profile.FriendCode})");
 
@@ -293,27 +79,19 @@ string globalBroadcastNotice = "";
 
 string GetBestPublicOrLanAddress()
 {
-    if (tunnelService.IsTunnelActive && !string.IsNullOrWhiteSpace(tunnelService.ActiveTunnelUrl))
-        return tunnelService.ActiveTunnelUrl!;
-
     if (!string.IsNullOrWhiteSpace(AppConfig.Current.CustomPublicAddress))
     {
         var custom = AppConfig.Current.CustomPublicAddress.Trim();
         if (!custom.StartsWith("http://") && !custom.StartsWith("https://")) custom = "http://" + custom;
-        if (!custom.Contains("169.254.")) return custom;
+        return custom;
     }
 
-    var meshUrl = tunnelService.GetPreferredMeshUrl();
-    if (!string.IsNullOrWhiteSpace(meshUrl))
-        return meshUrl;
-
-    if (!string.IsNullOrEmpty(natService.PublicIp) && !natService.PublicIp.StartsWith("169.254."))
+    if (!string.IsNullOrEmpty(natService.PublicIp))
     {
         return $"http://{natService.PublicIp}:{natService.ExternalPort ?? port}";
     }
 
-    var localIp = GetLocalIpAddress();
-    return $"http://{localIp}:{port}";
+    return $"http://{GetLocalIpAddress()}:{port}";
 }
 
 string GetLocalIpAddress()
@@ -324,152 +102,42 @@ string GetLocalIpAddress()
         socket.Connect("8.8.8.8", 65530);
         if (socket.LocalEndPoint is IPEndPoint endPoint)
         {
-            var ipStr = endPoint.Address.ToString();
-            if (!ipStr.StartsWith("169.254.") && !ipStr.StartsWith("127."))
-                return ipStr;
+            return endPoint.Address.ToString();
         }
     }
     catch { }
-
-    try
-    {
-        var nics = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
-            .Where(n => n.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up &&
-                        n.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback);
-
-        foreach (var nic in nics)
-        {
-            foreach (var ip in nic.GetIPProperties().UnicastAddresses)
-            {
-                if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
-                {
-                    var s = ip.Address.ToString();
-                    if (!s.StartsWith("169.254.") && !s.StartsWith("127."))
-                        return s;
-                }
-            }
-        }
-    }
-    catch { }
-
     return "127.0.0.1";
 }
 
-FriendService.BestAddressProvider = GetBestPublicOrLanAddress;
-
-bool TryAuthorize(HttpContext context, SecurityService sec, FriendService friends, SyncLogger logger, out string sharedSecret, out bool isTrustedFriend)
+bool IsAuthorized(HttpContext context, SecurityService sec, FriendService friends, SyncLogger logger)
 {
-    sharedSecret = sec.PairingPin;
-    isTrustedFriend = false;
-    var (remoteIp, isExternal) = ResolveClientIdentity(context);
+    var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
-    // 1. Challenge-Response HMAC-SHA256 Auth (Preferred — secret never crosses the wire in plaintext!)
-    if (context.Request.Headers.TryGetValue("X-GH3-Auth-Nonce", out var hdrNonce) &&
-        context.Request.Headers.TryGetValue("X-GH3-Auth-Timestamp", out var hdrTs) &&
-        context.Request.Headers.TryGetValue("X-GH3-Auth-Hmac", out var hdrHmac))
-    {
-        var candidates = new List<(string Secret, string Mode, string Principal)>();
-        foreach (var f in friends.Friends.Where(x => x.IsTrusted && !string.IsNullOrWhiteSpace(x.TrustToken)))
-            candidates.Add((f.TrustToken, "trusted", f.Username));
-        foreach (var f in friends.Friends)
-        {
-            var mutual = FriendService.DeriveSharedSecret(AppConfig.Current.FriendCode, f.FriendCode);
-            candidates.Add((mutual, f.IsTrusted ? "trusted" : "friend", f.Username));
-        }
-        if (context.Request.Headers.TryGetValue("X-GH3-Sender-Code", out var senderCodeHdr) && !string.IsNullOrWhiteSpace(senderCodeHdr))
-        {
-            var senderMutual = FriendService.DeriveSharedSecret(AppConfig.Current.FriendCode, senderCodeHdr.ToString());
-            candidates.Add((senderMutual, "trusted", senderCodeHdr.ToString()));
-        }
-        foreach (var inv in sec.GetActiveExpiringInvites())
-            candidates.Add((inv.Token, "invite", inv.Label));
-        candidates.Add((sec.PairingPin, "pin", "Session PIN"));
+    // 1. Local loopback is always allowed for web dashboard
+    if (remoteIp == "127.0.0.1" || remoteIp == "::1") return true;
 
-        var methodPath = $"{context.Request.Method} {context.Request.Path.Value}";
-        if (sec.TryConsumeChallengeHmac(hdrNonce.ToString(), hdrTs.ToString(), hdrHmac.ToString(), methodPath, remoteIp, candidates, out var matchedSecret, out var mode, out var principal))
-        {
-            sharedSecret = matchedSecret;
-            isTrustedFriend = mode == "trusted" || mode == "invite";
-            sec.RecordAuthSuccess(remoteIp);
-            logger.LogInfo($"[SECURITY] Challenge-HMAC auth granted ({mode}: {principal}) from {remoteIp}");
-            return true;
-        }
-        if (isExternal && sec.IsIpBlocked(remoteIp))
-            return false;
-
-        sec.RecordAuthFailure(remoteIp, "Invalid or replayed Challenge-Response HMAC", logger);
-        return false;
-    }
-
-    if (isExternal && sec.IsIpBlocked(remoteIp))
-        return false;
-
-    // 2. Backwards-compatible HTTP Headers ONLY (never query strings, which leak in logs/history)
+    // 2. Check for Trusted Friend Token (Skips PIN & IP restrictions!)
     string? token = null;
     if (context.Request.Headers.TryGetValue("X-GH3-Trust-Token", out var headerToken))
         token = headerToken.ToString();
+    else if (context.Request.Query.TryGetValue("token", out var queryToken))
+        token = queryToken.ToString();
 
-    string? pin = null;
-    if (context.Request.Headers.TryGetValue("X-GH3-PIN", out var headerPin))
-        pin = headerPin.ToString();
-
-    if (!string.IsNullOrEmpty(token))
+    if (!string.IsNullOrEmpty(token) && friends.ValidateTrustToken(token, out var trustedFriend))
     {
-        if (friends.ValidateTrustToken(token, out var trustedFriend))
-        {
-            sharedSecret = token;
-            isTrustedFriend = true;
-            sec.RecordAuthSuccess(remoteIp);
-            logger.LogInfo($"[SECURITY] Trusted Friend access granted to: {trustedFriend?.Username} from {remoteIp}");
-            return true;
-        }
-        if (sec.ValidateExpiringInviteToken(token, out var invite))
-        {
-            sharedSecret = token;
-            isTrustedFriend = true;
-            sec.RecordAuthSuccess(remoteIp);
-            logger.LogInfo($"[SECURITY] Expiring Invite access granted ({invite?.Label}) from {remoteIp}");
-            return true;
-        }
-        if (context.Request.Headers.TryGetValue("X-GH3-Sender-Code", out var senderCodeDirect) && !string.IsNullOrWhiteSpace(senderCodeDirect))
-        {
-            var derivedDirect = FriendService.DeriveSharedSecret(AppConfig.Current.FriendCode, senderCodeDirect.ToString());
-            if (token.Equals(derivedDirect, StringComparison.OrdinalIgnoreCase))
-            {
-                sharedSecret = token;
-                isTrustedFriend = true;
-                sec.RecordAuthSuccess(remoteIp);
-                logger.LogInfo($"[SECURITY] Direct Derived Secret access granted for sender {senderCodeDirect} from {remoteIp}");
-                return true;
-            }
-        }
-        sec.RecordAuthFailure(remoteIp, "Invalid/revoked Trust or Invite Token", logger);
-        return false;
-    }
-
-    if (!string.IsNullOrEmpty(pin))
-    {
-        if (sec.ValidatePin(pin, remoteIp, logger))
-        {
-            sharedSecret = pin;
-            isTrustedFriend = false;
-            return true;
-        }
-        return false;
-    }
-
-    // 3. Unauthenticated local loopback (owner self-diagnostics only — NEVER Cloudflare-proxied external)
-    if (!isExternal)
-    {
-        isTrustedFriend = true;
+        logger.LogInfo($"[SECURITY] Trusted Friend access granted to: {trustedFriend?.Username} from {remoteIp}");
         return true;
     }
 
-    return false;
-}
+    // 3. Fallback: Check Pairing PIN
+    string? pin = null;
+    if (context.Request.Headers.TryGetValue("X-GH3-PIN", out var headerPin))
+        pin = headerPin.ToString();
+    else if (context.Request.Query.TryGetValue("pin", out var queryPin))
+        pin = queryPin.ToString();
 
-bool IsAuthorized(HttpContext context, SecurityService sec, FriendService friends, SyncLogger logger)
-    => TryAuthorize(context, sec, friends, logger, out _, out _);
+    return sec.ValidatePin(pin, remoteIp, logger);
+}
 
 // Background Heartbeat to Admin Hub (Safe Telemetry & Broadcasts)
 _ = Task.Run(async () =>
@@ -508,20 +176,6 @@ _ = Task.Run(async () =>
                 if (reply.TryGetProperty("broadcast", out var b))
                 {
                     globalBroadcastNotice = b.GetString() ?? "";
-                }
-                if (reply.TryGetProperty("pendingRequests", out var pr) && pr.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var item in pr.EnumerateArray())
-                    {
-                        var sCode = item.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
-                        var sUser = item.TryGetProperty("senderUsername", out var su) ? su.GetString() ?? "" : "";
-                        var sAddr = item.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
-                        var sTok = item.TryGetProperty("proposedTrustToken", out var pt) ? pt.GetString() : null;
-                        if (!string.IsNullOrWhiteSpace(sCode))
-                        {
-                            friendService.ReceiveFriendRequest(sCode, sUser, sAddr, sTok);
-                        }
-                    }
                 }
             }
         }
@@ -724,29 +378,6 @@ app.MapGet("/api/open-ghproj", (string? path, SyncLogger logger) =>
 
         if (ghprojFile != null && File.Exists(ghprojFile))
         {
-            var honeycombDir = HoneycombCompilerService.FindHoneycombDirectory();
-            var honeycombExe = !string.IsNullOrEmpty(honeycombDir) ? Path.Combine(honeycombDir, "Honeycomb-GUI.exe") : null;
-
-            if (honeycombExe != null && File.Exists(honeycombExe))
-            {
-                try
-                {
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = honeycombExe,
-                        Arguments = $"\"{ghprojFile}\"",
-                        WorkingDirectory = honeycombDir,
-                        UseShellExecute = true
-                    });
-                    logger.LogInfo($"[HONEYCOMB] Launched Honeycomb-GUI with project: {ghprojFile}");
-                    return Results.Ok(new { success = true, opened = ghprojFile, method = "Honeycomb-GUI.exe" });
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarn($"[HONEYCOMB] Direct exe launch failed ({ex.Message}), falling back to shell...");
-                }
-            }
-
             try
             {
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
@@ -865,314 +496,6 @@ app.MapPost("/api/profile", async (HttpContext context, FriendService friends, S
 });
 
 app.MapGet("/api/friends", (FriendService friends) => Results.Ok(friends.Friends));
-
-app.MapGet("/api/friends/requests", (FriendService friends) => Results.Ok(new
-{
-    incoming = friends.IncomingRequests,
-    outgoing = friends.OutgoingRequests
-}));
-
-app.MapPost("/api/friends/lookup", async (HttpContext context, FriendService friends, IHttpClientFactory clientFactory) =>
-{
-    using var reader = new StreamReader(context.Request.Body);
-    var body = await reader.ReadToEndAsync();
-    var req = JsonSerializer.Deserialize<JsonElement>(body);
-    var code = req.TryGetProperty("friendCode", out var c) ? c.GetString() ?? "" : "";
-    var client = clientFactory.CreateClient();
-    var result = await friends.LookupFriendByCodeAsync(code, client);
-    return Results.Ok(result);
-});
-
-app.MapPost("/api/friends/send-request", async (HttpContext context, FriendService friends, IHttpClientFactory clientFactory, SyncLogger logger) =>
-{
-    using var reader = new StreamReader(context.Request.Body);
-    var body = await reader.ReadToEndAsync();
-    var req = JsonSerializer.Deserialize<JsonElement>(body);
-    var code = req.TryGetProperty("friendCode", out var c) ? c.GetString() ?? "" : "";
-    var address = req.TryGetProperty("address", out var a) ? a.GetString() : null;
-
-    if (string.IsNullOrWhiteSpace(code))
-        return Results.BadRequest(new { success = false, message = "Friend Code is required." });
-
-    var client = clientFactory.CreateClient();
-    var result = await friends.SendFriendRequestAsync(code, address, client);
-    if (result.Success && result.ReceivedByPeer)
-    {
-        AppConfig.IncrementUsage("friend");
-        logger.LogInfo($"[FRIENDS] Friend request delivered and confirmed received by {result.Username} ({result.FriendCode})");
-    }
-    else
-    {
-        logger.LogWarn($"[FRIENDS] Could not deliver friend request to {code}: {result.Message}");
-    }
-
-    return Results.Ok(result);
-});
-
-// P2P Handshake: Remote peer calls this endpoint to deliver an incoming friend request
-app.MapPost("/api/friends/request", async (HttpContext context, FriendService friends, SyncLogger logger) =>
-{
-    using var reader = new StreamReader(context.Request.Body);
-    var body = await reader.ReadToEndAsync();
-    var req = JsonSerializer.Deserialize<JsonElement>(body);
-
-    var senderCode = req.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
-    var senderUsername = req.TryGetProperty("senderUsername", out var su) ? su.GetString() ?? "" : "";
-    var senderAddress = req.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
-    var proposedToken = req.TryGetProperty("proposedTrustToken", out var pt) ? pt.GetString() : null;
-    var isTrusted = !req.TryGetProperty("isTrusted", out var it) || it.GetBoolean();
-
-    if (string.IsNullOrWhiteSpace(senderCode))
-        return Results.BadRequest(new { error = "senderCode is required." });
-
-    var res = friends.ReceiveFriendRequest(senderCode, senderUsername, senderAddress, proposedToken, isTrusted);
-    logger.LogInfo($"[FRIENDS] Received friend request from {senderUsername} ({senderCode}) at {senderAddress} [Status: {res.Status}, Trusted: {isTrusted}]");
-
-    return Results.Ok(new
-    {
-        success = res.Success,
-        received = res.Received,
-        status = res.Status,
-        username = res.Username,
-        friendCode = res.FriendCode,
-        message = "Friend request successfully received and waiting for approval."
-    });
-});
-
-// P2P Handshake: Remote peer calls this endpoint when they request a trust upgrade
-app.MapPost("/api/friends/trust-upgrade", async (HttpContext context, FriendService friends, SyncLogger logger) =>
-{
-    using var reader = new StreamReader(context.Request.Body);
-    var body = await reader.ReadToEndAsync();
-    var req = JsonSerializer.Deserialize<JsonElement>(body);
-
-    var senderCode = req.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
-    var senderUsername = req.TryGetProperty("senderUsername", out var su) ? su.GetString() ?? "" : "";
-    var senderAddress = req.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
-    var proposedToken = req.TryGetProperty("proposedTrustToken", out var pt) ? pt.GetString() : null;
-
-    if (string.IsNullOrWhiteSpace(senderCode))
-        return Results.BadRequest(new { error = "senderCode is required." });
-
-    var res = friends.ReceiveTrustUpgradeRequest(senderCode, senderUsername, senderAddress, proposedToken);
-    logger.LogInfo($"[FRIENDS] Received trust upgrade request from {senderUsername} ({senderCode}) at {senderAddress}");
-
-    return Results.Ok(new
-    {
-        success = res.Success,
-        received = res.Received,
-        status = res.Status,
-        username = res.Username,
-        friendCode = res.FriendCode,
-        message = "Trust upgrade request successfully received and waiting for approval."
-    });
-});
-
-// P2P Handshake: Remote peer calls this endpoint when they accept our trust upgrade request
-app.MapPost("/api/friends/trust-upgrade-accept", async (HttpContext context, FriendService friends, SyncLogger logger) =>
-{
-    using var reader = new StreamReader(context.Request.Body);
-    var body = await reader.ReadToEndAsync();
-    var req = JsonSerializer.Deserialize<JsonElement>(body);
-
-    var senderCode = req.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
-    var senderUsername = req.TryGetProperty("senderUsername", out var su) ? su.GetString() ?? "" : "";
-    var senderAddress = req.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
-    var trustToken = req.TryGetProperty("trustToken", out var tt) ? tt.GetString() : null;
-
-    if (!string.IsNullOrWhiteSpace(senderCode))
-    {
-        var friend = friends.ProcessTrustUpgradeAccepted(senderCode, senderUsername, senderAddress, trustToken);
-        if (friend != null)
-        {
-            logger.LogInfo($"[FRIENDS] Remote peer {friend.Username} ({friend.FriendCode}) accepted trust upgrade! Full song sync enabled.");
-        }
-    }
-
-    return Results.Ok(new { success = true });
-});
-
-// Direct P2P Lobby Ready-Up endpoint
-app.MapPost("/api/lobby/ready", async (HttpContext context, SignalingRelayService signalingRelay, SyncLogger logger) =>
-{
-    using var reader = new StreamReader(context.Request.Body);
-    var body = await reader.ReadToEndAsync();
-    var req = JsonSerializer.Deserialize<JsonElement>(body);
-
-    var senderCode = req.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
-    var isReady = req.TryGetProperty("isReady", out var ir) && ir.GetBoolean();
-
-    if (!string.IsNullOrWhiteSpace(senderCode))
-    {
-        var friend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(senderCode, StringComparison.OrdinalIgnoreCase));
-        if (friend != null)
-        {
-            friend.IsLobbyReady = isReady;
-        }
-        signalingRelay.TriggerPeerReadyChanged(senderCode, isReady);
-        logger.LogInfo($"[LOBBY] Peer {senderCode} sent direct ready-state: {isReady}");
-    }
-
-    return Results.Ok(new { success = true });
-});
-
-// Direct P2P Party Roulette Roll endpoint
-app.MapPost("/api/lobby/roulette-roll", async (HttpContext context, SignalingRelayService signalingRelay, SyncLogger logger) =>
-{
-    using var reader = new StreamReader(context.Request.Body);
-    var body = await reader.ReadToEndAsync();
-    var req = JsonSerializer.Deserialize<JsonElement>(body);
-
-    var senderCode = req.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
-    var seed = req.TryGetProperty("seed", out var sp) ? sp.GetInt32() : 0;
-    var songIds = new List<string>();
-    if (req.TryGetProperty("songIds", out var sa) && sa.ValueKind == JsonValueKind.Array)
-    {
-        foreach (var item in sa.EnumerateArray())
-        {
-            var sId = item.GetString();
-            if (!string.IsNullOrWhiteSpace(sId)) songIds.Add(sId);
-        }
-    }
-
-    if (!string.IsNullOrWhiteSpace(senderCode))
-    {
-        signalingRelay.TriggerPeerRouletteRoll(senderCode, seed, songIds);
-        logger.LogInfo($"[LOBBY] Peer {senderCode} sent direct roulette-roll with {songIds.Count} songs (seed {seed})");
-    }
-
-    return Results.Ok(new { success = true });
-});
-
-// Direct P2P Lobby Hype SFX endpoint
-app.MapPost("/api/lobby/hype-sfx", async (HttpContext context, SyncLogger logger) =>
-{
-    var type = context.Request.Query["type"].ToString();
-    if (string.IsNullOrWhiteSpace(type) && context.Request.HasJsonContentType())
-    {
-        try
-        {
-            using var reader = new StreamReader(context.Request.Body);
-            var body = await reader.ReadToEndAsync();
-            var req = JsonSerializer.Deserialize<JsonElement>(body);
-            if (req.TryGetProperty("type", out var tp)) type = tp.GetString() ?? "";
-            else if (req.TryGetProperty("sfxType", out var stp)) type = stp.GetString() ?? "";
-        }
-        catch { }
-    }
-    if (string.IsNullOrWhiteSpace(type)) type = "airhorn";
-
-    logger.LogInfo($"[LOBBY] Direct P2P hype SFX received: '{type}'");
-    AudioWaveformAndSfxService.PlayHypeSound(type);
-    return Results.Ok(new { success = true, sfx = type });
-});
-
-// Direct P2P Lobby "Ask to Play Together" Invite endpoint
-app.MapPost("/api/lobby/play-invite", async (HttpContext context, SignalingRelayService signaling, SyncLogger logger) =>
-{
-    using var reader = new StreamReader(context.Request.Body);
-    var body = await reader.ReadToEndAsync();
-    var req = JsonSerializer.Deserialize<JsonElement>(body);
-
-    var senderCode = req.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
-    var senderUsername = req.TryGetProperty("senderUsername", out var su) ? su.GetString() ?? "Player" : "Player";
-    var senderAddress = req.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
-
-    logger.LogInfo($"[LOBBY] Received direct 'ROCK OUT' play invite from {senderUsername} ({senderCode})");
-    signaling.TriggerPlayInvite(senderCode, senderUsername, senderAddress);
-    return Results.Ok(new { success = true, message = $"{senderUsername} invite received." });
-});
-
-// P2P Handshake: Remote peer calls this endpoint when they accept our friend request
-app.MapPost("/api/friends/accept", async (HttpContext context, FriendService friends, SyncLogger logger) =>
-{
-    using var reader = new StreamReader(context.Request.Body);
-    var body = await reader.ReadToEndAsync();
-    var req = JsonSerializer.Deserialize<JsonElement>(body);
-
-    var senderCode = req.TryGetProperty("senderCode", out var sc) ? sc.GetString() ?? "" : "";
-    var senderUsername = req.TryGetProperty("senderUsername", out var su) ? su.GetString() ?? "" : "";
-    var senderAddress = req.TryGetProperty("senderAddress", out var sa) ? sa.GetString() ?? "" : "";
-    var trustToken = req.TryGetProperty("trustToken", out var tt) ? tt.GetString() : null;
-    var isTrusted = !req.TryGetProperty("isTrusted", out var it) || it.GetBoolean();
-
-    if (!string.IsNullOrWhiteSpace(senderCode))
-    {
-        var friend = friends.ProcessPeerAcceptedRequest(senderCode, senderUsername, senderAddress, trustToken, isTrusted);
-        logger.LogInfo($"[FRIENDS] Remote peer {friend.Username} ({friend.FriendCode}) accepted friend request! Mutual trust established.");
-    }
-
-    return Results.Ok(new { success = true });
-});
-
-app.MapPost("/api/friends/accept-request", async (HttpContext context, FriendService friends, IHttpClientFactory clientFactory, SyncLogger logger) =>
-{
-    using var reader = new StreamReader(context.Request.Body);
-    var body = await reader.ReadToEndAsync();
-    var req = JsonSerializer.Deserialize<JsonElement>(body);
-    var idOrCode = req.TryGetProperty("id", out var i) ? i.GetString() ?? "" : (req.TryGetProperty("friendCode", out var c) ? c.GetString() ?? "" : "");
-    var asTrusted = !req.TryGetProperty("asTrusted", out var at) || at.GetBoolean();
-
-    var client = clientFactory.CreateClient();
-    var added = await friends.AcceptFriendRequestAsync(idOrCode, asTrusted, client);
-    if (added != null)
-    {
-        AppConfig.IncrementUsage("friend");
-        logger.LogInfo($"[FRIENDS] Accepted friend request for {added.Username} ({added.FriendCode}) [Trusted: {added.IsTrusted}]");
-        return Results.Ok(new { success = true, friend = added });
-    }
-    return Results.NotFound(new { error = "Friend request not found." });
-});
-
-app.MapPost("/api/friends/decline-request", async (HttpContext context, FriendService friends, SyncLogger logger) =>
-{
-    using var reader = new StreamReader(context.Request.Body);
-    var body = await reader.ReadToEndAsync();
-    var req = JsonSerializer.Deserialize<JsonElement>(body);
-    var idOrCode = req.TryGetProperty("id", out var i) ? i.GetString() ?? "" : (req.TryGetProperty("friendCode", out var c) ? c.GetString() ?? "" : "");
-
-    var ok = friends.DeclineFriendRequest(idOrCode);
-    logger.LogInfo($"[FRIENDS] Declined friend request for {idOrCode}");
-    return Results.Ok(new { success = ok });
-});
-
-app.MapPost("/api/friends/cancel-request", async (HttpContext context, FriendService friends, SyncLogger logger) =>
-{
-    using var reader = new StreamReader(context.Request.Body);
-    var body = await reader.ReadToEndAsync();
-    var req = JsonSerializer.Deserialize<JsonElement>(body);
-    var idOrCode = req.TryGetProperty("id", out var i) ? i.GetString() ?? "" : (req.TryGetProperty("friendCode", out var c) ? c.GetString() ?? "" : "");
-
-    var ok = friends.CancelOutgoingRequest(idOrCode);
-    logger.LogInfo($"[FRIENDS] Canceled outgoing friend request for {idOrCode}");
-    return Results.Ok(new { success = ok });
-});
-
-app.MapGet("/api/friends/check-status", (string? code, FriendService friends) =>
-{
-    var cleanCode = code?.Trim().ToUpperInvariant() ?? "";
-    if (!cleanCode.StartsWith("GH3-")) cleanCode = "GH3-" + cleanCode;
-
-    var friend = AppConfig.Current.Friends.FirstOrDefault(f => f.FriendCode.Equals(cleanCode, StringComparison.OrdinalIgnoreCase));
-    if (friend != null)
-    {
-        return Results.Ok(new
-        {
-            isFriend = true,
-            isTrusted = friend.IsTrusted,
-            trustToken = friend.IsTrusted ? friend.TrustToken : "",
-            username = friends.Profile.Username
-        });
-    }
-
-    return Results.Ok(new
-    {
-        isFriend = false,
-        isTrusted = false,
-        trustToken = "",
-        username = friends.Profile.Username
-    });
-});
 
 app.MapPost("/api/friends/add", async (HttpContext context, FriendService friends, SyncLogger logger) =>
 {
@@ -1339,52 +662,26 @@ app.MapPost("/api/feedback", async (HttpContext context, IHttpClientFactory clie
 
 app.MapGet("/api/feedback", () => Results.Ok(AppConfig.GetFeedback()));
 
-// ==================== P2P CHALLENGE-RESPONSE & SYNC APIs ====================
-app.MapGet("/api/auth/challenge", (HttpContext context, SecurityService sec) =>
-{
-    var (remoteIp, _) = ResolveClientIdentity(context);
-    var nonce = sec.IssueAuthChallenge(remoteIp);
-    return Results.Ok(new { nonce, expiresInSeconds = 90 });
-});
-
+// ==================== P2P SYNC & MANIFEST APIs ====================
 app.MapGet("/api/manifest", (HttpContext context, Gh3Service gh3, SyncLogger logger, SecurityService sec, FriendService friends) =>
 {
     if (!IsAuthorized(context, sec, friends, logger))
         return Results.Unauthorized();
 
-    logger.LogDebug("Serving authenticated & ECDSA-signed manifest request to peer.");
-    logger.PulsePeerActivity("Peer connected & checking library");
-    var manifestJson = JsonSerializer.SerializeToUtf8Bytes(gh3.GenerateManifest());
-    context.Response.Headers["X-GH3-Host-PubKey"] = sec.HostPublicKeyBase64;
-    context.Response.Headers["X-GH3-Host-Fingerprint"] = sec.HostPublicKeyFingerprint;
-    context.Response.Headers["X-GH3-Host-Signature"] = sec.SignManifestBytes(manifestJson);
-    return Results.Bytes(manifestJson, "application/json; charset=utf-8");
+    logger.LogDebug("Serving authenticated manifest request to peer.");
+    return Results.Ok(gh3.GenerateManifest());
 });
 
-app.MapGet("/api/download/{songId}", async (HttpContext context, string songId, Gh3Service gh3, SyncLogger logger, SecurityService sec, FriendService friends) =>
+app.MapGet("/api/download/{songId}", (HttpContext context, string songId, Gh3Service gh3, SyncLogger logger, SecurityService sec, FriendService friends) =>
 {
-    if (!TryAuthorize(context, sec, friends, logger, out var sharedSecret, out var isTrustedFriend))
+    if (!IsAuthorized(context, sec, friends, logger))
         return Results.Unauthorized();
-
-    var (peerIp, isExternalPeer) = ResolveClientIdentity(context);
-    if (isExternalPeer && AppConfig.Current.RequireHostDownloadApproval)
-    {
-        var matchSong = gh3.GetInstalledCustomSongs().FirstOrDefault(s => s.SongId.Equals(songId, StringComparison.OrdinalIgnoreCase));
-        bool approved = await sec.RequestDownloadApprovalAsync(peerIp, songId, matchSong?.Title ?? songId, matchSong?.TotalSizeBytes ?? 0, logger);
-        if (!approved)
-            return Results.Json(new { error = "Download request was declined by the host." }, statusCode: StatusCodes.Status403Forbidden);
-    }
-
-    bool acquired = await sec.DownloadConcurrencyGuard.WaitAsync(TimeSpan.FromSeconds(30));
-    if (!acquired)
-        return Results.Json(new { error = "Server busy handling concurrent song transfers. Please retry shortly." }, statusCode: StatusCodes.Status429TooManyRequests);
 
     try
     {
         logger.LogInfo($"Serving encrypted song package for: {songId}");
-        logger.PulsePeerActivity($"Sharing {songId}");
         var packageBytes = gh3.PackageSong(songId);
-        var encryptedBytes = sec.EncryptPayload(packageBytes, sharedSecret);
+        var encryptedBytes = sec.EncryptPayload(packageBytes);
         return Results.File(encryptedBytes, "application/octet-stream", $"{songId}.gh3enc");
     }
     catch (FileNotFoundException ex)
@@ -1397,31 +694,19 @@ app.MapGet("/api/download/{songId}", async (HttpContext context, string songId, 
         logger.LogError($"Error packaging song {songId}", ex);
         return Results.BadRequest(new { error = ex.Message });
     }
-    finally
-    {
-        sec.DownloadConcurrencyGuard.Release();
-    }
 });
 
 app.MapGet("/api/download-customs-pak", (HttpContext context, Gh3Service gh3, SyncLogger logger, SecurityService sec, FriendService friends) =>
 {
-    if (!TryAuthorize(context, sec, friends, logger, out var sharedSecret, out var isTrustedFriend))
+    if (!IsAuthorized(context, sec, friends, logger))
         return Results.Unauthorized();
-
-    if (!isTrustedFriend)
-    {
-        logger.LogWarn("[SECURITY] Blocked untrusted PIN request for customs.pak.xen (Trusted Friend Token required).");
-        return Results.Json(
-            new { error = "Trusted Friend Token required to download songlist data." },
-            statusCode: StatusCodes.Status403Forbidden);
-    }
 
     if (!File.Exists(gh3.CustomsPakPath))
         return Results.NotFound(new { error = "customs.pak.xen not found." });
 
-    logger.LogInfo("Serving encrypted customs.pak.xen to trusted peer.");
+    logger.LogInfo("Serving encrypted customs.pak.xen to peer.");
     var rawBytes = File.ReadAllBytes(gh3.CustomsPakPath);
-    var encryptedBytes = sec.EncryptPayload(rawBytes, sharedSecret);
+    var encryptedBytes = sec.EncryptPayload(rawBytes);
     return Results.File(encryptedBytes, "application/octet-stream", "customs.pak.xen.gh3enc");
 });
 
@@ -1455,7 +740,8 @@ app.MapPost("/api/peer/compare", async (HttpContext context, IHttpClientFactory 
         if (!string.IsNullOrEmpty(pin)) client.DefaultRequestHeaders.Add("X-GH3-PIN", pin);
         if (!string.IsNullOrEmpty(token)) client.DefaultRequestHeaders.Add("X-GH3-Trust-Token", token);
 
-        var manifestUrl = $"{baseUrl}/api/manifest";
+        var manifestUrl = $"{baseUrl}/api/manifest" + 
+            (!string.IsNullOrEmpty(token) ? $"?token={token}" : (!string.IsNullOrEmpty(pin) ? $"?pin={pin}" : ""));
         var remoteManifest = await client.GetFromJsonAsync<LibraryManifest>(manifestUrl);
 
         if (remoteManifest == null)
@@ -1578,7 +864,8 @@ app.MapPost("/api/peer/sync-all", async (HttpContext context, IHttpClientFactory
         if (!string.IsNullOrEmpty(pin)) client.DefaultRequestHeaders.Add("X-GH3-PIN", pin);
         if (!string.IsNullOrEmpty(token)) client.DefaultRequestHeaders.Add("X-GH3-Trust-Token", token);
 
-        var manifestUrl = $"{baseUrl}/api/manifest";
+        var manifestUrl = $"{baseUrl}/api/manifest" + 
+            (!string.IsNullOrEmpty(token) ? $"?token={token}" : (!string.IsNullOrEmpty(pin) ? $"?pin={pin}" : ""));
         var remoteManifest = await client.GetFromJsonAsync<LibraryManifest>(manifestUrl);
         if (remoteManifest == null) throw new InvalidOperationException("Could not fetch remote manifest.");
 
@@ -1597,7 +884,6 @@ app.MapPost("/api/peer/sync-all", async (HttpContext context, IHttpClientFactory
         int totalToSync = missingSongs.Count;
         int installedCount = 0;
 
-        var sharedSecret = !string.IsNullOrEmpty(token) ? token : (!string.IsNullOrEmpty(pin) ? pin : sec.PairingPin);
         for (int i = 0; i < missingSongs.Count; i++)
         {
             var song = missingSongs[i];
@@ -1605,31 +891,30 @@ app.MapPost("/api/peer/sync-all", async (HttpContext context, IHttpClientFactory
 
             logger.SetStatus(SyncState.Syncing, $"Syncing ({i + 1}/{totalToSync})", song.Title, percent);
 
-            var downloadUrl = $"{baseUrl}/api/download/{Uri.EscapeDataString(song.SongId)}";
+            var downloadUrl = $"{baseUrl}/api/download/{Uri.EscapeDataString(song.SongId)}" + 
+                (!string.IsNullOrEmpty(token) ? $"?token={token}" : (!string.IsNullOrEmpty(pin) ? $"?pin={pin}" : ""));
             var encryptedBytes = await client.GetByteArrayAsync(downloadUrl);
-            var zipBytes = sec.DecryptPayload(encryptedBytes, sharedSecret);
+            var zipBytes = sec.DecryptPayload(encryptedBytes);
 
-            gh3.InstallSongPackage(zipBytes, logger, song.PakHash, song.FsbHash, mergeIntoCustomsPak: true);
+            gh3.InstallSongPackage(zipBytes, logger);
             installedCount++;
         }
 
-        // Only pull full customs.pak.xen if recipient does not have one yet; otherwise individual songs were merged cleanly!
-        if (!File.Exists(gh3.CustomsPakPath))
+        // Pull updated customs.pak.xen
+        logger.SetStatus(SyncState.Syncing, "Finalizing Setlist", "customs.pak.xen", 95);
+        try
         {
-            logger.SetStatus(SyncState.Syncing, "Finalizing Setlist", "customs.pak.xen", 95);
-            try
-            {
-                var customsUrl = $"{baseUrl}/api/download-customs-pak";
-                var encryptedCustomsBytes = await client.GetByteArrayAsync(customsUrl);
-                var customsPakBytes = sec.DecryptPayload(encryptedCustomsBytes, sharedSecret);
+            var customsUrl = $"{baseUrl}/api/download-customs-pak" + 
+                (!string.IsNullOrEmpty(token) ? $"?token={token}" : (!string.IsNullOrEmpty(pin) ? $"?pin={pin}" : ""));
+            var encryptedCustomsBytes = await client.GetByteArrayAsync(customsUrl);
+            var customsPakBytes = sec.DecryptPayload(encryptedCustomsBytes);
 
-                gh3.BackupAndDeployCustomsPak(customsPakBytes);
-                logger.LogInfo("customs.pak.xen verified and deployed successfully.");
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarn($"Failed to sync customs.pak.xen: {ex.Message}");
-            }
+            gh3.BackupAndDeployCustomsPak(customsPakBytes);
+            logger.LogInfo("customs.pak.xen verified and deployed successfully.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarn($"Failed to sync customs.pak.xen: {ex.Message}");
         }
 
         AppConfig.IncrementUsage("sync");
@@ -1678,11 +963,11 @@ app.MapGet("/api/peer/download-file", async (string remoteUrl, string songId, IH
         if (!string.IsNullOrEmpty(pin)) client.DefaultRequestHeaders.Add("X-GH3-PIN", pin);
         if (!string.IsNullOrEmpty(token)) client.DefaultRequestHeaders.Add("X-GH3-Trust-Token", token);
 
-        var sharedSecret = !string.IsNullOrEmpty(token) ? token : (!string.IsNullOrEmpty(pin) ? pin : sec.PairingPin);
-        var downloadUrl = $"{baseUrl}/api/download/{Uri.EscapeDataString(cleanSongId)}";
+        var downloadUrl = $"{baseUrl}/api/download/{Uri.EscapeDataString(cleanSongId)}" +
+            (!string.IsNullOrEmpty(token) ? $"?token={token}" : (!string.IsNullOrEmpty(pin) ? $"?pin={pin}" : ""));
 
         var encryptedBytes = await client.GetByteArrayAsync(downloadUrl);
-        var zipBytes = sec.DecryptPayload(encryptedBytes, sharedSecret);
+        var zipBytes = sec.DecryptPayload(encryptedBytes);
 
         logger.LogInfo($"Successfully downloaded '{cleanSongId}' ({zipBytes.Length:N0} bytes) from connected user.");
         return Results.File(zipBytes, "application/zip", $"{cleanSongId}.gh3song");
@@ -1694,45 +979,7 @@ app.MapGet("/api/peer/download-file", async (string remoteUrl, string songId, IH
     }
 });
 
-// ==================== ONOGAMI SONG CREATOR & AI AUDIO ====================
-app.MapGet("/api/demucs/status", (DemucsService demucs) =>
-{
-    return Results.Ok(demucs.GetStatus());
-});
-
-app.MapPost("/api/audio/detect-bpm", async (HttpRequest request, AudioAnalysisService analyzer) =>
-{
-    if (!request.HasFormContentType)
-        return Results.BadRequest(new { error = "Form-data required with audio file." });
-
-    var form = await request.ReadFormAsync();
-    var audio = form.Files.GetFile("audioFile");
-    if (audio == null || audio.Length == 0)
-        return Results.BadRequest(new { error = "Audio file required." });
-
-    var tempPath = Path.Combine(Path.GetTempPath(), $"bpm_check_{Guid.NewGuid():N}.mp3");
-    try
-    {
-        using (var fs = File.Create(tempPath))
-        {
-            await audio.CopyToAsync(fs);
-        }
-        var analysis = analyzer.AnalyzeAudio(tempPath);
-        return Results.Ok(new
-        {
-            success = analysis.Success,
-            bpm = analysis.Bpm,
-            downbeatMs = analysis.DownbeatOffsetMs,
-            message = analysis.Message,
-            onsetsCount = analysis.OnsetTimestampsSeconds.Count
-        });
-    }
-    finally
-    {
-        if (File.Exists(tempPath)) File.Delete(tempPath);
-    }
-});
-
+// ==================== ONOGAMI SONG CREATOR ====================
 app.MapPost("/api/creator/create-song", async (HttpRequest request, SongCreatorService creator, SyncLogger logger) =>
 {
     if (!request.HasFormContentType)
@@ -1741,9 +988,6 @@ app.MapPost("/api/creator/create-song", async (HttpRequest request, SongCreatorS
     var form = await request.ReadFormAsync();
     var autoGen = form["autoGenerateChart"].ToString() == "true";
     var autoCompile = form["autoCompile"].ToString() == "true" || (form.ContainsKey("autoCompile") ? false : AppConfig.Current.AutoCompileCreatedSongs);
-    var autoDetectBpm = form["autoDetectBpm"].ToString() == "true" || !form.ContainsKey("bpm") || string.IsNullOrWhiteSpace(form["bpm"]);
-    var separateStems = form["separateStems"].ToString() == "true";
-
     var meta = new SongCreationRequest
     {
         Title = form["title"].ToString(),
@@ -1756,8 +1000,6 @@ app.MapPost("/api/creator/create-song", async (HttpRequest request, SongCreatorS
         DiffRhythm = int.TryParse(form["diffRhythm"], out var dr) ? dr : 3,
         PreviewStartMs = int.TryParse(form["previewStartMs"], out var ps) ? ps : 5000,
         Bpm = int.TryParse(form["bpm"], out var bpmVal) ? bpmVal : 130,
-        AutoDetectBpm = autoDetectBpm,
-        SeparateStemsWithDemucs = separateStems,
         AutoGenerateChart = autoGen,
         AutoCompile = autoCompile
     };
@@ -1879,17 +1121,6 @@ app.MapPost("/api/import-archive", async (HttpRequest request, Gh3Service gh3, S
     }
 });
 
-// ==================== OBS STUDIO LOOPBACK-ONLY OVERLAY ====================
-app.MapGet("/obs-overlay", () => Results.Content(ObsOverlayService.BuildOverlayHtml(), "text/html; charset=utf-8"));
-app.MapGet("/api/obs-now-playing", () => Results.Ok(ObsOverlayService.GetSnapshot()));
-app.MapGet("/api/obs-now-playing/art", () =>
-{
-    var art = ObsOverlayService.GetCoverArtPath();
-    if (string.IsNullOrEmpty(art) || !File.Exists(art)) return Results.NotFound();
-    var ct = art.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ? "image/png" : "image/jpeg";
-    return Results.File(File.ReadAllBytes(art), ct);
-});
-
 // ==================== LOGS & EXPORT ====================
 app.MapGet("/api/logs", (SyncLogger logger) => Results.Content(logger.ReadRecentLogs(200), "text/plain"));
 
@@ -1924,415 +1155,31 @@ app.MapGet("/api/export-pack", (Gh3Service gh3, SyncLogger logger) =>
     return Results.File(ms.ToArray(), "application/zip", "GH3_Full_Customs_Pack.gh3pack");
 });
 
+// Auto launch browser
+if (!args.Contains("--no-browser") && !args.Contains("--headless"))
+{
+    _ = Task.Run(async () =>
+    {
+        await Task.Delay(1200);
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = $"http://localhost:{port}",
+                UseShellExecute = true
+            });
+        }
+        catch { }
+    });
+}
+
 Console.WriteLine("=================================================");
-Console.WriteLine($"  GH3-Sync v{UpdateService.CurrentAppVersion}");
-Console.WriteLine($"  P2P Sync Listener:   http://localhost:{port}");
+Console.WriteLine($"  🎸 GH3-Sync Beta 4 (v{AppConfig.Current.AppVersion}) | P2P Synchronizer, Friends & ONOGAMI");
+Console.WriteLine($"  Local Web Dashboard: http://localhost:{port}");
 Console.WriteLine($"  LAN Address:         http://{GetLocalIpAddress()}:{port}");
 Console.WriteLine($"  Public / NAT Address: {GetBestPublicOrLanAddress()}");
 Console.WriteLine($"  Active Profile:      {friendService.Profile.Username} [{friendService.Profile.FriendCode}]");
 Console.WriteLine($"  Session PIN:         {securityService.PairingPin}");
 Console.WriteLine("=================================================");
 
-if (args.Contains("--verify-features"))
-{
-    Console.WriteLine("=================================================");
-    Console.WriteLine("  RUNNING SELF-VERIFICATION SUITE: BOTH FEATURES");
-    Console.WriteLine("=================================================");
-
-    bool friendTestPassed = false;
-    bool crowdTestPassed = false;
-    bool qbTestPassed = false;
-
-    // ----- TEST 1: Xbox-Style Asynchronous Friend Requests -----
-    try
-    {
-        Console.WriteLine("[TEST 1] Dispatching friend request to '9999-TEST'...");
-        var sendRes = await friendService.SendFriendRequestAsync("9999-TEST", asTrusted: true);
-        Console.WriteLine($"  Send Result: Success={sendRes.Success}, FriendCode={sendRes.FriendCode}, Message={sendRes.Message}");
-
-        var outReq = AppConfig.Current.FriendRequests.FirstOrDefault(r => r.FriendCode == "GH3-9999-TEST" && r.Direction == "Outgoing");
-        if (sendRes.Success && outReq != null && outReq.Status == "Pending")
-        {
-            Console.WriteLine("  [PASS] Outgoing request saved in AppConfig as Pending.");
-
-            // Test receiving incoming request
-            Console.WriteLine("[TEST 1b] Simulating incoming request from 'GH3-8888-PEER'...");
-            var recvRes = friendService.ReceiveFriendRequest("GH3-8888-PEER", "PeerPlayer", "http://127.0.0.1:9999", "test_tok", true);
-            var inReq = AppConfig.Current.FriendRequests.FirstOrDefault(r => r.FriendCode == "GH3-8888-PEER" && r.Direction == "Incoming");
-            if (recvRes.Success && inReq != null)
-            {
-                Console.WriteLine("  [PASS] Incoming request recorded in AppConfig as Pending.");
-
-                // Test accepting incoming request
-                Console.WriteLine("[TEST 1c] Accepting incoming request from 'GH3-8888-PEER'...");
-                var acceptedFriend = await friendService.AcceptFriendRequestAsync("GH3-8888-PEER", asTrusted: true);
-                var isFriend = AppConfig.Current.Friends.Any(f => f.FriendCode == "GH3-8888-PEER" && f.IsTrusted);
-                if (acceptedFriend != null && isFriend)
-                {
-                    Console.WriteLine("  [PASS] Mutual friend created with trusted permissions.");
-                    friendTestPassed = true;
-                }
-            }
-        }
-
-        // Clean up test items
-        AppConfig.Current.FriendRequests.RemoveAll(r => r.FriendCode == "GH3-9999-TEST" || r.FriendCode == "GH3-8888-PEER");
-        AppConfig.Current.Friends.RemoveAll(f => f.FriendCode == "GH3-8888-PEER");
-        AppConfig.Save();
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"  [FAIL] Friend test threw exception: {ex.Message}");
-    }
-
-    // ----- TEST 2: Authentic Stadium Crowd Choir Audio Stem Generation -----
-    try
-    {
-        Console.WriteLine("[TEST 2] Generating authentic concert crowd choir stem for 'Prince - Gently Weeps'...");
-        var chantsService = new AiStadiumChantsService();
-        var crowdRes = await chantsService.GenerateStadiumChantsAsync(
-            @"G:\Guitar Hero Songs\Prince - Gently Weeps\song.mp3",
-            @"G:\Guitar Hero Songs\Prince - Gently Weeps\notes.chart",
-            120.0,
-            (pct, msg) => Console.WriteLine($"  [{pct}%] {msg}")
-        );
-
-        Console.WriteLine($"  Crowd Result: Success={crowdRes.Success}, Message={crowdRes.Message}");
-        var crowdWav = @"G:\Guitar Hero Songs\Prince - Gently Weeps\song_crowd.wav";
-        if (crowdRes.Success && File.Exists(crowdWav) && new FileInfo(crowdWav).Length > 1024 * 1024)
-        {
-            var lenMb = (new FileInfo(crowdWav).Length / 1024.0 / 1024.0).ToString("F2");
-            Console.WriteLine($"  [PASS] song_crowd.wav generated ({lenMb} MB) with pristine studio crowd audio!");
-            crowdTestPassed = true;
-        }
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"  [FAIL] Crowd audio test threw exception: {ex.Message}");
-    }
-
-    // ----- TEST 3: QB Script Star Power & Streak Modulation Logic -----
-    try
-    {
-        Console.WriteLine("[TEST 3] Verifying QB bytecode logic in script_override.q...");
-        var qbPath = Path.Combine(baseDir, "tools", "compiler", "Resources", "GH3", "script_override.q");
-        if (!File.Exists(qbPath)) qbPath = @"G:\Guitar Hero Songs\GH3-Sync\tools\compiler\Resources\GH3\script_override.q";
-
-        var qbText = File.ReadAllText(qbPath);
-        bool hasStarPowerCheck = qbText.Contains("if ($player1_status.star_power_used = 1)") &&
-                                 qbText.Contains("music_rhythm = {vol = 4.0}");
-        bool hasStreakCheck = qbText.Contains("elseif ($player1_status.multiplier >= 4)") &&
-                              qbText.Contains("music_rhythm = {vol = 1.0}");
-        bool hasDropoutCheck = qbText.Contains("music_rhythm = {vol = -100.0}");
-
-        if (hasStarPowerCheck && hasStreakCheck && hasDropoutCheck)
-        {
-            Console.WriteLine("  [PASS] QB script verified: Star Power forces vol=4.0 continuously (never drops out on miss), 4x streak gives vol=1.0, and streak < 4x drops out!");
-            qbTestPassed = true;
-        }
-        else
-        {
-            Console.WriteLine($"  [FAIL] QB script missing required blocks: SP={hasStarPowerCheck}, 4x={hasStreakCheck}, Drop={hasDropoutCheck}");
-        }
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"  [FAIL] QB script test threw exception: {ex.Message}");
-    }
-
-    // ----- TEST 4: P2P Lobby Temporary Sync, Kept Songs & Soundboard Synthesis -----
-    bool p2pLobbyTestPassed = false;
-    try
-    {
-        Console.WriteLine("[TEST 4] Testing Lobby Permanent Keep, Library Reconcile & Soundboard...");
-        AppConfig.MarkSongAsKept("test-permanent-song");
-        bool keptOk = AppConfig.IsKeptFriendSong("test-permanent-song");
-        AppConfig.UnmarkSongAsKept("test-permanent-song");
-        bool unkeptOk = !AppConfig.IsKeptFriendSong("test-permanent-song");
-
-        var recResult = tempSessionService.ReconcileLibraryIntegrity();
-        AudioWaveformAndSfxService.PlayHypeSound("airhorn");
-        AudioWaveformAndSfxService.PlayHypeSound("cheer");
-        AudioWaveformAndSfxService.PlayHypeSound("solo");
-
-        if (keptOk && unkeptOk)
-        {
-            Console.WriteLine($"  [PASS] Song keeping verified, Library Reconcile active (Action: {recResult.Message}), Soundboard synthesized successfully!");
-            p2pLobbyTestPassed = true;
-        }
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"  [FAIL] Test 4 threw exception: {ex.Message}");
-    }
-
-    // ----- TEST 5: Rockstar Profiles, Expanded Trophies, Play Together Invites & Notebook Setup -----
-    bool profileAndInviteTestPassed = false;
-    try
-    {
-        Console.WriteLine("[TEST 5] Testing Rockstar Profiles, Expanded Trophies & Play Invites...");
-        var trophies = RockHallOfFameService.GetAllAchievements();
-        bool trophyCountOk = trophies.Count >= 14;
-        bool hasTrustedDuo = trophies.Any(t => t.Id == "TRUSTED_DUO");
-        bool hasRockOutDuo = trophies.Any(t => t.Id == "ROCK_OUT_DUO");
-
-        string cleanUser = SignalingRelayService.CleanUsernameTopic("Johnny Rocker #1!");
-        bool cleanUserOk = cleanUser == "johnnyrocker1";
-
-        var lookupRes = await friendService.SearchFriendAsync("NonExistentPlayerCode99");
-        bool searchOk = !lookupRes.Found;
-
-        if (trophyCountOk && hasTrustedDuo && hasRockOutDuo && cleanUserOk && searchOk)
-        {
-            Console.WriteLine($"  [PASS] Profiles verified ({trophies.Count} trophies, clean username: {cleanUser}, search: operational)!");
-            profileAndInviteTestPassed = true;
-        }
-        else
-        {
-            Console.WriteLine($"  [FAIL] Test 5 failed checks: trophies={trophyCountOk}, duo={hasTrustedDuo}, rockOut={hasRockOutDuo}, clean={cleanUserOk}");
-        }
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"  [FAIL] Test 5 threw exception: {ex.Message}");
-    }
-
-    Console.WriteLine("=================================================");
-    if (friendTestPassed && crowdTestPassed && qbTestPassed && p2pLobbyTestPassed && profileAndInviteTestPassed)
-    {
-        Console.WriteLine("  [VERIFICATION SUCCESS] ALL FEATURES 100% OPERATIONAL!");
-        Console.WriteLine("=================================================");
-        return;
-    }
-    else
-    {
-        Console.WriteLine($"  [VERIFICATION FAILED] Friend={friendTestPassed}, Crowd={crowdTestPassed}, QB={qbTestPassed}, P2P={p2pLobbyTestPassed}, Profiles={profileAndInviteTestPassed}");
-        Console.WriteLine("=================================================");
-        Environment.Exit(1);
-        return;
-    }
-}
-
-bool isHeadless = isHeadlessArg;
-
-if (isHeadless)
-{
-    app.Run();
-}
-else
-{
-    var uiDone = new TaskCompletionSource<bool>();
-    using var pipeCts = new CancellationTokenSource();
-
-    var uiThread = new Thread(() =>
-    {
-        try
-        {
-            var wpfApp = new System.Windows.Application
-            {
-                ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown
-            };
-
-            try
-            {
-                var darkTheme = new System.Windows.ResourceDictionary { Source = new Uri("pack://application:,,,/Views/DarkTheme.xaml") };
-                var appTheme = new System.Windows.ResourceDictionary { Source = new Uri("pack://application:,,,/Views/AppTheme.xaml") };
-                wpfApp.Resources.MergedDictionaries.Add(darkTheme);
-                wpfApp.Resources.MergedDictionaries.Add(appTheme);
-            }
-            catch { }
-
-            bool isMainWindowReady = false;
-            wpfApp.DispatcherUnhandledException += (_, exArgs) =>
-            {
-                syncLogger.LogError("WPF UI Error", exArgs.Exception);
-                try
-                {
-                    File.WriteAllText(Path.Combine(appDataDir, "crash.log"), $"[{DateTime.Now}]\n{exArgs.Exception}\n");
-                    System.Windows.MessageBox.Show($"UI Error: {exArgs.Exception.Message}", "GH3-Sync",
-                        System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
-                }
-                catch { }
-                exArgs.Handled = true;
-
-                if (!isMainWindowReady)
-                {
-                    try { singleInstanceMutex?.Dispose(); } catch { }
-                    try { wpfApp.Shutdown(); } catch { }
-                    Environment.Exit(1);
-                }
-            };
-
-            wpfApp.Startup += async (_, _) =>
-            {
-                // Apply Full-App GPU Acceleration Mode from Config (Direct3D Tier 2 HW vs Software WARP)
-                GpuAccelerationService.ApplyRenderMode(AppConfig.Current.EnableGpuAcceleration);
-                GpuAccelerationService.Initialize(syncLogger);
-
-                var splash = new GH3_Sync.Views.SplashWindow();
-                splash.Show();
-                var splashStartTime = DateTime.UtcNow;
-                splash.UpdateProgress(20, "Starting background sync service...");
-
-                try
-                {
-                    await app.StartAsync();
-
-                    // Always-on silent background Internet tunnel for zero-touch friend sync
-                    if (AppConfig.Current.P2pOnlineEnabled)
-                    {
-                        _ = Task.Run(async () =>
-                        {
-                            try
-                            {
-                                syncLogger.LogInfo("[TUNNEL] Auto-starting background Cloudflare Internet tunnel for zero-touch sync...");
-                                var (ok, url) = await tunnelService.StartQuickTunnelAsync();
-                                if (ok && !string.IsNullOrWhiteSpace(url))
-                                {
-                                    syncLogger.LogInfo($"[TUNNEL] Background Cloudflare Internet tunnel ready: {url}");
-                                    if (!string.IsNullOrWhiteSpace(AppConfig.Current.FriendCode))
-                                    {
-                                        await signalingRelay.PublishHeartbeatAsync(AppConfig.Current.FriendCode, AppConfig.Current.Username, url);
-                                    }
-
-                                    // Watchdog: auto-restart on drop & re-announce live presence
-                                    tunnelService.StartTunnelWatchdog(async () =>
-                                    {
-                                        if (tunnelService.IsTunnelActive && !string.IsNullOrWhiteSpace(tunnelService.ActiveTunnelUrl) && !string.IsNullOrWhiteSpace(AppConfig.Current.FriendCode))
-                                        {
-                                            await signalingRelay.PublishHeartbeatAsync(AppConfig.Current.FriendCode, AppConfig.Current.Username, tunnelService.ActiveTunnelUrl);
-                                        }
-                                    });
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                syncLogger.LogWarn($"[TUNNEL] Background Cloudflare tunnel auto-start note: {ex.Message}");
-                            }
-                        });
-                    }
-                }
-                catch (Exception srvEx)
-                {
-                    syncLogger.LogWarn($"[P2P] Background listener port {port} busy or unavailable: {srvEx.Message}");
-                }
-                splash.UpdateProgress(55, "Loading Guitar Hero III song library...");
-                if (!string.IsNullOrWhiteSpace(gh3Service.GamePath))
-                {
-                    await Task.Run(() => CustomsPakService.RepairCustomsPakIfCorrupted(gh3Service.GamePath, syncLogger));
-                }
-
-                splash.UpdateProgress(85, "Preparing workspace...");
-                GH3_Sync.Views.MainWindow mainWin;
-                try
-                {
-                    mainWin = new GH3_Sync.Views.MainWindow(
-                        gh3Service,
-                        syncLogger,
-                        securityService,
-                        friendService,
-                        saveManager,
-                        compilerService,
-                        cloneHeroService,
-                        audioAnalysisService,
-                        demucsService,
-                        creatorService,
-                        natService,
-                        updateService,
-                        tempSessionService,
-                        componentUpdater,
-                        port,
-                        chartDoctor,
-                        betterGh3Tweaks,
-                        discordRpc,
-                        tunnelService,
-                        careerScores);
-                    isMainWindowReady = true;
-                }
-                catch (Exception initEx)
-                {
-                    syncLogger.LogError("Fatal MainWindow initialization failure", initEx);
-                    try { File.WriteAllText(Path.Combine(appDataDir, "crash.log"), $"[{DateTime.Now}]\n{initEx}\n"); } catch { }
-                    try { splash.Close(); } catch { }
-                    System.Windows.MessageBox.Show($"Fatal startup error initializing UI:\n\n{initEx.Message}\n\nPlease check %AppData%\\GH3-Sync\\crash.log for details.", "GH3-Sync Error",
-                        System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-                    try { singleInstanceMutex?.Dispose(); } catch { }
-                    wpfApp.Shutdown();
-                    Environment.Exit(1);
-                    return;
-                }
-
-                // Single-instance restore listener (brings minimized/tray window to front if user launches GH3-Sync again)
-                if (!hasCustomPortArg)
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        while (!pipeCts.IsCancellationRequested)
-                        {
-                            try
-                            {
-                                using var server = new NamedPipeServerStream("GH3_Sync_RestorePipe", PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-                                await server.WaitForConnectionAsync(pipeCts.Token);
-                                using var sr = new StreamReader(server);
-                                var msg = await sr.ReadLineAsync();
-                                if (msg == "RESTORE")
-                                {
-                                    mainWin.Dispatcher.Invoke(() => mainWin.RestoreFromTrayOrActivate());
-                                }
-                            }
-                            catch (OperationCanceledException) { break; }
-                            catch { await Task.Delay(500); }
-                        }
-                    });
-                }
-
-                splash.UpdateProgress(100, "Ready to Rock!");
-                var elapsed = (DateTime.UtcNow - splashStartTime).TotalMilliseconds;
-                if (elapsed < 1600)
-                {
-                    await Task.Delay((int)(1600 - elapsed));
-                }
-
-                wpfApp.MainWindow = mainWin;
-                mainWin.Closed += (_, _) => wpfApp.Shutdown();
-
-                // Smoothly fade out splash screen before displaying MainWindow to guarantee zero white background flash
-                try { await splash.FadeOutAndCloseAsync(); } catch { try { splash.Close(); } catch { } }
-
-                mainWin.Visibility = System.Windows.Visibility.Visible;
-                mainWin.Opacity = 1;
-                mainWin.Show();
-                mainWin.Activate();
-            };
-
-            wpfApp.Run();
-        }
-        catch (Exception ex)
-        {
-            syncLogger.LogError("WPF startup failed", ex);
-        }
-        finally
-        {
-            uiDone.TrySetResult(true);
-        }
-    });
-
-    uiThread.SetApartmentState(ApartmentState.STA);
-    uiThread.IsBackground = false;
-    uiThread.Start();
-
-    await uiDone.Task;
-    pipeCts.Cancel();
-    tunnelService.Dispose();
-    careerScores.Dispose();
-    discordRpc.Dispose();
-    tempSessionService.Stop();
-    await natService.RemoveMappingAsync();
-    await app.StopAsync();
-    try
-    {
-        GC.KeepAlive(singleInstanceMutex);
-        singleInstanceMutex?.Dispose();
-    }
-    catch { }
-}
+app.Run();
