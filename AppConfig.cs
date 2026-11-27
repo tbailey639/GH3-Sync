@@ -11,14 +11,6 @@ public class UserProfile
 {
     public string Username { get; set; } = "Player";
     public string FriendCode { get; set; } = "";
-    public string ShowcaseSongTitle { get; set; } = "";
-    public string ShowcaseSongId { get; set; } = "";
-    public string ActivityStatus { get; set; } = "Online";
-    public int TotalCustomSongs { get; set; } = 0;
-    public long TotalNotesHit { get; set; } = 0;
-    public int TotalFullCombos { get; set; } = 0;
-    public int TotalMatchesPlayed { get; set; } = 0;
-    public List<string> UnlockedAchievements { get; set; } = new();
 }
 
 public class FriendEntry
@@ -28,20 +20,6 @@ public class FriendEntry
     public string LastAddress { get; set; } = "";
     public bool IsTrusted { get; set; }
     public string TrustToken { get; set; } = "";
-    public string ActivityStatus { get; set; } = "Offline";
-    public DateTime LastSeenUtc { get; set; } = DateTime.MinValue;
-    public bool IsOnlineNow
-    {
-        get
-        {
-            var u = AppConfig.EnsureUtc(LastSeenUtc);
-            var diff = (DateTime.UtcNow - u).TotalSeconds;
-            return diff >= -180 && diff < 240;
-        }
-    }
-    public string ShowcaseSong { get; set; } = "";
-    public int PingMs { get; set; } = -1;
-    public bool IsLobbyReady { get; set; } = false;
     public DateTime AddedAt { get; set; } = DateTime.UtcNow;
 }
 
@@ -56,57 +34,6 @@ public class FeatureUsageStats
     public int FriendsAddedCount { get; set; } = 0;
 }
 
-public class SetlistPreset
-{
-    public string Name { get; set; } = "";
-    public List<string> SongIds { get; set; } = new();
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-}
-
-public class SongScoreRecord
-{
-    public int BestScore { get; set; }
-    public double BestPercent { get; set; }
-    public int BestStreak { get; set; }
-    public int Stars { get; set; }
-    public bool IsFullCombo { get; set; }
-    public string Difficulty { get; set; } = "Expert";
-    public DateTime AchievedAt { get; set; } = DateTime.UtcNow;
-}
-
-public class TourStats
-{
-    public long TotalNotesHit { get; set; }
-    public int TotalFullCombos { get; set; }
-    public int TotalSolosExtracted { get; set; }
-    public int TotalMedleysBuilt { get; set; }
-    public int TotalMatchesPlayed { get; set; }
-    public List<string> UnlockedTrophies { get; set; } = new();
-}
-
-public class SongRequestItem
-{
-    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
-    public string Requester { get; set; } = "Viewer";
-    public string Query { get; set; } = "";
-    public string MatchedSongId { get; set; } = "";
-    public DateTime RequestedAtUtc { get; set; } = DateTime.UtcNow;
-}
-
-public class FriendRequestItem
-{
-    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
-    public string FriendCode { get; set; } = "";
-    public string Username { get; set; } = "";
-    public string Address { get; set; } = "";
-    public string Direction { get; set; } = "Incoming"; // "Incoming" (they asked me) or "Outgoing" (I asked them)
-    public string Status { get; set; } = "Pending";     // "Pending", "Accepted", "Declined"
-    public string ProposedTrustToken { get; set; } = "";
-    public bool IsTrustedRequest { get; set; } = true;
-    public string RequestType { get; set; } = "Friend"; // "Friend" or "TrustUpgrade"
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-}
-
 public class FeedbackItem
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 8);
@@ -115,7 +42,7 @@ public class FeedbackItem
     public string Message { get; set; } = "";
     public string UserFriendCode { get; set; } = "";
     public string Username { get; set; } = "";
-    public string AppVersion { get; set; } = UpdateService.CurrentAppVersion;
+    public string AppVersion { get; set; } = "1.4.0-beta.4";
     public bool IsBetterGh3 { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string Status { get; set; } = "Open"; // Open, Investigating, Resolved
@@ -123,7 +50,7 @@ public class FeedbackItem
 
 public class AppConfigData
 {
-    public string AppVersion { get; set; } = UpdateService.CurrentAppVersion;
+    public string AppVersion { get; set; } = "1.4.0-beta.4";
     public string Username { get; set; } = "Player_" + Random.Shared.Next(1000, 9999);
     public string FriendCode { get; set; } = "";
     public string GamePath { get; set; } = "";
@@ -131,88 +58,17 @@ public class AppConfigData
     public string AdminHubUrl { get; set; } = "http://localhost:7575";
     public string CustomPublicAddress { get; set; } = ""; // DDNS or manually configured Public IP/Port
     public bool AutoPortMap { get; set; } = true;         // UPnP / NAT-PMP enabled
-    public bool P2pOnlineEnabled { get; set; } = true;    // Online/Offline P2P switch
-    public string ThemeMode { get; set; } = "Dark";       // Dark or Light custom GH3 theme
-    public bool AutoCheckUpdates { get; set; } = true;
-    public bool AutoRollbackOnFailedUpdate { get; set; } = true;
-    public bool HasAcknowledgedFirstTimeSaveNotice { get; set; } = false;
     public FeatureUsageStats Usage { get; set; } = new();
     public List<FriendEntry> Friends { get; set; } = new();
     public List<string> CreatedSongIds { get; set; } = new() { "beatit_6ce4b6e5", "gentlyweeps_26711a91", "onogami_fa5fdfea" };
     public string CustomSongsPath { get; set; } = "";
     public List<string> CreatedSongDirectories { get; set; } = new();
-    public List<string> FavoriteSongIds { get; set; } = new();
-    public List<string> LobbySetlistIds { get; set; } = new();
-    public int MaxLobbyAutoSyncSongs { get; set; } = 10;
-    public bool MinimizeOnGameLaunch { get; set; } = true;
     public string HoneycombPath { get; set; } = "";
     public bool AutoCompileCreatedSongs { get; set; } = true;
-    public bool EnableInGameOverlay { get; set; } = true;
-    public string InGameOverlayCorner { get; set; } = "TopRight"; // TopRight, TopLeft, BottomRight, BottomLeft
-    public double InGameOverlayOpacity { get; set; } = 0.95;      // 0.40 -> 1.00
-    public string InGameOverlaySize { get; set; } = "Medium";     // Small, Medium, Large
-    public bool ConvertOpenNotesToClassicGh3 { get; set; } = false;
-    public bool NormalizeAudioLoudness { get; set; } = true;      // EBU R128 -14 LUFS loudness matching
-    public bool EnableDiscordRichPresence { get; set; } = true;
-    public bool EnableUiAnimations { get; set; } = true;          // Animated stage lighting, transitions & visualizer
-    public List<SetlistPreset> SetlistPresets { get; set; } = new();
-    public Dictionary<string, List<string>> SongTags { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-    public Dictionary<string, SongScoreRecord> LocalHighScores { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
-    // v1.4.0 Concert Master Edition Settings
-    public string Language { get; set; } = "en";
-    public bool EnableGpuAcceleration { get; set; } = true;         // Full-App Direct3D Tier 2 hardware rendering
-    public string VisualEffectsQuality { get; set; } = "Ultra";     // Ultra, Balanced, BatterySaver
-    public int ControllerDebounceMs { get; set; } = 25;             // Hardware anti-overstrum debounce (0ms - 100ms)
-    public bool EnableHighPrecisionTimer { get; set; } = true;      // Windows 11 0.5ms microsecond timing boost
-    public double AudioTargetLufs { get; set; } = -14.0;            // EBU R128 target loudness
-    public bool StemSeparationGpuEnabled { get; set; } = true;      // GPU acceleration for AI demux/pitch
-    public bool ZeroTrustQuarantineEnabled { get; set; } = true;    // Sonic Quarantine archive pre-scanner
-    public bool EnableStadiumChants { get; set; } = true;           // AI Stadium Sing-Along & crowd chants
-    public double WhammyDeadzone { get; set; } = 5.0;               // 0% - 30% deadzone
-    public double TiltSensitivity { get; set; } = 7.0;              // 0 to 11 Star Power tilt sensitivity
-    public bool StealthBlackholeMode { get; set; } = false;         // Silent blackhole packet dropping
-    public List<string> UnlockedAchievements { get; set; } = new(); // Hall of Fame achievement IDs
-
-    public bool StreamerPrivacyMode { get; set; } = false;
-    public bool CompactSetlistView { get; set; } = false;
-    public string GroupByMode { get; set; } = "None"; // None, Artist, Tier
-    public bool RequireHostDownloadApproval { get; set; } = false;
-    public double AudioPreviewVolume { get; set; } = 0.85;
-    public bool EnableSoundEffects { get; set; } = true;
-    public int CalibrationOffsetMs { get; set; } = 0;
-    public string HighwayGemPalette { get; set; } = "Classic"; // Classic, Colorblind, Synthwave, Metallic
-    public string CustomControllerMode { get; set; } = "Auto"; // Auto, Gamepad, Guitar
-    public string[] CustomKeyFrets { get; set; } = { "A", "S", "J", "K", "L" };
-    public string CustomKeyStrum { get; set; } = "Space";
-    public int[] CustomPadButtonIndices { get; set; } = { -1, -1, -1, -1, -1 }; // Optional custom HID/DualSense Edge paddle indices
-    public Dictionary<string, string> PinnedPeerFingerprints { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-    public TourStats LifetimeStats { get; set; } = new();
-
-    // v1.3.2 Features
-    public string ShowcaseSongTitle { get; set; } = "";
-    public string ShowcaseSongId { get; set; } = "";
-    public bool FilterPeerMissingOnly { get; set; } = false;
-    public List<SongRequestItem> SongRequests { get; set; } = new();
-    public List<FriendRequestItem> FriendRequests { get; set; } = new();
-    public HashSet<string> KeptFriendSongIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-    public string LastSeenWhatsNewVersion { get; set; } = "";
 }
 
 public static class AppConfig
 {
-    public static DateTime EnsureUtc(DateTime dt)
-    {
-        if (dt == DateTime.MinValue || dt == DateTime.MaxValue) return dt;
-        if (dt.Kind == DateTimeKind.Utc) return dt;
-        if (dt.Kind == DateTimeKind.Local) return dt.ToUniversalTime();
-        // If unspecified, test whether treating as UTC or Local is closer to UtcNow
-        var asLocal = DateTime.SpecifyKind(dt, DateTimeKind.Local).ToUniversalTime();
-        var asUtc = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
-        return Math.Abs((DateTime.UtcNow - asUtc).TotalHours) < Math.Abs((DateTime.UtcNow - asLocal).TotalHours)
-            ? asUtc
-            : asLocal;
-    }
     private static readonly string ConfigDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GH3-Sync");
     private static readonly string ConfigPath = Path.Combine(ConfigDir, "config.json");
@@ -246,19 +102,6 @@ public static class AppConfig
                             Current.FriendCode = GenerateFriendCode();
                             Save();
                         }
-                        // Decrypt DPAPI-protected Trust Tokens in memory
-                        if (Current.Friends != null)
-                        {
-                            foreach (var f in Current.Friends)
-                            {
-                                f.TrustToken = UnprotectToken(f.TrustToken);
-                                if (string.IsNullOrEmpty(f.TrustToken) && !string.IsNullOrEmpty(Current.FriendCode) && !string.IsNullOrEmpty(f.FriendCode))
-                                {
-                                    f.TrustToken = FriendService.DeriveSharedSecret(Current.FriendCode, f.FriendCode);
-                                }
-                            }
-                        }
-                        if (Current.FriendRequests == null) Current.FriendRequests = new();
                         if (Current.Usage == null) Current.Usage = new FeatureUsageStats();
                         EnsureSeedCreatedSongs();
                         return;
@@ -284,112 +127,14 @@ public static class AppConfig
             try
             {
                 if (!Directory.Exists(ConfigDir)) Directory.CreateDirectory(ConfigDir);
-
-                // Protect Trust Tokens on disk via Windows DPAPI while keeping plaintext in memory
-                var originals = Current.Friends?.Select(f => f.TrustToken).ToList();
-                try
-                {
-                    if (Current.Friends != null)
-                    {
-                        foreach (var f in Current.Friends)
-                            f.TrustToken = ProtectToken(f.TrustToken);
-                    }
-                    var json = JsonSerializer.Serialize(Current, new JsonSerializerOptions { WriteIndented = true });
-                    File.WriteAllText(ConfigPath, json);
-                }
-                finally
-                {
-                    if (Current.Friends != null && originals != null)
-                    {
-                        for (int i = 0; i < Current.Friends.Count && i < originals.Count; i++)
-                            Current.Friends[i].TrustToken = originals[i];
-                    }
-                }
+                var json = JsonSerializer.Serialize(Current, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(ConfigPath, json);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[CONFIG ERROR] Could not save config: {ex.Message}");
             }
         }
-    }
-
-    private static readonly byte[] DpapiEntropy = System.Text.Encoding.UTF8.GetBytes("GH3-SYNC-TRUST-DPAPI-v1");
-
-    public static bool IsKeptFriendSong(string songId)
-    {
-        if (string.IsNullOrWhiteSpace(songId)) return false;
-        lock (_lock)
-        {
-            Current.KeptFriendSongIds ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            return Current.KeptFriendSongIds.Contains(songId);
-        }
-    }
-
-    public static void MarkSongAsKept(string songId)
-    {
-        if (string.IsNullOrWhiteSpace(songId)) return;
-        lock (_lock)
-        {
-            Current.KeptFriendSongIds ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (Current.KeptFriendSongIds.Add(songId))
-            {
-                Save();
-            }
-        }
-    }
-
-    public static void UnmarkSongAsKept(string songId)
-    {
-        if (string.IsNullOrWhiteSpace(songId)) return;
-        lock (_lock)
-        {
-            Current.KeptFriendSongIds ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (Current.KeptFriendSongIds.Remove(songId))
-            {
-                Save();
-            }
-        }
-    }
-
-    public static string ProtectSecret(string? plain) => ProtectToken(plain);
-    public static string UnprotectSecret(string? protectedStr) => UnprotectToken(protectedStr);
-
-    public static void UnlockTrophy(string trophyKey)
-    {
-        lock (_lock)
-        {
-            Current.LifetimeStats ??= new TourStats();
-            Current.LifetimeStats.UnlockedTrophies ??= new List<string>();
-            if (!Current.LifetimeStats.UnlockedTrophies.Contains(trophyKey, StringComparer.OrdinalIgnoreCase))
-            {
-                Current.LifetimeStats.UnlockedTrophies.Add(trophyKey);
-                Save();
-            }
-        }
-    }
-
-    private static string ProtectToken(string? token)
-    {
-        if (string.IsNullOrWhiteSpace(token) || token.StartsWith("dpapi:", StringComparison.Ordinal)) return token ?? "";
-        try
-        {
-            var raw = System.Text.Encoding.UTF8.GetBytes(token);
-            var enc = ProtectedData.Protect(raw, DpapiEntropy, DataProtectionScope.CurrentUser);
-            return "dpapi:" + Convert.ToBase64String(enc);
-        }
-        catch { return token; }
-    }
-
-    private static string UnprotectToken(string? stored)
-    {
-        if (string.IsNullOrWhiteSpace(stored) || !stored.StartsWith("dpapi:", StringComparison.Ordinal)) return stored ?? "";
-        try
-        {
-            var enc = Convert.FromBase64String(stored.Substring(6));
-            var raw = ProtectedData.Unprotect(enc, DpapiEntropy, DataProtectionScope.CurrentUser);
-            return System.Text.Encoding.UTF8.GetString(raw);
-        }
-        catch { return ""; }
     }
 
     public static void UpdateUsername(string newName)
@@ -559,128 +304,6 @@ public static class AppConfig
             }
 
             if (changed) Save();
-        }
-    }
-
-    public static void UnregisterCreatedSong(string songId, string? targetDir = null)
-    {
-        lock (_lock)
-        {
-            bool changed = false;
-            if (!string.IsNullOrWhiteSpace(songId))
-            {
-                int removed = Current.CreatedSongIds.RemoveAll(s => s.Equals(songId, StringComparison.OrdinalIgnoreCase));
-                if (removed > 0) changed = true;
-            }
-            if (!string.IsNullOrWhiteSpace(targetDir) && Current.CreatedSongDirectories != null)
-            {
-                int removed = Current.CreatedSongDirectories.RemoveAll(d => d.Equals(targetDir, StringComparison.OrdinalIgnoreCase));
-                if (removed > 0) changed = true;
-            }
-            if (changed) Save();
-        }
-    }
-
-    public static bool ToggleFavorite(string songId)
-    {
-        lock (_lock)
-        {
-            if (Current.FavoriteSongIds == null) Current.FavoriteSongIds = new();
-            bool exists = Current.FavoriteSongIds.Any(s => s.Equals(songId, StringComparison.OrdinalIgnoreCase));
-            if (exists)
-                Current.FavoriteSongIds.RemoveAll(s => s.Equals(songId, StringComparison.OrdinalIgnoreCase));
-            else
-                Current.FavoriteSongIds.Add(songId);
-            Save();
-            return !exists;
-        }
-    }
-
-    public static (bool Added, string Message) ToggleLobbySetlist(string songId)
-    {
-        lock (_lock)
-        {
-            if (Current.LobbySetlistIds == null) Current.LobbySetlistIds = new();
-            int max = Math.Clamp(Current.MaxLobbyAutoSyncSongs, 1, 25);
-            bool exists = Current.LobbySetlistIds.Any(s => s.Equals(songId, StringComparison.OrdinalIgnoreCase));
-            if (exists)
-            {
-                Current.LobbySetlistIds.RemoveAll(s => s.Equals(songId, StringComparison.OrdinalIgnoreCase));
-                Save();
-                return (false, $"Removed from Lobby Auto-Sync ({Current.LobbySetlistIds.Count}/{max}).");
-            }
-            if (Current.LobbySetlistIds.Count >= max)
-            {
-                return (false, $"Lobby Auto-Sync limit reached ({max}/{max}). Uncheck another song or raise the limit in P2P Sync.");
-            }
-            Current.LobbySetlistIds.Add(songId);
-            Save();
-            return (true, $"Added to Lobby Auto-Sync ({Current.LobbySetlistIds.Count}/{max}).");
-        }
-    }
-
-    public static List<string> GetSongTags(string songId)
-    {
-        lock (_lock)
-        {
-            Current.SongTags ??= new(StringComparer.OrdinalIgnoreCase);
-            var key = Current.SongTags.Keys.FirstOrDefault(k => k.Equals(songId, StringComparison.OrdinalIgnoreCase));
-            return key != null ? Current.SongTags[key].ToList() : new List<string>();
-        }
-    }
-
-    public static List<string> ToggleSongTag(string songId, string tag)
-    {
-        lock (_lock)
-        {
-            Current.SongTags ??= new(StringComparer.OrdinalIgnoreCase);
-            var key = Current.SongTags.Keys.FirstOrDefault(k => k.Equals(songId, StringComparison.OrdinalIgnoreCase)) ?? songId;
-            if (!Current.SongTags.TryGetValue(key, out var list))
-            {
-                list = new List<string>();
-                Current.SongTags[key] = list;
-            }
-            if (list.Any(t => t.Equals(tag, StringComparison.OrdinalIgnoreCase)))
-                list.RemoveAll(t => t.Equals(tag, StringComparison.OrdinalIgnoreCase));
-            else
-                list.Add(tag);
-            Save();
-            return list.ToList();
-        }
-    }
-
-    public static SongScoreRecord? GetHighScore(string songId)
-    {
-        lock (_lock)
-        {
-            Current.LocalHighScores ??= new(StringComparer.OrdinalIgnoreCase);
-            var key = Current.LocalHighScores.Keys.FirstOrDefault(k => k.Equals(songId, StringComparison.OrdinalIgnoreCase));
-            return key != null ? Current.LocalHighScores[key] : null;
-        }
-    }
-
-    public static bool RecordHighScore(string songId, int score, double percent, int streak, bool isFc, string difficulty = "Expert")
-    {
-        lock (_lock)
-        {
-            Current.LocalHighScores ??= new(StringComparer.OrdinalIgnoreCase);
-            var key = Current.LocalHighScores.Keys.FirstOrDefault(k => k.Equals(songId, StringComparison.OrdinalIgnoreCase)) ?? songId;
-            int stars = percent >= 95 ? 5 : percent >= 85 ? 4 : percent >= 75 ? 3 : percent >= 60 ? 2 : 1;
-            if (Current.LocalHighScores.TryGetValue(key, out var prev) && prev.BestScore >= score && (!isFc || prev.IsFullCombo))
-                return false;
-
-            Current.LocalHighScores[key] = new SongScoreRecord
-            {
-                BestScore = Math.Max(score, prev?.BestScore ?? 0),
-                BestPercent = Math.Max(percent, prev?.BestPercent ?? 0),
-                BestStreak = Math.Max(streak, prev?.BestStreak ?? 0),
-                Stars = Math.Max(stars, prev?.Stars ?? 0),
-                IsFullCombo = isFc || (prev?.IsFullCombo ?? false),
-                Difficulty = difficulty,
-                AchievedAt = DateTime.UtcNow
-            };
-            Save();
-            return true;
         }
     }
 
